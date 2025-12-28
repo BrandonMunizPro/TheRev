@@ -78,16 +78,25 @@ export class ThreadResolver {
 
   // LIST all threads when roles created/Superadmin
   @Query(() => [Thread])
-  async listThreads(): Promise<returnedThread[]> {
-    return this.model.listThreads();
+  async listThreads(
+    @Ctx() ctx: GraphQLContext
+  ): Promise<returnedThread[] | null> {
+    if (!ctx.user) {
+      throw new Error("Not authenticated");
+    }
+    return this.model.listAllThreads(ctx.user.userId);
   }
 
   // LIST all threads by a specific user superadmin sees all user can only see their own if not superadmin or follower of user
   @Query(() => [Thread])
   async listThreadsByUser(
-    @Arg("data") data: ThreadQueryInput
-  ): Promise<returnedThread[]> {
-    return this.model.listThreadsByUser(data.authorId!);
+    @Arg("data") data: ThreadQueryInput,
+    @Ctx() ctx: GraphQLContext
+  ): Promise<returnedThread[] | null> {
+    if (!ctx.user) {
+      throw new Error("Not authenticated");
+    }
+    return this.model.listThreadsByUser(data.authorId!, ctx.user.userId);
   }
 
   // UPDATE THREAD
@@ -99,7 +108,7 @@ export class ThreadResolver {
     if (!ctx.user) {
       throw new Error("Not authenticated");
     }
-    return this.model.editThread(data);
+    return this.model.editThread(data, ctx.user.userId);
   }
 
   // DELETE THREAD
@@ -111,7 +120,7 @@ export class ThreadResolver {
     if (!ctx.user) {
       throw new Error("Not authenticated");
     }
-    return this.model.deleteThread(threadId);
+    return this.model.deleteThread(threadId, ctx.user.userId);
   }
 
   // MODERATION

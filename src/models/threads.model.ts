@@ -8,6 +8,7 @@ import {
  } from "../resolvers/Thread";
 import { UsersDao } from "../dao/users.dao";
 import { PostsDao } from "../dao/posts.dao";
+import { UserRole } from "../graphql/enums/UserRole";
 
 export class ThreadsModel {
     private readonly dao: ThreadsDao;
@@ -50,6 +51,36 @@ export class ThreadsModel {
        };
      }
 
+     //listAllThreads
+     async listAllThreads (userId: string): Promise<returnedThread[] | null>
+     {
+      const user = await this.usersDao.findById(userId);
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+      const threads = this.dao.findAll();
+      return threads
+     }
+
+     //ListThreadByUsers
+    async listThreadsByUser (userId: string, userIdContext: string): Promise<returnedThread[] | null>
+    {
+      const user = await this.usersDao.findById(userIdContext);
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const isAdmin = user.role === UserRole.ADMIN;
+      if (!isAdmin || user.id !== userId ){
+        throw new Error("You do not have permission to see all threads listed by user.")
+      }
+
+      const threads = this.dao.findAllByUserId(userId);
+      return threads
+    }
+
      //CREATE THREAD
     async createThread(
      input: CreateThreadInput,
@@ -85,16 +116,59 @@ export class ThreadsModel {
     }
 
     // DELETE Thread
-    async deleteThread(id: string): Promise<boolean> {
-      //pass context see if user is superadmin or if thread belongs to them if so we can delete if not we throw error
+      async deleteThread(id: string, userId: string): Promise<boolean> {
+      const thread = await this.dao.findById(id);
+
+      if (!thread) {
+        throw new Error("Thread not found");
+      }
+
+      const user = await this.usersDao.findById(userId);
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const isOwner = thread.author.id === userId;
+      const isAdmin =
+        user.role === UserRole.ADMIN ||
+        user.role === UserRole.THREAD_ADMIN;
+
+      if (!isAdmin && !isOwner) {
+        throw new Error("The user has no permission to delete this thread");
+      }
+
       return this.dao.deleteThread(id);
     }
 
+
     //UpdateThread
-    async editThread( data: UpdateThreadInput): Promise<returnedThread> {
-       //pass context see if user is superadmin or if thread belongs to them if so we can delete if not we throw error
-      const id = data.threadId;
-      const updated = await this.dao.updateThread(id, data);
-      return updated;
+    async editThread(
+    data: UpdateThreadInput,
+    userId: string
+    ): Promise<returnedThread> {
+      const thread = await this.dao.findById(data.threadId);
+
+      if (!thread) {
+        throw new Error("Thread not found");
+      }
+
+      const user = await this.usersDao.findById(userId);
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const isOwner = thread.author.id === userId;
+      const isAdmin =
+        user.role === UserRole.ADMIN ||
+        user.role === UserRole.THREAD_ADMIN;
+
+      if (!isAdmin && !isOwner) {
+        throw new Error("The user has no permission to edit this thread");
+      }
+
+      return this.dao.updateThread(data.threadId, data);
     }
+
 }

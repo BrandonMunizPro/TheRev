@@ -13,7 +13,7 @@ export class ThreadsDao {
     return this.repo.findOne({ where: { id } });
   }
 
-   async findByUserId(userId: string): Promise<Thread | null> {
+  async findByUserId(userId: string): Promise<Thread | null> {
     return this.repo.findOne({ 
         where: {  
           author: {
@@ -21,7 +21,19 @@ export class ThreadsDao {
           }
         }, 
     });
-   }
+  }
+
+  async findAllByUserId(userId: string): Promise<Thread[]> {
+    return this.repo.find({
+      where: {
+        author: {
+          id: userId,
+        },
+      },
+      relations: ["author"],
+    });
+  }
+
 
   async createThread(data: Partial<Thread>): Promise<Thread> {
     const thread = this.repo.create(data);
