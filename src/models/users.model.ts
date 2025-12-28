@@ -2,9 +2,13 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { UsersDao } from "../dao/users.dao";
 import { User } from "../entities/User";
-import { returnedUser } from "../resolvers/User";
 import { EmailService } from "../services/Emailservice";
-import { CreateUserInput, EditUserInput, GetUserInput } from "../resolvers/User";
+import { 
+  CreateUserInput,
+  EditUserInput,
+  GetUserInput,
+  returnedUser
+ } from "../resolvers/User";
 import { Constants } from "../utils/constants";
 
 
@@ -98,6 +102,8 @@ export class UsersModel {
       ideology: input.ideology,
     });
 
+    await this.emailService.sendWelcomeEmail(newUser.email, newUser.userName);
+
 
     return {
       id: newUser.id,
@@ -127,6 +133,7 @@ export class UsersModel {
         userId: user.id,
         userName: user.userName,
         email: user.email,
+        role: user.role
       },
       process.env.JWT_SECRET_KEY!,
       { expiresIn: JWT_EXPIRATION }

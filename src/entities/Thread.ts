@@ -35,6 +35,14 @@ export class Thread {
   posts?: Post[];
 
   @Field()
+  @Column({ default: false })
+  isLocked!: boolean;
+
+  @Field()
+  @Column({ default: false })
+  isPinned!: boolean;
+
+  @Field()
   @CreateDateColumn()
   createdAt!: Date;
 

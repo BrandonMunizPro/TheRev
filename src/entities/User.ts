@@ -6,6 +6,7 @@ import {
   UpdateDateColumn 
 } from "typeorm";
 import { ObjectType, Field, ID } from "type-graphql";
+import { UserRole } from "../graphql/enums/UserRole";
 
 @ObjectType()
 @Entity()
@@ -15,7 +16,7 @@ export class User {
   id!: string;
 
   @Field()
-  @Column()
+  @Column({ unique: true })
   userName!: string;
 
   @Field()
@@ -27,9 +28,8 @@ export class User {
   lastName!: string;
 
   @Field()
-  @Column()
+  @Column({ unique: true })
   email!: string;
-
 
   @Column()
   password!: string;
@@ -45,6 +45,15 @@ export class User {
   @Field({ nullable: true })
   @Column({ nullable: true })
   profilePicUrl?: string;
+  
+  @Field(() => UserRole)
+  @Column({
+    type: "enum",
+    enum: UserRole,
+    default: UserRole.STANDARD,
+  })
+  role!: UserRole;
+
 
   @Field()
   @CreateDateColumn()

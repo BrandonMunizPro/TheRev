@@ -1,10 +1,12 @@
 import "dotenv/config";
 import "reflect-metadata";
 import express from "express";
+import { getUserFromRequest } from "./auth/getUserFromRequest";
 import { createYoga } from "graphql-yoga";
 import { AppDataSource } from "./data-source";
 import { buildSchema } from "type-graphql";
 import { UserResolver } from "./resolvers/User";
+import { GraphQLContext } from "./graphql/context";
 
 const app = express();
 const PORT = 4000;
@@ -14,23 +16,21 @@ async function startServer() {
     await AppDataSource.initialize();
     console.log("📡 NEXUS database connected");
 
-    // Build GraphQL schema using TypeGraphQL
     const schema = await buildSchema({
       resolvers: [UserResolver],
       validate: false,
     });
 
-    // Create Yoga GraphQL server
-    const yoga = createYoga({
+    const yoga = createYoga<GraphQLContext>({
       schema,
-      graphqlEndpoint: "/graphql", // default
+      graphqlEndpoint: "/graphql",
+      context: ({ request }) => ({
+        user: getUserFromRequest(request),
+      }),
     });
 
-    // Attach Yoga to Express
-    app.use("/graphql", yoga);
-
-    // JSON support
     app.use(express.json());
+    app.use("/graphql", yoga as any); // 👈 FIX
 
     app.listen(PORT, () => {
       console.log(`🧠 NEXUS core listening on http://localhost:${PORT}`);

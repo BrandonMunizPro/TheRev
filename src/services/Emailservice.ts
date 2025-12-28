@@ -7,7 +7,7 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT) || 587,
-      secure: false, // upgrade later with STARTTLS
+      secure: true, 
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASSWORD,
@@ -18,11 +18,11 @@ export class EmailService {
   async sendEmail(to: string, subject: string, text: string, html?: string) {
     try {
       const info = await this.transporter.sendMail({
-        from: `"Your App" <${process.env.SMTP_FROM}>`,
+        from: `"The Rev" <${process.env.SMTP_FROM}>`,
         to,
         subject,
-        text,       // plain text
-        html,       // optional html
+        text,
+        html, 
       });
 
       console.log("Email sent:", info.messageId);
@@ -34,13 +34,16 @@ export class EmailService {
   }
 
   async sendWelcomeEmail(email: string, userName: string) {
-    const html = `
-      <h2>Welcome to the platform, ${userName}!</h2>
-      <p>Your account was created successfully.</p>
-    `;
+  const text = `Welcome to The Rev, ${userName}! Your account was created successfully.`;
 
-    return this.sendEmail(email, "Welcome!", html);
-  }
+  const html = `
+    <h2>Welcome to The Rev, no man can separate what we create, ${userName}!</h2>
+    <p>Your account was created successfully.</p>
+  `;
+
+  return this.sendEmail(email, "Welcome!", text, html);
+}
+
 
   async sendPasswordResetEmail(email: string, resetLink: string) {
     const html = `
