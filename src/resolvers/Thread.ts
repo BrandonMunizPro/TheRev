@@ -5,6 +5,7 @@ import { InputType, Field, ID } from "type-graphql";
 import { User } from "../entities/User";
 import { Post } from "../entities/Post";
 import { GraphQLContext } from "../graphql/context";
+import { PostType } from "../graphql/enums/PostType";
 
 
 @InputType()
@@ -14,6 +15,9 @@ export class CreateThreadInput {
 
   @Field()
   content!: string;
+
+  @Field(() => PostType, { defaultValue: PostType.TEXT })
+  type!: PostType;
 
 }
 

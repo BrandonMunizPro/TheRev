@@ -99,11 +99,14 @@ export class ThreadsModel {
         });
 
         // 3. Create initial post
-        const post = await this.postsDao.create({
-            content: input.content,
-            author,
-            thread,
-        });
+        const post = await this.postsDao.createPostRaw(
+          input.content,
+          author.id,
+          thread.id,
+          input.type,
+          new Date()
+        );
+
 
         thread.posts = [post];
 
