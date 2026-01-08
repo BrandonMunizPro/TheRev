@@ -4,7 +4,9 @@ import {
     CreateThreadInput, 
     UpdateThreadInput, 
     ThreadQueryInput,
-    returnedThread
+    UpdateThreadPinOrLockInput,
+    returnedThread,
+    returnedThreadWithLockAndPins
  } from "../resolvers/Thread";
 import { UsersDao } from "../dao/users.dao";
 import { PostsDao } from "../dao/posts.dao";
@@ -170,5 +172,48 @@ export class ThreadsModel {
 
       return this.dao.updateThread(data.threadId, data);
     }
+
+    //lock thread or unlock thread
+    //lock or unlock pin
+    async threadPinAndLockToggler(
+      data: UpdateThreadPinOrLockInput,
+      userId: string
+    ): Promise<returnedThreadWithLockAndPins> {
+      const thread = await this.dao.findById(data.threadId);
+
+      if (!thread) {
+        throw new Error("Thread not found");
+      }
+
+      const user = await this.usersDao.findById(userId);
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const isOwner = thread.author.id === userId;
+      const isAdmin =
+        user.role === UserRole.ADMIN ||
+        user.role === UserRole.THREAD_ADMIN;
+
+      if (!isAdmin && !isOwner) {
+        throw new Error("The user has no permission to edit this thread");
+      }
+
+      if(!data.isLocked && !data.isPinned){
+        throw new Error("Select either a thread or pin to update")
+      }
+      const updatedThread = await this.dao.updateThread(data.threadId, data);
+      return {
+       id: updatedThread.id,
+       title: updatedThread.title,
+       isLocked: updatedThread.isLocked,
+       isPinned: updatedThread.isPinned,
+       updatedAt: updatedThread.updatedAt,
+       createdAt: updatedThread.createdAt
+      } as returnedThreadWithLockAndPins
+    }
+    //lock or unlock pin
+
 
 }

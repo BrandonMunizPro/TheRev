@@ -41,6 +41,7 @@ export class ThreadsDao {
   }
 
   async updateThread(id: string, data: DeepPartial<Thread>): Promise<Thread> {
+     data.updatedAt = new Date();
     await this.repo.update({ id }, data);
     const updated = await this.repo.findOne({ where: { id } });
 

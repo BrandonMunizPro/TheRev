@@ -11,6 +11,34 @@ export class PostsDao {
     return this.repo.save(post);
   }
 
+  
+  async createPostRaw(
+    content: string,
+    authorId: string,
+    threadId: string,
+    type: string,
+    createdAt?: Date,
+    metadata?: { thumbnailUrl?: string; duration?: number; provider?: "youtube" | "vimeo" },
+    isPinned: boolean = false
+  ) {
+    const result = await AppDataSource.query(
+      `
+      INSERT INTO post (content, author_id, thread_id, type, created_at, updated_at, metadata, is_pinned)
+      VALUES ($1, $2, $3, $4, $5, $5, $6, $7)
+      RETURNING id, content, type, author_id, thread_id, created_at, updated_at, metadata, is_pinned
+      `,
+      [
+        content,
+        authorId,
+        threadId,
+        type,
+        createdAt || new Date(),
+        metadata ? JSON.stringify(metadata) : null,
+        isPinned,
+      ]
+    );
 
+    return result[0]; // return the inserted row
+  }
 
 }

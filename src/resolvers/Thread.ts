@@ -30,6 +30,19 @@ export class UpdateThreadInput {
 }
 
 @InputType()
+export class UpdateThreadPinOrLockInput {
+  @Field(() => ID)
+  threadId!: string;
+
+  @Field({ nullable: true })
+  isPinned?: boolean;
+
+
+  @Field({ nullable: true })
+  isLocked?: boolean;
+}
+
+@InputType()
 export class ThreadQueryInput {
   @Field(() => ID, { nullable: true })
   id?: string;
@@ -47,6 +60,18 @@ export type returnedThread = {
   posts?: Post[];
   createdAt?: Date;
   updatedAt?: Date;
+};
+
+export type returnedThreadWithLockAndPins = {
+  id?: string;
+  title?: string;
+  content?: string;
+  author?: User;
+  posts?: Post[];
+  createdAt?: Date;
+  updatedAt?: Date;
+  isLocked?: Boolean;
+  isPinned?: Boolean;
 };
 
 
@@ -126,22 +151,11 @@ export class ThreadResolver {
   // MODERATION
  
   @Mutation(() => Thread)
-  async lockThread(@Arg("threadId") threadId: string): Promise<Thread> {
-    return this.model.lockThread(threadId);
-  }
-
-  @Mutation(() => Thread)
-  async unlockThread(@Arg("threadId") threadId: string): Promise<Thread> {
-    return this.model.unlockThread(threadId);
-  }
-
-  @Mutation(() => Thread)
-  async pinThread(@Arg("threadId") threadId: string): Promise<Thread> {
-    return this.model.pinThread(threadId);
-  }
-
-  @Mutation(() => Thread)
-  async unpinThread(@Arg("threadId") threadId: string): Promise<Thread> {
-    return this.model.unpinThread(threadId);
+  async updateThreadPinOrLock(
+    @Arg("data") data: UpdateThreadPinOrLockInput,
+    @Ctx() ctx: GraphQLContext
+  ): Promise<returnedThreadWithLockAndPins | null> {
+    if (!ctx.user) throw new Error("Not authenticated");
+    return this.model.threadPinAndLockToggler(data, ctx.user.userId);
   }
 }
