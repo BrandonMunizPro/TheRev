@@ -27,7 +27,7 @@ export class Thread {
   content?: string;
 
   @Field(() => User)
-  @ManyToOne(() => User, (user) => user.threads, { onDelete: "CASCADE" })
+  @ManyToOne(() => User, { onDelete: "CASCADE" })
   author!: User;
 
   @Field(() => [Post], { nullable: true })

@@ -32,7 +32,18 @@ export class UpdatePostInput {
 
   @Field({ nullable: true })
   content?: string;
+
+  @Field({ nullable: true })
+  type?: PostType;
+
+  @Field({ nullable: true })
+  metadata?: {
+    thumbnailUrl?: string;
+    duration?: number;
+    provider?: "youtube" | "vimeo";
+  };
 }
+
 
 @InputType()
 export class UpdatePostPinnedInput {
@@ -53,9 +64,6 @@ export class PostQueryInput {
 
   @Field(() => ID, { nullable: true })
   threadId?: string;
-
-  @Field(() => ID, { nullable: true })
-  authorId?: string;
 }
 
 // Returned Types
@@ -68,7 +76,7 @@ export type returnedPost = {
   thread?: any; // Thread type
   createdAt?: Date;
   updatedAt?: Date;
-  metadata: JSON
+  metadata?: JSON
 };
 
 // Resolver
@@ -89,17 +97,21 @@ export class PostResolver {
   // GET SINGLE POST
   @Query(() => Post, { nullable: true })
   async getPost(
-    @Arg("data") data: PostQueryInput
+    @Arg("data") data: PostQueryInput,
+    @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost | null> {
+    if (!ctx.user) throw new Error("Not authenticated");
     return this.model.getPost(data);
   }
 
   // LIST POSTS BY THREAD
   @Query(() => [Post])
   async listPostsByThread(
-    @Arg("threadId", () => ID) threadId: string
-  ): Promise<returnedPost[]> {
-    return this.model.listPostsByThread(threadId);
+    @Arg("data") data: PostQueryInput,
+    @Ctx() ctx: GraphQLContext
+  ): Promise<returnedPost[] | null> {
+    if (!ctx.user) throw new Error("Not authenticated");
+    return this.model.listPostsByThread(data);
   }
 
   // UPDATE POST
@@ -107,7 +119,7 @@ export class PostResolver {
   async updatePost(
     @Arg("data") data: UpdatePostInput,
     @Ctx() ctx: GraphQLContext
-  ): Promise<ReturnedPost> {
+  ): Promise<returnedPost> {
     if (!ctx.user) throw new Error("Not authenticated");
     return this.model.updatePost(data, ctx.user.userId);
   }

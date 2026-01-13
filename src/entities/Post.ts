@@ -8,7 +8,7 @@ import {
 } from "typeorm";
 import { Field, ID, ObjectType } from "type-graphql";
 import { User } from "./User";
-import { Thread } from "./Thread";\
+import { Thread } from "./Thread";
 import { PostType } from "../graphql/enums/PostType";
 
 @ObjectType()
@@ -38,7 +38,7 @@ export class Post {
   };
 
   @Field(() => User)
-  @ManyToOne(() => User, (user) => user.posts, { onDelete: "CASCADE" })
+  @ManyToOne(() => User, { onDelete: "CASCADE" })
   author!: User;
 
   @Field(() => Thread)
