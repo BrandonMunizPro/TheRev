@@ -66,7 +66,6 @@ export class PostQueryInput {
   threadId?: string;
 }
 
-// Returned Types
 export type returnedPost = {
   id?: string;
   type: PostType
@@ -135,13 +134,12 @@ export class PostResolver {
   }
 
   @Mutation(() => Post)
-  async pinPost(
+  async updatePin(
     @Arg("data") data: UpdatePostInput,
     @Ctx() ctx: GraphQLContext
-  ) {
+  ) : Promise<returnedPost | null> {
     if (!ctx.user) throw new Error("Not authenticated");
-
-    return this.model.pinPost(data, ctx.user.userId);
+    return this.model.updatePostPin(data, ctx.user.userId);
   }
 
 }

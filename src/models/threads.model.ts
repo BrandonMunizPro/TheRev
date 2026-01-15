@@ -25,45 +25,44 @@ export class ThreadsModel {
 
      //GET Threads
     async getThread(data: ThreadQueryInput): 
-       Promise<returnedThread | null> 
-     {
+      Promise<returnedThread | null> 
+    {
    
-       if (!data) {
-         throw new Error("Please provide ThreadId or Author's UserId");
-       }
+      if (!data) {
+        throw new Error("Please provide ThreadId or Author's UserId");
+      }
    
-       let thread: Thread | null = null;
+      let thread: Thread | null = null;
    
-       if (data.id) {
-         thread = await this.dao.findById(data.id);
-       }
-       if (data.authorId){
-         thread = await this.dao.findByUserId(data.authorId);
-       }
+      if (data.id) {
+        thread = await this.dao.findById(data.id);
+      }
+      if (data.authorId){
+        thread = await this.dao.findByUserId(data.authorId);
+      }
    
-       if (!thread) return null;
+      if (!thread) return null;
    
-       return {
-         id: thread.id,
-         author: thread.author,
-         title: thread.title,
-         posts: thread.posts,
-         createdAt: thread.createdAt,
-         updatedAt: thread.updatedAt,
-       };
-     }
+      return {
+        id: thread.id,
+        author: thread.author,
+        title: thread.title,
+        posts: thread.posts,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt,
+      };
+    }
 
      //listAllThreads
-     async listAllThreads (userId: string): Promise<returnedThread[] | null>
-     {
+    async listAllThreads (userId: string): Promise<returnedThread[] | null>
+    {
       const user = await this.usersDao.findById(userId);
-
       if (!user) {
         throw new Error("User not found");
       }
       const threads = this.dao.findAll();
       return threads
-     }
+    }
 
      //ListThreadByUsers
     async listThreadsByUser (userId: string, userIdContext: string): Promise<returnedThread[] | null>
@@ -89,39 +88,36 @@ export class ThreadsModel {
      authorId: string
     ): Promise<returnedThread> {
         // 1. Fetch author
-        const author = await this.usersDao.findById(authorId);
-        if (!author) throw new Error("User not found");
+      const author = await this.usersDao.findById(authorId);
+      if (!author) throw new Error("User not found");
 
-        // 2. Create thread
-        const thread = await this.dao.createThread({
-            title: input.title,
-            author,
-        });
+      const thread = await this.dao.createThread({
+          title: input.title,
+          author,
+      });
 
-        // 3. Create initial post
-        const post = await this.postsDao.createPostRaw(
-          input.content,
-          author.id,
-          thread.id,
-          input.type,
-          new Date()
-        );
+      const post = await this.postsDao.createPostRaw(
+        input.content,
+        author.id,
+        thread.id,
+        input.type,
+        new Date()
+      );
 
+      thread.posts = [post];
 
-        thread.posts = [post];
-
-        return {
-            id: thread.id,
-            title: thread.title,
-            author: thread.author,
-            posts: thread.posts,
-            createdAt: thread.createdAt,
-            updatedAt: thread.updatedAt,
-        };
+      return {
+        id: thread.id,
+        title: thread.title,
+        author: thread.author,
+        posts: thread.posts,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt
+      };
     }
 
     // DELETE Thread
-      async deleteThread(id: string, userId: string): Promise<boolean> {
+    async deleteThread(id: string, userId: string): Promise<boolean> {
       const thread = await this.dao.findById(id);
 
       if (!thread) {
@@ -216,7 +212,4 @@ export class ThreadsModel {
        createdAt: updatedThread.createdAt
       } as returnedThreadWithLockAndPins
     }
-    //lock or unlock pin
-
-
 }

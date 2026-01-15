@@ -41,36 +41,37 @@ export class PostsDao {
     return result[0]; // return the inserted row
   }
 
-    async updatePost(id: string, data: DeepPartial<Post>): Promise<Post> {
-       data.updatedAt = new Date();
-      await this.repo.update({ id }, data);
-      const updated = await this.repo.findOne({ where: { id } });
+  async updatePost(id: string, data: DeepPartial<Post>): Promise<Post> {
+    data.updatedAt = new Date();
+    await this.repo.update({ id }, data);
+    const updated = await this.repo.findOne({ where: { id } });
+    if (!updated) {
+      throw new Error(`Thread with id ${id} not found`);
+    }
+    return updated;
+  }
+
+  async findAll(): Promise<Post[]> {
+    return this.repo.find();
+  }
+
+  async findAllByThreadId(threadId: string): Promise<Post[]> {
+    return this.repo.find({
+      where: {
+        thread: {
+          id: threadId,
+        },
+      },
+      relations: ["thread"],
+    });
+  }
   
-      if (!updated) {
-        throw new Error(`Thread with id ${id} not found`);
-      }
-      return updated;
-    }
+  async findById(id: string): Promise<Post | null> {
+    return this.repo.findOne({ where: { id } });
+  }
 
-    async findAll(): Promise<Post[]> {
-      return this.repo.find();
-    }
-
-    async findAllByThreadId(threadId: string): Promise<Post[]> {
-        return this.repo.find({
-          where: {
-            thread: {
-              id: threadId,
-            },
-          },
-          relations: ["thread"],
-        });
-      }
-  
-    async findById(id: string): Promise<Post | null> {
-      return this.repo.findOne({ where: { id } });
-    }
-
-
-
+  async deletePost(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id });
+    return result.affected === 1;
+  }
 }

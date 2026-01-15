@@ -7,7 +7,7 @@ import { UsersDao } from "../dao/users.dao";
 import { ThreadsDao } from "../dao/threads.dao";
 import { UserRole } from "../graphql/enums/UserRole";
 import { DeepPartial } from "typeorm";
-import { CreatePostInput, returnedPost, PostQueryInput, UpdatePostInput} from "../resolvers/Post";
+import { CreatePostInput, returnedPost, PostQueryInput, UpdatePostInput, UpdatePostPinnedInput} from "../resolvers/Post";
 
 export class PostsModel {
   private dao = new PostsDao();
@@ -87,67 +87,125 @@ export class PostsModel {
     }));
   }
 
-  // UPDATE POST
-async updatePost(
-  data: UpdatePostInput,
-  userId: string
-): Promise<returnedPost> {
-  const post = await this.dao.findById(data.postId);
-  if (!post) throw new Error("Post not found");
-
-  const user = await this.usersDao.findById(userId);
-  if (!user) throw new Error("User not found");
-
-  const isAuthor = post.author.id === userId;
-  const isGlobalAdmin = user.role === UserRole.ADMIN;
-
-  const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
-    userId,
-    post.thread.id
-  );
-   
-  if(isThreadAdmin.revokedAt){
-    throw new Error(`Your piveledge as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
-  }
-  if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
-    throw new Error("No permission to update this post");
-  }
-
-  // Build the update payload — only include fields the user is allowed to edit
-  const updatePayload: DeepPartial<Post> = {};
-  if (data.content !== undefined) updatePayload.content = data.content;
-  if (data.type !== undefined) updatePayload.type = data.type;
-  if (data.metadata !== undefined) updatePayload.metadata = data.metadata;
-  updatePayload.updatedAt = new Date();
-
-  const updatedPost =  await this.dao.updatePost(data.postId, updatePayload);
-  return {
-    id: updatedPost.id,
-    type: updatedPost.type,
-    content: updatedPost.content,
-    author: updatedPost.author,
-    thread: updatedPost.thread,
-    createdAt: updatedPost.createdAt,
-    updatedAt: updatedPost.updatedAt
-  }
-}
-
-
-
-
-  // DELETE POST
-  async deletePost(postId: string, userId: string): Promise<boolean> {
-    const post = await this.dao.findById(postId, { relations: ["author"] });
+    // UPDATE POST
+  async updatePost(
+    data: UpdatePostInput,
+    userId: string
+  ): Promise<returnedPost> {
+    const post = await this.dao.findById(data.postId);
     if (!post) throw new Error("Post not found");
 
     const user = await this.usersDao.findById(userId);
     if (!user) throw new Error("User not found");
 
-    if (post.author.id !== userId && !(user.role === UserRole.ADMIN || user.role === UserRole.THREAD_ADMIN)) {
+    const isAuthor = post.author.id === userId;
+    const isGlobalAdmin = user.role === UserRole.ADMIN;
+
+    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
+      userId,
+      post.thread.id
+    );
+    
+    if(isThreadAdmin.revokedAt){
+      throw new Error(`Your piveledge as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
+    }
+    if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
+      throw new Error("No permission to update this post");
+    }
+
+    // Build the update payload — only include fields the user is allowed to edit
+    const updatePayload: DeepPartial<Post> = {};
+    if (data.content !== undefined) updatePayload.content = data.content;
+    if (data.type !== undefined) updatePayload.type = data.type;
+    if (data.metadata !== undefined) updatePayload.metadata = data.metadata;
+    updatePayload.updatedAt = new Date();
+
+    const updatedPost =  await this.dao.updatePost(data.postId, updatePayload);
+    return {
+      id: updatedPost.id,
+      type: updatedPost.type,
+      content: updatedPost.content,
+      author: updatedPost.author,
+      thread: updatedPost.thread,
+      createdAt: updatedPost.createdAt,
+      updatedAt: updatedPost.updatedAt
+    }
+  }
+
+  async deletePost(postId: string, userId: string): Promise<boolean> {
+    const post = await this.dao.findById(postId);
+    if (!post) throw new Error("Post not found");
+
+    const user = await this.usersDao.findById(userId);
+    if (!user) throw new Error("User not found");
+
+    const isAuthor = post.author.id === userId;
+    const isGlobalAdmin = user.role === UserRole.ADMIN;
+
+    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
+      userId,
+      post.thread.id
+    );
+    
+    if(isThreadAdmin.revokedAt){
+      throw new Error(`Your piveledge as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
+    }
+    
+    if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
       throw new Error("No permission to delete this post");
     }
 
-    await this.dao.deletePost(postId);
-    return true;
+    return this.dao.deletePost(postId);
+  }
+  
+
+  async updatePostPin(
+    data: UpdatePostPinnedInput,
+    userId: string
+  ): Promise<returnedPost> {
+
+    const post = await this.dao.findById(data.postId);
+    if (!post) throw new Error("Post not found");
+
+    const thread = await this.dao.findById(post.thread.id);
+  
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+    const user = await this.usersDao.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+  
+    const isAuthor = post.author.id === userId;
+    const isGlobalAdmin = user.role === UserRole.ADMIN;
+
+    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
+      userId,
+      post.thread.id
+    );
+    
+    if(isThreadAdmin.revokedAt){
+      throw new Error(`Your piveledge as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
+    }
+    
+    if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
+      throw new Error("No permission to update this post");
+    }
+  
+    if(!data.isPinned){
+      throw new Error("Select pin to update")
+    }
+    const updatedPost = await this.dao.updatePost(post.id, data);
+        
+    return {
+      id: updatedPost.id,
+      type: updatedPost.type,
+      content: updatedPost.content,
+      author: updatedPost.author,
+      thread: updatedPost.thread,
+      createdAt: updatedPost.createdAt,
+      updatedAt: updatedPost.updatedAt
+    } as returnedPost
   }
 }
