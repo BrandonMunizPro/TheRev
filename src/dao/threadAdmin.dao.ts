@@ -24,4 +24,29 @@ export class ThreadAdminDao {
     );
     return result
   }
+
+  async grantOrRestoreThreadAdmin(
+   userId: string,
+   threadId: string,
+   grantedById: string | null
+  ): Promise<ThreadAdmin> {
+    const result = await AppDataSource.query(
+        `
+        INSERT INTO thread_admin (
+        id, "userId", "threadId", "grantedById", "createdAt"
+        )
+        VALUES (
+        gen_random_uuid(), $1, $2, $3, NOW()
+        )
+        ON CONFLICT ("userId", "threadId")
+        DO UPDATE SET
+        "revokedAt" = NULL,
+        "grantedById" = EXCLUDED."grantedById"
+        RETURNING *
+        `,
+        [userId, threadId, grantedById]
+    );
+  return result[0];
+}
+
 }

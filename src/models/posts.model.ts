@@ -107,7 +107,7 @@ export class PostsModel {
     );
     
     if(isThreadAdmin.revokedAt){
-      throw new Error(`Your piveledge as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
+      throw new Error(`Your privilege as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
     }
     if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
       throw new Error("No permission to update this post");
@@ -148,7 +148,7 @@ export class PostsModel {
     );
     
     if(isThreadAdmin.revokedAt){
-      throw new Error(`Your piveledge as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
+      throw new Error(`Your privilege as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
     }
     
     if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
@@ -186,7 +186,7 @@ export class PostsModel {
     );
     
     if(isThreadAdmin.revokedAt){
-      throw new Error(`Your piveledge as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
+      throw new Error(`Your privilege as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
     }
     
     if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
