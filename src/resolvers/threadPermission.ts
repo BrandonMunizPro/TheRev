@@ -10,6 +10,7 @@ import { ThreadAdmin } from "../entities/ThreadAdmin";
 import { GraphQLContext } from "../graphql/context";
 import { ThreadAdminModel } from "../models/threadAdmin.model";
 import { InputType, Field, ID } from "type-graphql";
+import { ThreadQueryInput } from "./Thread";
 
 @InputType()
 export class GrantThreadAdminInput {
@@ -21,6 +22,15 @@ export class GrantThreadAdminInput {
 
   @Field({ nullable: true })
   suggestedUserId?: string;
+}
+
+@InputType()
+export class RevokeThreadAdminInput {
+  @Field(() => ID)
+  threadId!: string;
+
+  @Field(() => ID)
+  authorId!: string;
 }
 
 @Resolver()
@@ -39,9 +49,9 @@ export class ThreadAdminResolver {
     );
   }
 
-  @Mutation(() => Boolean)
+@Mutation(() => Boolean)
   async revokeThreadAdmin(
-    @Arg("data") data: ThreadQueryInput,
+    @Arg("data") data: RevokeThreadAdminInput,
     @Ctx() ctx: GraphQLContext
   ) {
     if (!ctx.user) throw new Error("Not authenticated");

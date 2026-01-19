@@ -2,18 +2,17 @@ import { Post } from "../entities/Post";
 import { User } from "../entities/User";
 import { Thread } from "../entities/Thread";
 import { PostsDao } from "../dao/posts.dao";
-import { ThreadAdminDao } from "../dao/threadAdmin.dao";
 import { UsersDao } from "../dao/users.dao";
 import { ThreadsDao } from "../dao/threads.dao";
-import { UserRole } from "../graphql/enums/UserRole";
 import { DeepPartial } from "typeorm";
 import { CreatePostInput, returnedPost, PostQueryInput, UpdatePostInput, UpdatePostPinnedInput} from "../resolvers/Post";
+import { PermissionsService } from "../services/permissions.service";
 
 export class PostsModel {
   private dao = new PostsDao();
   private usersDao = new UsersDao();
   private threadsDao = new ThreadsDao();
-  private threadAdminDao = new ThreadAdminDao();
+  private permissionsService = new PermissionsService();
 
   // CREATE POST
   async createPost(data: CreatePostInput, userId: string): Promise<returnedPost> {
@@ -95,25 +94,8 @@ export class PostsModel {
     const post = await this.dao.findById(data.postId);
     if (!post) throw new Error("Post not found");
 
-    const user = await this.usersDao.findById(userId);
-    if (!user) throw new Error("User not found");
+    await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "update this post");
 
-    const isAuthor = post.author.id === userId;
-    const isGlobalAdmin = user.role === UserRole.ADMIN;
-
-    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
-      userId,
-      post.thread.id
-    );
-    
-    if(isThreadAdmin.revokedAt){
-      throw new Error(`Your privilege as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
-    }
-    if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
-      throw new Error("No permission to update this post");
-    }
-
-    // Build the update payload — only include fields the user is allowed to edit
     const updatePayload: DeepPartial<Post> = {};
     if (data.content !== undefined) updatePayload.content = data.content;
     if (data.type !== undefined) updatePayload.type = data.type;
@@ -136,24 +118,7 @@ export class PostsModel {
     const post = await this.dao.findById(postId);
     if (!post) throw new Error("Post not found");
 
-    const user = await this.usersDao.findById(userId);
-    if (!user) throw new Error("User not found");
-
-    const isAuthor = post.author.id === userId;
-    const isGlobalAdmin = user.role === UserRole.ADMIN;
-
-    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
-      userId,
-      post.thread.id
-    );
-    
-    if(isThreadAdmin.revokedAt){
-      throw new Error(`Your privilege as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
-    }
-    
-    if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
-      throw new Error("No permission to delete this post");
-    }
+await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "delete this post");
 
     return this.dao.deletePost(postId);
   }
@@ -172,26 +137,7 @@ export class PostsModel {
     if (!thread) {
       throw new Error("Thread not found");
     }
-    const user = await this.usersDao.findById(userId);
-    if (!user) {
-      throw new Error("User not found");
-    }
-  
-    const isAuthor = post.author.id === userId;
-    const isGlobalAdmin = user.role === UserRole.ADMIN;
-
-    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
-      userId,
-      post.thread.id
-    );
-    
-    if(isThreadAdmin.revokedAt){
-      throw new Error(`Your privilege as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
-    }
-    
-    if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
-      throw new Error("No permission to update this post");
-    }
+await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "update this post");
   
     if(!data.isPinned){
       throw new Error("Select pin to update")

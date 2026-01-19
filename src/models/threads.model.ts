@@ -10,20 +10,21 @@ import {
  } from "../resolvers/Thread";
 import { UsersDao } from "../dao/users.dao";
 import { PostsDao } from "../dao/posts.dao";
-import { UserRole } from "../graphql/enums/UserRole";
+import { PermissionsService } from "../services/permissions.service";
 
 export class ThreadsModel {
     private readonly dao: ThreadsDao;
     private readonly usersDao: UsersDao;
     private readonly postsDao: PostsDao;
+    private readonly permissionsService: PermissionsService;
 
      constructor() {
         this.dao = new ThreadsDao();
         this.usersDao = new UsersDao();
         this.postsDao = new PostsDao();
+        this.permissionsService = new PermissionsService();
      }
 
-     //GET Threads
     async getThread(data: ThreadQueryInput): 
       Promise<returnedThread | null> 
     {
@@ -53,7 +54,6 @@ export class ThreadsModel {
       };
     }
 
-     //listAllThreads
     async listAllThreads (userId: string): Promise<returnedThread[] | null>
     {
       const user = await this.usersDao.findById(userId);
@@ -64,7 +64,6 @@ export class ThreadsModel {
       return threads
     }
 
-     //ListThreadByUsers
     async listThreadsByUser (userId: string, userIdContext: string): Promise<returnedThread[] | null>
     {
       const user = await this.usersDao.findById(userIdContext);
@@ -73,7 +72,7 @@ export class ThreadsModel {
         throw new Error("User not found");
       }
 
-      const isAdmin = user.role === UserRole.ADMIN;
+      const isAdmin = await this.permissionsService.checkGlobalAdmin(userId);
       if (!isAdmin || user.id !== userId ){
         throw new Error("You do not have permission to see all threads listed by user.")
       }
@@ -82,12 +81,10 @@ export class ThreadsModel {
       return threads
     }
 
-     //CREATE THREAD
     async createThread(
      input: CreateThreadInput,
      authorId: string
     ): Promise<returnedThread> {
-        // 1. Fetch author
       const author = await this.usersDao.findById(authorId);
       if (!author) throw new Error("User not found");
 
@@ -116,7 +113,6 @@ export class ThreadsModel {
       };
     }
 
-    // DELETE Thread
     async deleteThread(id: string, userId: string): Promise<boolean> {
       const thread = await this.dao.findById(id);
 
@@ -131,9 +127,7 @@ export class ThreadsModel {
       }
 
       const isOwner = thread.author.id === userId;
-      const isAdmin =
-        user.role === UserRole.ADMIN ||
-        user.role === UserRole.THREAD_ADMIN;
+      const isAdmin = await this.permissionsService.checkAdminOrThreadAdmin(userId);
 
       if (!isAdmin && !isOwner) {
         throw new Error("The user has no permission to delete this thread");
@@ -143,7 +137,6 @@ export class ThreadsModel {
     }
 
 
-    //UpdateThread
     async editThread(
     data: UpdateThreadInput,
     userId: string
@@ -161,9 +154,7 @@ export class ThreadsModel {
       }
 
       const isOwner = thread.author.id === userId;
-      const isAdmin =
-        user.role === UserRole.ADMIN ||
-        user.role === UserRole.THREAD_ADMIN;
+      const isAdmin = await this.permissionsService.checkAdminOrThreadAdmin(userId);
 
       if (!isAdmin && !isOwner) {
         throw new Error("The user has no permission to edit this thread");
@@ -172,8 +163,7 @@ export class ThreadsModel {
       return this.dao.updateThread(data.threadId, data);
     }
 
-    //lock thread or unlock thread
-    //lock or unlock pin
+   
     async threadPinAndLockToggler(
       data: UpdateThreadPinOrLockInput,
       userId: string
@@ -191,9 +181,7 @@ export class ThreadsModel {
       }
 
       const isOwner = thread.author.id === userId;
-      const isAdmin =
-        user.role === UserRole.ADMIN ||
-        user.role === UserRole.THREAD_ADMIN;
+      const isAdmin = await this.permissionsService.checkAdminOrThreadAdmin(userId);
 
       if (!isAdmin && !isOwner) {
         throw new Error("The user has no permission to edit this thread");

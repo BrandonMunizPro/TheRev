@@ -49,4 +49,50 @@ export class ThreadAdminDao {
   return result[0];
 }
 
+  async revokeThreadAdmin(
+    userId: string,
+    threadId: string
+  ): Promise<ThreadAdmin> {
+    const result = await AppDataSource.query(
+      `
+      UPDATE thread_admin
+      SET "revokedAt" = NOW()
+      WHERE "userId" = $1
+        AND "threadId" = $2
+        AND "revokedAt" IS NULL
+      RETURNING *
+      `,
+      [userId, threadId]
+    );
+    return result[0];
+  }
+
+  async listAdminsForThread(threadId: string): Promise<ThreadAdmin[]> {
+    const result = await AppDataSource.query(
+      `
+      SELECT *
+      FROM thread_admin
+      WHERE "threadId" = $1
+        AND "revokedAt" IS NULL
+      ORDER BY "createdAt" ASC
+      `,
+      [threadId]
+    );
+    return result;
+  }
+
+  async listThreadsForUser(userId: string): Promise<ThreadAdmin[]> {
+    const result = await AppDataSource.query(
+      `
+      SELECT *
+      FROM thread_admin
+      WHERE "userId" = $1
+        AND "revokedAt" IS NULL
+      ORDER BY "createdAt" ASC
+      `,
+      [userId]
+    );
+    return result;
+  }
+
 }
