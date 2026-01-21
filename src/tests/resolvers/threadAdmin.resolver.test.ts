@@ -1,6 +1,6 @@
-import { ThreadAdminResolver } from '../../resolvers/threadPermission';
+import { ThreadAdminResolver } from '../../resolvers/ThreadPermissions';
 import { ThreadAdminModel } from '../../models/threadAdmin.model';
-import { GrantThreadAdminInput, RevokeThreadAdminInput } from '../../resolvers/threadPermission';
+import { GrantThreadAdminInput, RevokeThreadAdminInput } from '../../resolvers/ThreadPermissions';
 import { ThreadQueryInput } from '../../resolvers/Thread';
 import { GraphQLContext } from '../../graphql/context';
 

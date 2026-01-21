@@ -1,7 +1,5 @@
 import { ThreadAdminDao } from "../dao/threadAdmin.dao";
-import { UsersDao } from "../dao/users.dao";
-import { ThreadsDao } from "../dao/threads.dao";
-import { GrantThreadAdminInput, RevokeThreadAdminInput } from "../resolvers/threadPermission";
+import { GrantThreadAdminInput, RevokeThreadAdminInput } from "../resolvers/ThreadPermissions";
 import { ThreadQueryInput } from "../resolvers/Thread";
 import { ThreadAdmin } from "../entities/ThreadAdmin";
 import { PermissionsService } from "../services/permissionsService";

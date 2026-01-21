@@ -1,12 +1,12 @@
 import { Thread } from "../entities/Thread";
 import { ThreadsDao } from "../dao/threads.dao";
 import { 
-    CreateThreadInput, 
-    UpdateThreadInput, 
-    ThreadQueryInput,
-    UpdateThreadPinOrLockInput,
-    returnedThread,
-    returnedThreadWithLockAndPins
+  CreateThreadInput, 
+  UpdateThreadInput, 
+  ThreadQueryInput,
+  UpdateThreadPinOrLockInput,
+  returnedThread,
+  returnedThreadWithLockAndPins
  } from "../resolvers/Thread";
 import { UsersDao } from "../dao/users.dao";
 import { PostsDao } from "../dao/posts.dao";
@@ -25,26 +25,26 @@ export class ThreadsModel {
         this.permissionsService = new PermissionsService();
      }
 
-    async getThread(data: ThreadQueryInput): 
-      Promise<returnedThread | null> 
-    {
-      if (!data.id) {
-        throw new Error("Please provide ThreadId");
-      }
-   
-      let thread: Thread | null = null;
-      thread = await this.dao.findById(data.id);
-      if (!thread) return null;
-   
-      return {
-        id: thread.id,
-        author: thread.author,
-        title: thread.title,
-        posts: thread.posts,
-        createdAt: thread.createdAt,
-        updatedAt: thread.updatedAt,
-      };
+  async getThread(data: ThreadQueryInput): 
+    Promise<returnedThread | null> 
+  {
+    if (!data.id) {
+      throw new Error("Please provide ThreadId");
     }
+   
+    let thread: Thread | null = null;
+    thread = await this.dao.findById(data.id);
+    if (!thread) return null;
+   
+    return {
+      id: thread.id,
+      author: thread.author,
+      title: thread.title,
+      posts: thread.posts,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt,
+    };
+  }
 
     async listAllThreads (userId: string): Promise<returnedThread[] | null>
     {

@@ -6,7 +6,7 @@ import { createYoga } from "graphql-yoga";
 import { AppDataSource } from "./data-source";
 import { buildSchema } from "type-graphql";
 import { UserResolver } from "./resolvers/User";
-import { ThreadAdminResolver } from "./resolvers/threadPermission";
+import { ThreadAdminResolver } from "./resolvers/ThreadPermissions";
 import { GraphQLContext } from "./graphql/context";
 
 const app = express();

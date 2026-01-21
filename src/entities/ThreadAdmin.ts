@@ -34,7 +34,8 @@ export class ThreadAdmin {
   @CreateDateColumn()
   createdAt!: Date;
 
-  @Field({ nullable: true })
+  @Field(() => Date, { nullable: true })
   @DeleteDateColumn()
   revokedAt?: Date | null;
+
 }

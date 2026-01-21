@@ -118,7 +118,7 @@ export class PostsModel {
     const post = await this.dao.findById(postId);
     if (!post) throw new Error("Post not found");
 
-await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "delete this post");
+    await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "delete this post");
 
     return this.dao.deletePost(postId);
   }

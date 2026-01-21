@@ -1,7 +1,6 @@
 import { AppDataSource } from "../data-source";
 import { ThreadAdmin } from "../entities/ThreadAdmin";
-import { User } from "../entities/User";
-import { Thread } from "../entities/Thread";
+
 
 export class ThreadAdminDao {
  

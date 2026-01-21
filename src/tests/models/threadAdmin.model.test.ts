@@ -2,7 +2,7 @@ import { ThreadAdminModel } from '../../models/threadAdmin.model';
 import { ThreadAdminDao } from '../../dao/threadAdmin.dao';
 import { PermissionsService } from '../../services/permissionsService';
 import { UsersDao } from '../../dao/users.dao';
-import { GrantThreadAdminInput, RevokeThreadAdminInput } from '../../resolvers/threadPermission';
+import { GrantThreadAdminInput, RevokeThreadAdminInput } from '../../resolvers/ThreadPermissions';
 import { ThreadQueryInput } from '../../resolvers/Thread';
 
 jest.mock('../../dao/threadAdmin.dao');
