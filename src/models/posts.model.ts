@@ -6,7 +6,7 @@ import { UsersDao } from "../dao/users.dao";
 import { ThreadsDao } from "../dao/threads.dao";
 import { DeepPartial } from "typeorm";
 import { CreatePostInput, returnedPost, PostQueryInput, UpdatePostInput, UpdatePostPinnedInput} from "../resolvers/Post";
-import { PermissionsService } from "../services/permissions.service";
+import { PermissionsService } from "../services/permissionsService";
 
 export class PostsModel {
   private dao = new PostsDao();
@@ -137,7 +137,7 @@ await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "de
     if (!thread) {
       throw new Error("Thread not found");
     }
-await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "update this post");
+    await this.permissionsService.checkThreadPermissions(post.thread.id, userId, "update this post");
   
     if(!data.isPinned){
       throw new Error("Select pin to update")

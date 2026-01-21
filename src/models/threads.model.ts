@@ -10,7 +10,7 @@ import {
  } from "../resolvers/Thread";
 import { UsersDao } from "../dao/users.dao";
 import { PostsDao } from "../dao/posts.dao";
-import { PermissionsService } from "../services/permissions.service";
+import { PermissionsService } from "../services/permissionsService";
 
 export class ThreadsModel {
     private readonly dao: ThreadsDao;
@@ -28,20 +28,12 @@ export class ThreadsModel {
     async getThread(data: ThreadQueryInput): 
       Promise<returnedThread | null> 
     {
-   
-      if (!data) {
-        throw new Error("Please provide ThreadId or Author's UserId");
+      if (!data.id) {
+        throw new Error("Please provide ThreadId");
       }
    
       let thread: Thread | null = null;
-   
-      if (data.id) {
-        thread = await this.dao.findById(data.id);
-      }
-      if (data.authorId){
-        thread = await this.dao.findByUserId(data.authorId);
-      }
-   
+      thread = await this.dao.findById(data.id);
       if (!thread) return null;
    
       return {

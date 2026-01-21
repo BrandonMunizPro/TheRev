@@ -4,7 +4,7 @@ import { ThreadsDao } from "../dao/threads.dao";
 import { GrantThreadAdminInput, RevokeThreadAdminInput } from "../resolvers/threadPermission";
 import { ThreadQueryInput } from "../resolvers/Thread";
 import { ThreadAdmin } from "../entities/ThreadAdmin";
-import { PermissionsService } from "../services/permissions.service";
+import { PermissionsService } from "../services/permissionsService";
 
 
 export class ThreadAdminModel {
