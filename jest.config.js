@@ -10,6 +10,7 @@ export default {
     'src/dao/**/*.ts',
     'src/models/**/*.ts',
     'src/resolvers/**/*.ts',
+    'src/services/**/*.ts',
     '!src/**/*.d.ts',
     '!src/**/*.test.ts',
   ],

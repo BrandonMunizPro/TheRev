@@ -1,16 +1,11 @@
 // resolvers/threadAdmin.resolver.ts
-import {
-  Resolver,
-  Mutation,
-  Query,
-  Arg,
-  Ctx,
-} from "type-graphql";
-import { ThreadAdmin } from "../entities/ThreadAdmin";
-import { GraphQLContext } from "../graphql/context";
-import { ThreadAdminModel } from "../models/threadAdmin.model";
-import { InputType, Field, ID } from "type-graphql";
-import { ThreadQueryInput } from "./Thread";
+import { Resolver, Mutation, Query, Arg, Ctx } from 'type-graphql';
+import { ThreadAdmin } from '../entities/ThreadAdmin';
+import { GraphQLContext } from '../graphql/context';
+import { ThreadAdminModel } from '../models/threadAdmin.model';
+import { InputType, Field, ID } from 'type-graphql';
+import { ThreadQueryInput } from './Thread';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 @InputType()
 export class GrantThreadAdminInput {
@@ -39,46 +34,35 @@ export class ThreadAdminResolver {
 
   @Mutation(() => ThreadAdmin)
   async grantThreadAdmin(
-    @Arg("data") data: GrantThreadAdminInput,
+    @Arg('data') data: GrantThreadAdminInput,
     @Ctx() ctx: GraphQLContext
   ) {
-    if (!ctx.user) throw new Error("Not authenticated");
-    return this.model.grantAdmin(
-      data,
-      ctx.user.userId
-    );
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
+    return this.model.grantAdmin(data, ctx.user.userId);
   }
 
-@Mutation(() => Boolean)
+  @Mutation(() => Boolean)
   async revokeThreadAdmin(
-    @Arg("data") data: RevokeThreadAdminInput,
+    @Arg('data') data: RevokeThreadAdminInput,
     @Ctx() ctx: GraphQLContext
   ) {
-    if (!ctx.user) throw new Error("Not authenticated");
-    await this.model.revokeAdmin(
-      data,
-      ctx.user.userId
-    );
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
+    await this.model.revokeAdmin(data, ctx.user.userId);
     return true;
   }
 
   @Query(() => [ThreadAdmin])
   async threadAdmins(
-    @Arg("data") data: ThreadQueryInput,
+    @Arg('data') data: ThreadQueryInput,
     @Ctx() ctx: GraphQLContext
   ) {
-    if (!ctx.user) throw new Error("Not authenticated");
-    return this.model.listAdminsForThread(
-      data, 
-      ctx.user.userId
-    );
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
+    return this.model.listAdminsForThread(data, ctx.user.userId);
   }
 
   @Query(() => [ThreadAdmin])
-  async myAdminThreads(
-    @Ctx() ctx: GraphQLContext
-  ) {
-    if (!ctx.user) throw new Error("Not authenticated");
+  async myAdminThreads(@Ctx() ctx: GraphQLContext) {
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
     return this.model.listThreadsForUser(ctx.user.userId);
   }
 }

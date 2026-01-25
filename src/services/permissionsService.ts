@@ -1,7 +1,8 @@
-import { ThreadAdminDao } from "../dao/threadAdmin.dao";
-import { UsersDao } from "../dao/users.dao";
-import { ThreadsDao } from "../dao/threads.dao";
-import { UserRole } from "../graphql/enums/UserRole";
+import { ThreadAdminDao } from '../dao/threadAdmin.dao';
+import { UsersDao } from '../dao/users.dao';
+import { ThreadsDao } from '../dao/threads.dao';
+import { UserRole } from '../graphql/enums/UserRole';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export interface PermissionResult {
   thread: any;
@@ -23,29 +24,39 @@ export class PermissionsService {
   }
 
   async checkThreadPermissions(
-    threadId: string, 
+    threadId: string,
     userId: string,
     action: string
   ): Promise<PermissionResult> {
     const thread = await this.threadsDao.findById(threadId);
     if (!thread) {
-      throw new Error("Thread not found");
+      throw ErrorHandler.threadNotFound(threadId, { action });
     }
 
     const user = await this.usersDao.findById(userId);
-    if (!user) throw new Error("User not found");
+    if (!user) throw ErrorHandler.userNotFound(userId, { action });
 
     const isAuthor = thread.author.id === userId;
     const isGlobalAdmin = user.role === UserRole.ADMIN;
-    
-    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(userId, threadId);
-        
-    if(isThreadAdmin && isThreadAdmin.revokedAt){
-      throw new Error(`Your privilege as an admin on this thread was revoked on ${isThreadAdmin.revokedAt.toISOString()}`);
+
+    const isThreadAdmin = await this.threadAdminDao.isThreadAdmin(
+      userId,
+      threadId
+    );
+
+    if (isThreadAdmin && isThreadAdmin.revokedAt) {
+      throw ErrorHandler.permissionRevoked(isThreadAdmin.revokedAt, {
+        threadId,
+        userId,
+        action,
+      });
     }
-        
+
     if (!isAuthor && !isGlobalAdmin && !isThreadAdmin) {
-      throw new Error(`You don't have permission to ${action} for this Thread`);
+      throw ErrorHandler.insufficientPermissions(action, 'this Thread', {
+        threadId,
+        userId,
+      });
     }
 
     return { thread, user, isAuthor, isGlobalAdmin, isThreadAdmin };
@@ -53,7 +64,7 @@ export class PermissionsService {
 
   async checkUserExists(userId: string): Promise<any> {
     const user = await this.usersDao.findById(userId);
-    if (!user) throw new Error("User not found");
+    if (!user) throw ErrorHandler.userNotFound(userId);
     return user;
   }
 
@@ -67,7 +78,19 @@ export class PermissionsService {
     return user.role === UserRole.ADMIN || user.role === UserRole.THREAD_ADMIN;
   }
 
-  hasPermission(isAuthor: boolean, isGlobalAdmin: boolean, isThreadAdmin: any): boolean {
-    return isAuthor || isGlobalAdmin || (isThreadAdmin && !isThreadAdmin.revokedAt);
+  hasPermission(
+    isAuthor: boolean,
+    isGlobalAdmin: boolean,
+    isThreadAdmin: { revokedAt?: Date | null } | null
+  ): boolean {
+    if (isAuthor || isGlobalAdmin) {
+      return true;
+    }
+
+    if (!isThreadAdmin) {
+      return false;
+    }
+
+    return !isThreadAdmin.revokedAt;
   }
 }
