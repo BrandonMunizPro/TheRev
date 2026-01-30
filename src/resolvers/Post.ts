@@ -1,9 +1,9 @@
-import { Resolver, Query, Mutation, Arg, Ctx } from "type-graphql";
-import { Post } from "../entities/Post";
-import { PostsModel } from "../models/posts.model";
-import { InputType, Field, ID } from "type-graphql";
-import { GraphQLContext } from "../graphql/context";
-import { PostType } from "../graphql/enums/PostType";
+import { Resolver, Query, Mutation, Arg, Ctx } from 'type-graphql';
+import { Post } from '../entities/Post';
+import { PostsModel } from '../models/posts.model';
+import { InputType, Field, ID } from 'type-graphql';
+import { GraphQLContext } from '../graphql/context';
+import { PostType } from '../graphql/enums/PostType';
 
 // Input Types
 @InputType()
@@ -17,44 +17,29 @@ export class CreatePostInput {
   @Field(() => PostType)
   type!: PostType;
 
-  @Field({ nullable: true })
-  metadata?: {
-    thumbnailUrl?: string;
-    duration?: number;
-    provider?: "youtube" | "vimeo";
-  };
+  @Field(() => String, { nullable: true })
+  metadata?: Record<string, any>;
 }
 
 @InputType()
 export class UpdatePostInput {
-  @Field(() => ID)
-  postId!: string;
-
   @Field({ nullable: true })
   content?: string;
 
-  @Field({ nullable: true })
+  @Field(() => PostType, { nullable: true })
   type?: PostType;
 
-  @Field({ nullable: true })
-  metadata?: {
-    thumbnailUrl?: string;
-    duration?: number;
-    provider?: "youtube" | "vimeo";
-  };
+  @Field(() => String, { nullable: true })
+  metadata?: Record<string, any>;
 }
-
 
 @InputType()
 export class UpdatePostPinnedInput {
   @Field(() => ID)
   postId!: string;
 
-  @Field({ nullable: true })
-  content?: string;
-  
   @Field()
-  isPinned?: boolean;
+  isPinned!: boolean;
 }
 
 @InputType()
@@ -64,18 +49,27 @@ export class PostQueryInput {
 
   @Field(() => ID, { nullable: true })
   threadId?: string;
+
+  @Field(() => Number, { nullable: true })
+  limit?: number;
+
+  @Field(() => Number, { nullable: true })
+  offset?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  pinnedOnly?: boolean;
 }
 
 export type returnedPost = {
   id?: string;
-  type: PostType
+  type: PostType;
   content?: string;
   isPinned?: boolean;
   author?: any; // User type
   thread?: any; // Thread type
   createdAt?: Date;
   updatedAt?: Date;
-  metadata?: JSON
+  metadata?: JSON;
 };
 
 // Resolver
@@ -86,60 +80,82 @@ export class PostResolver {
   // CREATE POST
   @Mutation(() => Post)
   async createPost(
-    @Arg("data") data: CreatePostInput,
+    @Arg('input') data: CreatePostInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost> {
-    if (!ctx.user) throw new Error("Not authenticated");
+    if (!ctx.user) throw new Error('Authentication required');
     return this.model.createPost(data, ctx.user.userId);
   }
 
   // GET SINGLE POST
   @Query(() => Post, { nullable: true })
-  async getPost(
-    @Arg("data") data: PostQueryInput,
+  async post(
+    @Arg('id', () => ID) id: string,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost | null> {
-    if (!ctx.user) throw new Error("Not authenticated");
-    return this.model.getPost(data);
+    // Read operations don't require authentication
+    return this.model.getPost({ id });
   }
 
   // LIST POSTS BY THREAD
   @Query(() => [Post])
-  async listPostsByThread(
-    @Arg("data") data: PostQueryInput,
-    @Ctx() ctx: GraphQLContext
+  async postsByThread(
+    @Arg('threadId', () => ID) threadId: string,
+    @Arg('limit', () => Number, { nullable: true }) limit?: number,
+    @Arg('offset', () => Number, { nullable: true }) offset?: number,
+    @Ctx() ctx?: GraphQLContext
   ): Promise<returnedPost[] | null> {
-    if (!ctx.user) throw new Error("Not authenticated");
-    return this.model.listPostsByThread(data);
+    // Read operations don't require authentication
+    return this.model.listPostsByThread({ threadId, limit, offset });
+  }
+
+  // GET PINNED POSTS
+  @Query(() => [Post])
+  async pinnedPosts(
+    @Arg('threadId', () => ID, { nullable: true }) threadId?: string,
+    @Ctx() ctx?: GraphQLContext
+  ): Promise<returnedPost[] | null> {
+    if (!threadId) {
+      // If no threadId provided, return all pinned posts from all threads
+      // This would require a different DAO method, for now return empty array
+      return [];
+    }
+    return this.model.listPostsByThread({
+      threadId,
+      limit: undefined,
+      offset: undefined,
+      pinnedOnly: true,
+    });
   }
 
   // UPDATE POST
   @Mutation(() => Post)
   async updatePost(
-    @Arg("data") data: UpdatePostInput,
+    @Arg('id', () => ID) id: string,
+    @Arg('input') data: UpdatePostInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost> {
-    if (!ctx.user) throw new Error("Not authenticated");
-    return this.model.updatePost(data, ctx.user.userId);
+    if (!ctx.user) throw new Error('Authentication required');
+    return this.model.updatePost(data, ctx.user.userId, id);
   }
 
   // DELETE POST
   @Mutation(() => Boolean)
   async deletePost(
-    @Arg("postId", () => ID) postId: string,
+    @Arg('id', () => ID) id: string,
     @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
-    if (!ctx.user) throw new Error("Not authenticated");
-    return this.model.deletePost(postId, ctx.user.userId);
+    if (!ctx.user) throw new Error('Authentication required');
+    return this.model.deletePost(id, ctx.user.userId);
   }
 
+  // UPDATE POST PIN
   @Mutation(() => Post)
-  async updatePin(
-    @Arg("data") data: UpdatePostInput,
+  async updatePostPin(
+    @Arg('input') data: UpdatePostPinnedInput,
     @Ctx() ctx: GraphQLContext
-  ) : Promise<returnedPost | null> {
-    if (!ctx.user) throw new Error("Not authenticated");
+  ): Promise<returnedPost | null> {
+    if (!ctx.user) throw new Error('Authentication required');
     return this.model.updatePostPin(data, ctx.user.userId);
   }
-
 }

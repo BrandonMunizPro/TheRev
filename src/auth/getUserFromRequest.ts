@@ -1,11 +1,11 @@
-import jwt from "jsonwebtoken";
-import { UserRole } from "../graphql/enums/UserRole";
+import jwt from 'jsonwebtoken';
+import { UserRole } from '../graphql/enums/UserRole';
 
-export function getUserFromRequest(request: Request) {
-  const authHeader = request.headers.get("authorization");
+export function getUserFromRequest(request: any) {
+  const authHeader = request.headers.authorization;
   if (!authHeader) return undefined;
 
-  const token = authHeader.replace("Bearer ", "");
+  const token = authHeader.replace('Bearer ', '');
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY!) as {
@@ -17,4 +17,3 @@ export function getUserFromRequest(request: Request) {
     return undefined;
   }
 }
-

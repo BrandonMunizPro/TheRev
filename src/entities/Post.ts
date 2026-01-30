@@ -5,44 +5,45 @@ import {
   ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
-} from "typeorm";
-import { Field, ID, ObjectType } from "type-graphql";
-import { User } from "./User";
-import { Thread } from "./Thread";
-import { PostType } from "../graphql/enums/PostType";
+} from 'typeorm';
+import { Field, ID, ObjectType } from 'type-graphql';
+import { User } from './User';
+import { Thread } from './Thread';
+import { PostType } from '../graphql/enums/PostType';
 
 @ObjectType()
 @Entity()
 export class Post {
   @Field(() => ID)
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Field(() => PostType)
-  @Column({ type: "enum", enum: PostType })
+  @Column({ type: 'enum', enum: PostType })
   type!: PostType;
 
   @Field()
-  @Column("text")
+  @Column('text')
   content!: string;
-  
+
   @Field(() => Boolean)
   @Column({ default: false })
   isPinned!: boolean;
 
-  @Column("jsonb", { nullable: true })
+  @Field(() => String, { nullable: true })
+  @Column('jsonb', { nullable: true })
   metadata?: {
     thumbnailUrl?: string;
     duration?: number;
-    provider?: "youtube" | "vimeo";
+    provider?: 'youtube' | 'vimeo';
   };
 
   @Field(() => User)
-  @ManyToOne(() => User, { onDelete: "CASCADE" })
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
   author!: User;
 
   @Field(() => Thread)
-  @ManyToOne(() => Thread, (thread) => thread.posts, { onDelete: "CASCADE" })
+  @ManyToOne(() => Thread, (thread) => thread.posts, { onDelete: 'CASCADE' })
   thread!: Thread;
 
   @Field()

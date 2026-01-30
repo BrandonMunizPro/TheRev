@@ -1,7 +1,8 @@
-import { InputType, Field, ID } from "type-graphql";
-import { Resolver, Query, Mutation, Arg } from "type-graphql";
-import { User } from "../entities/User";
-import { UsersModel } from "../models/users.model";
+import { InputType, Field, ID } from 'type-graphql';
+import { Resolver, Query, Mutation, Arg } from 'type-graphql';
+import { User } from '../entities/User';
+import { UsersModel } from '../models/users.model';
+import { IsOptional, IsString, IsEmail } from 'class-validator';
 
 //WE NEED TO ADD ROLES TO USER AS WELL
 @InputType()
@@ -26,7 +27,6 @@ export class CreateUserInput {
 
   @Field({ nullable: true })
   ideology?: string;
-
 }
 
 @InputType()
@@ -51,7 +51,6 @@ export class EditUserInput {
 
   @Field({ nullable: true })
   ideology?: string;
-
 }
 
 @InputType()
@@ -63,6 +62,24 @@ export class GetUserInput {
   userName?: string;
 
   @Field({ nullable: true })
+  email?: string;
+}
+
+export type UserIdentifier = {
+  userName?: string;
+  email?: string;
+};
+
+@InputType()
+export class UserIdentifierInput {
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  userName?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsEmail()
   email?: string;
 }
 
@@ -82,7 +99,6 @@ export type returnedUser = {
   updatedAt?: Date;
 };
 
-
 @Resolver()
 export class UserResolver {
   private model = new UsersModel();
@@ -95,37 +111,31 @@ export class UserResolver {
 
   // GET USER (by id, username, or email)
   @Query(() => User, { nullable: true })
-  async user(
-  @Arg("data") data: GetUserInput
-  ): Promise<returnedUser | null> {
+  async user(@Arg('data') data: GetUserInput): Promise<returnedUser | null> {
     if (!data.id && !data.userName && !data.email) {
-      throw new Error("Please provide either id, username, or email.");
+      throw new Error('Please provide either id, username, or email.');
     }
     return this.model.getUser(data);
   }
 
   // CREATE USER
   @Mutation(() => User)
-  async createUser(
-    @Arg("data") data: CreateUserInput
-  ): Promise<returnedUser> {
+  async createUser(@Arg('data') data: CreateUserInput): Promise<returnedUser> {
     return this.model.registerUser(data);
   }
 
   // EDIT USER
   @Mutation(() => User)
   async editUser(
-    @Arg("id", () => ID) id: string,
-    @Arg("data") data: EditUserInput
+    @Arg('id', () => ID) id: string,
+    @Arg('data') data: EditUserInput
   ): Promise<returnedUser> {
     return this.model.editUser(id, data);
   }
 
   // DELETE USER
   @Mutation(() => Boolean)
-  async deleteUser(
-    @Arg("id", () => ID) id: string
-  ): Promise<boolean> {
+  async deleteUser(@Arg('id', () => ID) id: string): Promise<boolean> {
     return this.model.deleteUser(id);
   }
 }

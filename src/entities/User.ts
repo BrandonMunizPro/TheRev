@@ -1,18 +1,18 @@
-import { 
-  Entity, 
-  PrimaryGeneratedColumn, 
-  Column, 
-  CreateDateColumn, 
-  UpdateDateColumn 
-} from "typeorm";
-import { ObjectType, Field, ID } from "type-graphql";
-import { UserRole } from "../graphql/enums/UserRole";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { ObjectType, Field, ID } from 'type-graphql';
+import { UserRole } from '../graphql/enums/UserRole';
 
 @ObjectType()
 @Entity()
 export class User {
   @Field(() => ID)
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Field()
@@ -22,7 +22,7 @@ export class User {
   @Field()
   @Column()
   firstName!: string;
-  
+
   @Field()
   @Column()
   lastName!: string;
@@ -45,15 +45,14 @@ export class User {
   @Field({ nullable: true })
   @Column({ nullable: true })
   profilePicUrl?: string;
-  
+
   @Field(() => UserRole)
   @Column({
-    type: "enum",
+    type: 'enum',
     enum: UserRole,
     default: UserRole.STANDARD,
   })
   role!: UserRole;
-
 
   @Field()
   @CreateDateColumn()
