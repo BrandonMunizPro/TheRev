@@ -20,7 +20,6 @@ export class PostsModel {
   private threadsDao = new ThreadsDao();
   private permissionsService = new PermissionsService();
 
-  // CREATE POST
   async createPost(
     data: CreatePostInput,
     userId: string
@@ -57,7 +56,6 @@ export class PostsModel {
     };
   }
 
-  // GET POST
   async getPost(data: PostQueryInput): Promise<returnedPost | null> {
     if (!data) {
       throw new Error("Please provide ThreadId or Author's UserId");
@@ -82,7 +80,6 @@ export class PostsModel {
     };
   }
 
-  // LIST POSTS BY THREAD
   async listPostsByThread(data: PostQueryInput): Promise<returnedPost[]> {
     if (!data?.threadId) {
       throw new Error('threadId is required');
@@ -95,7 +92,6 @@ export class PostsModel {
       filteredPosts = allPosts.filter((post) => post.isPinned);
     }
 
-    // Apply pagination if specified
     let paginatedPosts = filteredPosts;
     if (data.limit !== undefined || data.offset !== undefined) {
       const offset = data.offset || 0;
@@ -115,7 +111,6 @@ export class PostsModel {
     }));
   }
 
-  // UPDATE POST
   async updatePost(
     data: UpdatePostInput,
     userId: string,

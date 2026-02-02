@@ -103,13 +103,11 @@ export type returnedUser = {
 export class UserResolver {
   private model = new UsersModel();
 
-  // GET ALL USERS
   @Query(() => [User])
   async users(): Promise<User[]> {
     return this.model.getAllUsers();
   }
 
-  // GET USER (by id, username, or email)
   @Query(() => User, { nullable: true })
   async user(@Arg('data') data: GetUserInput): Promise<returnedUser | null> {
     if (!data.id && !data.userName && !data.email) {
@@ -118,13 +116,11 @@ export class UserResolver {
     return this.model.getUser(data);
   }
 
-  // CREATE USER
   @Mutation(() => User)
   async createUser(@Arg('data') data: CreateUserInput): Promise<returnedUser> {
     return this.model.registerUser(data);
   }
 
-  // EDIT USER
   @Mutation(() => User)
   async editUser(
     @Arg('id', () => ID) id: string,
@@ -133,7 +129,6 @@ export class UserResolver {
     return this.model.editUser(id, data);
   }
 
-  // DELETE USER
   @Mutation(() => Boolean)
   async deleteUser(@Arg('id', () => ID) id: string): Promise<boolean> {
     return this.model.deleteUser(id);

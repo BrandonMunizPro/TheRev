@@ -1,11 +1,10 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
-import bcrypt from "bcrypt";
+import { MigrationInterface, QueryRunner } from 'typeorm';
+import bcrypt from 'bcrypt';
 
 export class SeedNewUsers1670000000001 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Pre-hash passwords
-    const password1 = await bcrypt.hash("NewPass123!", 10);
-    const password2 = await bcrypt.hash("Bjornmaximus11$", 10);
+    const password1 = await bcrypt.hash('NewPass123!', 10);
+    const password2 = await bcrypt.hash('Bjornmaximus11$', 10);
 
     await queryRunner.query(`
       INSERT INTO "user" 

@@ -24,12 +24,10 @@ export class Fixtures {
     const threadRepository = AppDataSource.getRepository(Thread);
     const postRepository = AppDataSource.getRepository(Post);
 
-    // Clean up existing data
     await AppDataSource.query(
       'TRUNCATE TABLE "post", "thread", "user" RESTART IDENTITY CASCADE'
     );
 
-    // Create test users
     const hashedPassword = await bcrypt.hash(
       'password123',
       this.PASSWORD_HASH_ROUNDS
@@ -78,7 +76,6 @@ export class Fixtures {
       },
     ]);
 
-    // Create test threads
     const threads = await threadRepository.save([
       threadRepository.create({
         title: 'Climate Change Discussion',
@@ -102,7 +99,6 @@ export class Fixtures {
       }),
     ]);
 
-    // Create test posts
     const posts = await postRepository.save([
       postRepository.create({
         content:
@@ -155,7 +151,6 @@ export class Fixtures {
       await AppDataSource.initialize();
     }
 
-    // Clear all data using SQL queries to avoid foreign key constraints
     await AppDataSource.query(
       'TRUNCATE TABLE "post", "thread", "user", "thread_admin" RESTART IDENTITY CASCADE'
     );
@@ -168,7 +163,6 @@ export class Fixtures {
   }
 }
 
-// Helper functions for tests
 export const createTestUser = async (
   overrides: Partial<User> = {}
 ): Promise<User> => {

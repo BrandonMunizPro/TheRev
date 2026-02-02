@@ -1,4 +1,3 @@
-// resolvers/AuthResolver.ts
 import { Resolver, Mutation, Arg } from 'type-graphql';
 import { UsersModel } from '../models/users.model';
 import { returnedUser, UserIdentifierInput } from './User';

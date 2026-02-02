@@ -5,7 +5,6 @@ import { InputType, Field, ID } from 'type-graphql';
 import { GraphQLContext } from '../graphql/context';
 import { PostType } from '../graphql/enums/PostType';
 
-// Input Types
 @InputType()
 export class CreatePostInput {
   @Field()
@@ -72,12 +71,10 @@ export type returnedPost = {
   metadata?: JSON;
 };
 
-// Resolver
 @Resolver()
 export class PostResolver {
   private model = new PostsModel();
 
-  // CREATE POST
   @Mutation(() => Post)
   async createPost(
     @Arg('input') data: CreatePostInput,
@@ -87,7 +84,6 @@ export class PostResolver {
     return this.model.createPost(data, ctx.user.userId);
   }
 
-  // GET SINGLE POST
   @Query(() => Post, { nullable: true })
   async post(
     @Arg('id', () => ID) id: string,
@@ -97,7 +93,6 @@ export class PostResolver {
     return this.model.getPost({ id });
   }
 
-  // LIST POSTS BY THREAD
   @Query(() => [Post])
   async postsByThread(
     @Arg('threadId', () => ID) threadId: string,
@@ -109,7 +104,6 @@ export class PostResolver {
     return this.model.listPostsByThread({ threadId, limit, offset });
   }
 
-  // GET PINNED POSTS
   @Query(() => [Post])
   async pinnedPosts(
     @Arg('threadId', () => ID, { nullable: true }) threadId?: string,
@@ -128,7 +122,6 @@ export class PostResolver {
     });
   }
 
-  // UPDATE POST
   @Mutation(() => Post)
   async updatePost(
     @Arg('id', () => ID) id: string,
@@ -139,7 +132,6 @@ export class PostResolver {
     return this.model.updatePost(data, ctx.user.userId, id);
   }
 
-  // DELETE POST
   @Mutation(() => Boolean)
   async deletePost(
     @Arg('id', () => ID) id: string,
@@ -149,7 +141,6 @@ export class PostResolver {
     return this.model.deletePost(id, ctx.user.userId);
   }
 
-  // UPDATE POST PIN
   @Mutation(() => Post)
   async updatePostPin(
     @Arg('input') data: UpdatePostPinnedInput,

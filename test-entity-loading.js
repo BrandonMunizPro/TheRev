@@ -3,7 +3,6 @@ require('reflect-metadata');
 
 const path = require('path');
 
-// Test entity loading like in data-source.cjs
 function safeRequire(modulePath) {
   const module = require(modulePath);
   return module.default || module;
@@ -26,7 +25,6 @@ try {
   );
   console.log('✅ ThreadAdmin loaded:', !!ThreadAdmin, ThreadAdmin.name);
 
-  // Test TypeORM DataSource
   const { DataSource } = require('typeorm');
   const testDataSource = new DataSource({
     type: 'postgres',
@@ -34,7 +32,7 @@ try {
     port: parseInt(process.env.DB_PORT || '5432'),
     username: process.env.DB_USERNAME || 'postgres',
     password: process.env.DB_PASSWORD || 'Bjornmaximus11',
-    database: 'therev_test', 
+    database: 'therev_test',
     synchronize: true,
     logging: true,
     entities: [User, Post, Thread, ThreadAdmin],
@@ -44,7 +42,6 @@ try {
   await testDataSource.initialize();
   console.log('✅ Data source initialized successfully!');
 
-  // Check if metadata exists
   const userMeta = testDataSource.getMetadata('User');
   const postMeta = testDataSource.getMetadata('Post');
   const threadMeta = testDataSource.getMetadata('Thread');

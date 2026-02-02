@@ -1,13 +1,12 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
-import bcrypt from "bcrypt";
+import { MigrationInterface, QueryRunner } from 'typeorm';
+import bcrypt from 'bcrypt';
 
 export class SeedUsers1670000000000 implements MigrationInterface {
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // Pre-hash passwords
-        const password1 = await bcrypt.hash("Password123!", 10);
-        const password2 = await bcrypt.hash("Secret456!", 10);
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    const password1 = await bcrypt.hash('Password123!', 10);
+    const password2 = await bcrypt.hash('Secret456!', 10);
 
-        await queryRunner.query(`
+    await queryRunner.query(`
             INSERT INTO "user" 
             (id, "userName", "firstName", "lastName", email, password, bio, ideology, "profilePicUrl") 
             VALUES 
@@ -34,11 +33,11 @@ export class SeedUsers1670000000000 implements MigrationInterface {
                 'https://example.com/profiles/asmith.png'
             );
         `);
-    }
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
             DELETE FROM "user" WHERE "userName" IN ('jdoe', 'asmith');
         `);
-    }
+  }
 }

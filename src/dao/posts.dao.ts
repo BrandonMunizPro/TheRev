@@ -1,24 +1,26 @@
-import { AppDataSource } from "../data-source";
-import { Post } from "../entities/Post";
-import { DeepPartial } from "typeorm";
+import { AppDataSource } from '../data-source';
+import { Post } from '../entities/Post';
+import { DeepPartial } from 'typeorm';
 
 export class PostsDao {
   private repo = AppDataSource.getRepository(Post);
-
 
   async create(data: Partial<Post>): Promise<Post> {
     const post = this.repo.create(data);
     return this.repo.save(post);
   }
 
-  
   async createPostRaw(
     content: string,
     authorId: string,
     threadId: string,
     type: string,
     createdAt?: Date,
-    metadata?: { thumbnailUrl?: string; duration?: number; provider?: "youtube" | "vimeo" },
+    metadata?: {
+      thumbnailUrl?: string;
+      duration?: number;
+      provider?: 'youtube' | 'vimeo';
+    },
     isPinned: boolean = false
   ) {
     const result = await AppDataSource.query(
@@ -38,7 +40,7 @@ export class PostsDao {
       ]
     );
 
-    return result[0]; // return the inserted row
+    return result[0];
   }
 
   async updatePost(id: string, data: DeepPartial<Post>): Promise<Post> {
@@ -62,10 +64,10 @@ export class PostsDao {
           id: threadId,
         },
       },
-      relations: ["thread"],
+      relations: ['thread'],
     });
   }
-  
+
   async findById(id: string): Promise<Post | null> {
     return this.repo.findOne({ where: { id } });
   }

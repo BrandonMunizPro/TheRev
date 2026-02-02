@@ -34,7 +34,7 @@ services:
 ## 🔍 Best Practices
 
 1. **Always use** `npm run docker:test` for integration tests
-2. **Unit tests** can run locally with `npm run test:unit`
+2. **Unit tests** can ly with `npm run test:unit`
 3. **CI/CD** should use `npm run docker:test` in pipeline
 4. **Never commit** changes that bypass Docker enforcement
 

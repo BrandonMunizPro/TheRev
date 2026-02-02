@@ -10,7 +10,6 @@ console.log(
   path.resolve(__dirname, '../../entities')
 );
 
-// Helper function to load TypeScript entities using ts-node
 function loadEntities() {
   const entitiesDir = path.resolve(__dirname, '../../entities');
   const entityFiles = fs
@@ -24,10 +23,8 @@ function loadEntities() {
       const filePath = path.join(entitiesDir, file);
       console.log(`DEBUG: Loading entity from ${filePath}`);
 
-      // Use require to load the TypeScript file (now with ts-node registered)
       const entityModule = require(filePath);
 
-      // Try different ways to extract the entity class
       const entityClass =
         entityModule.default ||
         entityModule[file.replace('.ts', '')] ||
@@ -51,7 +48,6 @@ function loadEntities() {
   return entities;
 }
 
-// Create a single DataSource instance to use throughout tests
 const dataSource = new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST || 'localhost',
@@ -66,7 +62,7 @@ const dataSource = new DataSource({
   entities: loadEntities(),
   migrations: [],
   subscribers: [],
-  // Extra connection options for Docker
+
   extra: {
     connectionLimit: 10,
     acquireTimeout: 60000,
@@ -74,7 +70,6 @@ const dataSource = new DataSource({
   },
 });
 
-// Function to ensure database is synchronized
 async function ensureDatabaseSynchronized() {
   console.log('🔍 Ensuring database is synchronized...');
   if (!dataSource.isInitialized) {
@@ -84,13 +79,12 @@ async function ensureDatabaseSynchronized() {
 
   // Force synchronization - this should create tables
   try {
-    await dataSource.synchronize(true); // Force drop and recreate schema
+    await dataSource.synchronize(true);
     console.log('✅ Database synchronized successfully');
   } catch (error) {
     console.error('❌ Database synchronization failed:', error.message);
     console.log('🔄 Attempting manual table creation...');
 
-    // Create tables manually if synchronization fails
     try {
       await dataSource.query(`
         CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -157,7 +151,6 @@ async function ensureDatabaseSynchronized() {
       console.error('❌ Manual table creation failed:', manualError.message);
     }
 
-    // Try to run a simple query to check if tables exist
     try {
       await dataSource.query('SELECT 1');
       console.log('✅ Database connection successful');

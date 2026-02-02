@@ -1,11 +1,9 @@
 require('dotenv').config();
 require('reflect-metadata');
 
-// Set environment variables
 process.env.NODE_ENV = 'test';
 process.env.DOCKER_ENV = 'true';
 
-// Run jest directly
 const { execSync } = require('child_process');
 
 console.log('Running integration tests...');

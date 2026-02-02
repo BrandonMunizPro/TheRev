@@ -11,7 +11,6 @@ describe('Post GraphQL Integration Tests', () => {
     await AppDataSource.initialize();
     app = await createTestApp();
 
-    // Get auth token for johndoe
     const loginResponse = await request(app)
       .post('/graphql')
       .send({
@@ -392,7 +391,6 @@ describe('Post GraphQL Integration Tests', () => {
       expect(response.body.data.pinnedPosts).toBeDefined();
       expect(Array.isArray(response.body.data.pinnedPosts)).toBe(true);
 
-      // All returned posts should be pinned
       response.body.data.pinnedPosts.forEach((post: any) => {
         expect(post.isPinned).toBe(true);
       });
@@ -440,7 +438,6 @@ describe('Post GraphQL Integration Tests', () => {
       const testData = await Fixtures.create();
       const postId = testData.posts[1].id;
 
-      // Login as janedoe
       const loginResponse = await request(app)
         .post('/graphql')
         .send({

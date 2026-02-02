@@ -17,7 +17,7 @@ export async function createTestApp(): Promise<Express> {
 
   if (!AppDataSource.isInitialized) {
     await AppDataSource.initialize();
-    // Synchronize database schema for tests
+
     await AppDataSource.synchronize(true);
   }
 
@@ -41,7 +41,6 @@ export async function createTestApp(): Promise<Express> {
     graphqlEndpoint: '/graphql',
   });
 
-  // Use GraphQL Yoga as middleware
   app.use('/graphql', yoga);
 
   return app;

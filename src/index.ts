@@ -6,6 +6,9 @@ import { createYoga } from "graphql-yoga";
 import { AppDataSource } from "./data-source";
 import { buildSchema } from "type-graphql";
 import { UserResolver } from "./resolvers/User";
+import { ThreadResolver } from "./resolvers/Thread";
+import { AuthResolver } from "./resolvers/Auth";
+import { PostResolver } from "./resolvers/Post";
 import { ThreadAdminResolver } from "./resolvers/ThreadPermissions";
 import { GraphQLContext } from "./graphql/context";
 
@@ -18,7 +21,7 @@ async function startServer() {
     console.log("📡 NEXUS database connected");
 
 const schema = await buildSchema({
-      resolvers: [UserResolver, ThreadAdminResolver],
+      resolvers: [AuthResolver, UserResolver, ThreadResolver, ThreadAdminResolver, PostResolver],
       validate: false,
     });
 
@@ -31,7 +34,7 @@ const schema = await buildSchema({
     });
 
     app.use(express.json());
-    app.use("/graphql", yoga as any); // 👈 FIX
+    app.use("/graphql", yoga as any); 
 
     app.listen(PORT, () => {
       console.log(`🧠 NEXUS core listening on http://localhost:${PORT}`);

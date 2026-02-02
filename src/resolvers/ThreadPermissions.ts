@@ -1,4 +1,3 @@
-// resolvers/threadAdmin.resolver.ts
 import { Resolver, Mutation, Query, Arg, Ctx } from 'type-graphql';
 import { ThreadAdmin } from '../entities/ThreadAdmin';
 import { GraphQLContext } from '../graphql/context';

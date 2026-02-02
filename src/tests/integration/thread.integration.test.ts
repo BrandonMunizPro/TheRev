@@ -55,7 +55,6 @@ describe('Thread GraphQL Integration Tests', () => {
     it('should create a new thread via GraphQL mutation', async () => {
       const testData = await Fixtures.create();
 
-      // First login to get auth token
       const loginResponse = await request(app)
         .post('/graphql')
         .send({

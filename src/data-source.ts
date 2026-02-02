@@ -5,7 +5,6 @@ import { Thread } from './entities/Thread';
 import { Post } from './entities/Post';
 import { ThreadAdmin } from './entities/ThreadAdmin';
 
-// Configuration based on environment
 const isTest = process.env.NODE_ENV === 'test';
 const isDevelopment = process.env.NODE_ENV === 'development';
 
@@ -24,7 +23,7 @@ export const AppDataSource = new DataSource({
   entities: [User, Thread, Post, ThreadAdmin],
   migrations: isTest ? undefined : ['./src/migrations/*.ts'],
   subscribers: [],
-  // Extra connection options for Docker
+
   extra: {
     connectionLimit: 10,
     acquireTimeout: 60000,

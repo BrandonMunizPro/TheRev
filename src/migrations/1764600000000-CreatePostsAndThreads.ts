@@ -2,7 +2,6 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class CreatePostsAndThreads1670000000002 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Create threads table
     await queryRunner.query(`
       CREATE TABLE "thread" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -16,7 +15,6 @@ export class CreatePostsAndThreads1670000000002 implements MigrationInterface {
       )
     `);
 
-    // Create posts table
     await queryRunner.query(`
       CREATE TABLE "post" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -35,7 +33,6 @@ export class CreatePostsAndThreads1670000000002 implements MigrationInterface {
       )
     `);
 
-    // Create thread_admin table
     await queryRunner.query(`
       CREATE TABLE "thread_admin" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -49,7 +46,6 @@ export class CreatePostsAndThreads1670000000002 implements MigrationInterface {
       )
     `);
 
-    // Create indexes
     await queryRunner.query(
       `CREATE INDEX "IDX_c69d28a5fa7dc4dd4dfb35b69b" ON "thread" ("createdById")`
     );

@@ -1,14 +1,8 @@
-import { AppDataSource } from "../data-source";
-import { ThreadAdmin } from "../entities/ThreadAdmin";
-
+import { AppDataSource } from '../data-source';
+import { ThreadAdmin } from '../entities/ThreadAdmin';
 
 export class ThreadAdminDao {
- 
   private repo = AppDataSource.getRepository(ThreadAdmin);
-  // CREATE a new ThreadAdmin entry
-  // LIST all admins for a thread
-  // LIST all threads a user is admin of
-  // REVOKE an admin role (soft delete)
 
   async isThreadAdmin(userId: string, threadId: string): Promise<ThreadAdmin> {
     const result = await AppDataSource.query(
@@ -19,18 +13,18 @@ export class ThreadAdminDao {
         AND threadId = $2
       LIMIT 1
       `,
-      [userId, threadId] 
+      [userId, threadId]
     );
-    return result
+    return result;
   }
 
   async grantOrRestoreThreadAdmin(
-   userId: string,
-   threadId: string,
-   grantedById: string | null
+    userId: string,
+    threadId: string,
+    grantedById: string | null
   ): Promise<ThreadAdmin> {
     const result = await AppDataSource.query(
-        `
+      `
         INSERT INTO thread_admin (
         id, "userId", "threadId", "grantedById", "createdAt"
         )
@@ -43,10 +37,10 @@ export class ThreadAdminDao {
         "grantedById" = EXCLUDED."grantedById"
         RETURNING *
         `,
-        [userId, threadId, grantedById]
+      [userId, threadId, grantedById]
     );
-  return result[0];
-}
+    return result[0];
+  }
 
   async revokeThreadAdmin(
     userId: string,
@@ -93,5 +87,4 @@ export class ThreadAdminDao {
     );
     return result;
   }
-
 }

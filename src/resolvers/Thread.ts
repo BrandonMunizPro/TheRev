@@ -1,12 +1,11 @@
-import { Resolver, Query, Mutation, Arg, Ctx } from "type-graphql";
-import { Thread } from "../entities/Thread";
-import { ThreadsModel } from "../models/threads.model";
-import { InputType, Field, ID } from "type-graphql";
-import { User } from "../entities/User";
-import { Post } from "../entities/Post";
-import { GraphQLContext } from "../graphql/context";
-import { PostType } from "../graphql/enums/PostType";
-
+import { Resolver, Query, Mutation, Arg, Ctx } from 'type-graphql';
+import { Thread } from '../entities/Thread';
+import { ThreadsModel } from '../models/threads.model';
+import { InputType, Field, ID } from 'type-graphql';
+import { User } from '../entities/User';
+import { Post } from '../entities/Post';
+import { GraphQLContext } from '../graphql/context';
+import { PostType } from '../graphql/enums/PostType';
 
 @InputType()
 export class CreateThreadInput {
@@ -18,7 +17,6 @@ export class CreateThreadInput {
 
   @Field(() => PostType, { defaultValue: PostType.TEXT })
   type!: PostType;
-
 }
 
 @InputType()
@@ -41,7 +39,6 @@ export class UpdateThreadPinOrLockInput {
   @Field({ nullable: true })
   isPinned?: boolean;
 
-
   @Field({ nullable: true })
   isLocked?: boolean;
 }
@@ -54,7 +51,6 @@ export class ThreadQueryInput {
   @Field({ nullable: true })
   authorId?: string;
 }
-
 
 export type returnedThread = {
   id?: string;
@@ -78,88 +74,77 @@ export type returnedThreadWithLockAndPins = {
   isPinned?: Boolean;
 };
 
-
-
 @Resolver()
 export class ThreadResolver {
   private model = new ThreadsModel();
 
-  // CREATE
   @Mutation(() => Thread)
   async createThread(
-    @Arg("input") input: CreateThreadInput,
+    @Arg('input') input: CreateThreadInput,
     @Ctx() ctx: GraphQLContext
   ) {
     if (!ctx.user) {
-    throw new Error("Not authenticated");
-  }
+      throw new Error('Not authenticated');
+    }
     return this.model.createThread(input, ctx.user.userId);
   }
 
-
-  // GET single thread by id
   @Query(() => Thread, { nullable: true })
   async getThread(
-    @Arg("data") data: ThreadQueryInput
+    @Arg('data') data: ThreadQueryInput
   ): Promise<returnedThread | null> {
     return this.model.getThread(data);
   }
 
-  // LIST all threads when roles created/Superadmin
   @Query(() => [Thread])
   async listThreads(
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThread[] | null> {
     if (!ctx.user) {
-      throw new Error("Not authenticated");
+      throw new Error('Not authenticated');
     }
     return this.model.listAllThreads(ctx.user.userId);
   }
 
-  // LIST all threads by a specific user superadmin sees all user can only see their own if not superadmin or follower of user
   @Query(() => [Thread])
   async listThreadsByUser(
-    @Arg("data") data: ThreadQueryInput,
+    @Arg('data') data: ThreadQueryInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThread[] | null> {
     if (!ctx.user) {
-      throw new Error("Not authenticated");
+      throw new Error('Not authenticated');
     }
     return this.model.listThreadsByUser(data.authorId!, ctx.user.userId);
   }
 
-  // UPDATE THREAD
   @Mutation(() => Thread)
   async updateThread(
-    @Arg("data") data: UpdateThreadInput,
+    @Arg('data') data: UpdateThreadInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThread> {
     if (!ctx.user) {
-      throw new Error("Not authenticated");
+      throw new Error('Not authenticated');
     }
     return this.model.editThread(data, ctx.user.userId);
   }
 
-  // DELETE THREAD
   @Mutation(() => Boolean)
   async deleteThread(
-    @Arg("threadId") threadId: string,
+    @Arg('threadId') threadId: string,
     @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
     if (!ctx.user) {
-      throw new Error("Not authenticated");
+      throw new Error('Not authenticated');
     }
     return this.model.deleteThread(threadId, ctx.user.userId);
   }
 
-  // MODERATION
- 
   @Mutation(() => Thread)
   async updateThreadPinOrLock(
-    @Arg("data") data: UpdateThreadPinOrLockInput,
+    @Arg('data') data: UpdateThreadPinOrLockInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThreadWithLockAndPins | null> {
-    if (!ctx.user) throw new Error("Not authenticated");
+    if (!ctx.user) throw new Error('Not authenticated');
     return this.model.threadPinAndLockToggler(data, ctx.user.userId);
   }
 }
