@@ -1,6 +1,4 @@
 import { Post } from '../entities/Post';
-import { User } from '../entities/User';
-import { Thread } from '../entities/Thread';
 import { PostsDao } from '../dao/posts.dao';
 import { UsersDao } from '../dao/users.dao';
 import { ThreadsDao } from '../dao/threads.dao';

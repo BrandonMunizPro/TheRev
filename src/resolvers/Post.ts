@@ -85,10 +85,7 @@ export class PostResolver {
   }
 
   @Query(() => Post, { nullable: true })
-  async post(
-    @Arg('id', () => ID) id: string,
-    @Ctx() ctx: GraphQLContext
-  ): Promise<returnedPost | null> {
+  async post(@Arg('id', () => ID) id: string): Promise<returnedPost | null> {
     // Read operations don't require authentication
     return this.model.getPost({ id });
   }
@@ -97,8 +94,7 @@ export class PostResolver {
   async postsByThread(
     @Arg('threadId', () => ID) threadId: string,
     @Arg('limit', () => Number, { nullable: true }) limit?: number,
-    @Arg('offset', () => Number, { nullable: true }) offset?: number,
-    @Ctx() ctx?: GraphQLContext
+    @Arg('offset', () => Number, { nullable: true }) offset?: number
   ): Promise<returnedPost[] | null> {
     // Read operations don't require authentication
     return this.model.listPostsByThread({ threadId, limit, offset });
@@ -106,8 +102,7 @@ export class PostResolver {
 
   @Query(() => [Post])
   async pinnedPosts(
-    @Arg('threadId', () => ID, { nullable: true }) threadId?: string,
-    @Ctx() ctx?: GraphQLContext
+    @Arg('threadId', () => ID, { nullable: true }) threadId?: string
   ): Promise<returnedPost[] | null> {
     if (!threadId) {
       // If no threadId provided, return all pinned posts from all threads

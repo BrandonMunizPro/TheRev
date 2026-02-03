@@ -32,6 +32,7 @@ describe('Post GraphQL Integration Tests', () => {
         },
       });
 
+    // eslint-disable-next-line no-console
     console.log('Login response:', JSON.stringify(loginResponse.body, null, 2));
     authToken = loginResponse.body.data?.verifyUser?.jwt;
   });

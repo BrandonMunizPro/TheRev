@@ -17,6 +17,64 @@ module.exports = {
     node: true,
     jest: true,
   },
+  overrides: [
+    {
+      files: ['**/*.cjs'],
+      env: {
+        node: true,
+        jest: true,
+      },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        describe: 'readonly',
+        it: 'readonly',
+        test: 'readonly',
+        expect: 'readonly',
+        jest: 'readonly',
+      },
+    },
+    {
+      files: ['**/*.js'],
+      env: {
+        node: true,
+        jest: true,
+      },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+      },
+    },
+    {
+      files: [
+        'jest.config.local.js',
+        'test-entity-loading.js',
+        'test-integration-local.cjs',
+      ],
+      env: {
+        node: true,
+        jest: true,
+      },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+      },
+    },
+  ],
   ignorePatterns: ['.eslintrc.js', 'dist/', 'coverage/', 'node_modules/'],
   rules: {
     '@typescript-eslint/interface-name-prefix': 'off',

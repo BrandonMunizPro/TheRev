@@ -12,12 +12,14 @@ export const AppDataSource = new DataSource({
   type: 'postgres',
   host:
     isTest && !process.env.DOCKER_ENV
-      ? 'localhost'
+      ? process.env.DB_HOST || 'localhost'
       : process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
-  username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || 'Bjornmaximus11',
-  database: process.env.DB_DATABASE || (isTest ? 'therev_test' : 'therev'),
+  username: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  database:
+    process.env.DB_DATABASE ||
+    (isTest ? process.env.DB_TEST_DATABASE : process.env.DB_DATABASE),
   synchronize: isTest, // true for tests, false for production
   logging: isDevelopment,
   entities: [User, Thread, Post, ThreadAdmin],

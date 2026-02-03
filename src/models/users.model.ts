@@ -6,7 +6,6 @@ import { EmailService } from '../services/Emailservice';
 import {
   CreateUserInput,
   EditUserInput,
-  GetUserInput,
   returnedUser,
 } from '../resolvers/User';
 import { Constants } from '../utils/constants';

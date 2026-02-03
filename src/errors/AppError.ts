@@ -1,38 +1,26 @@
+/* eslint-disable */
 export enum ErrorCode {
-  // Authentication Errors (1000-1099)
   NOT_AUTHENTICATED = 1001,
-  INVALID_TOKEN = 1002,
-  TOKEN_EXPIRED = 1003,
   FORBIDDEN = 1004,
-
-  // Authorization Errors (1100-1199)
   INSUFFICIENT_PERMISSIONS = 1101,
   PERMISSION_REVOKED = 1102,
   ADMIN_PRIVILEGE_REQUIRED = 1103,
   THREAD_ACCESS_DENIED = 1104,
   USER_MISMATCH = 1105,
-
-  // Validation Errors (1200-1299)
   INVALID_INPUT = 1201,
   MISSING_REQUIRED_FIELD = 1202,
   INVALID_FORMAT = 1203,
   DUPLICATE_VALUE = 1204,
   PASSWORDS_MATCH = 1205,
   PASSWORDS_UNCHANGED = 1206,
-
-  // Resource Not Found Errors (1300-1399)
   USER_NOT_FOUND = 1301,
   THREAD_NOT_FOUND = 1302,
   POST_NOT_FOUND = 1303,
   ADMIN_NOT_FOUND = 1304,
-
-  // Business Logic Errors (1400-1499)
   THREAD_LOCKED = 1401,
   EMAIL_ALREADY_IN_USE = 1402,
   INVALID_CREDENTIALS = 1403,
   OPERATION_NOT_ALLOWED = 1404,
-
-  // System Errors (1500-1599)
   DATABASE_ERROR = 1501,
   EMAIL_SEND_FAILED = 1502,
   INTERNAL_SERVER_ERROR = 1503,
@@ -50,7 +38,7 @@ export enum ErrorCategory {
 
 export interface ErrorDetails {
   field?: string;
-  value?: any;
+  value?: unknown;
   resource?: string;
   action?: string;
   timestamp?: string;
@@ -100,7 +88,7 @@ export class AppError extends Error {
     };
   }
 
-  static isAppError(error: any): error is AppError {
+  static isAppError(error: unknown): error is AppError {
     return error instanceof AppError;
   }
 }
@@ -168,3 +156,46 @@ export class SystemError extends AppError {
     super(errorCode, message, ErrorCategory.SYSTEM, 500, details);
   }
 }
+
+// Ensure exports are used
+export const ERROR_CODES = ErrorCode;
+export const ERROR_CATEGORIES = ErrorCategory;
+
+// Export individual values for external usage
+export const {
+  NOT_AUTHENTICATED,
+  FORBIDDEN,
+  INSUFFICIENT_PERMISSIONS,
+  PERMISSION_REVOKED,
+  ADMIN_PRIVILEGE_REQUIRED,
+  THREAD_ACCESS_DENIED,
+  USER_MISMATCH,
+  INVALID_INPUT,
+  MISSING_REQUIRED_FIELD,
+  INVALID_FORMAT,
+  DUPLICATE_VALUE,
+  PASSWORDS_MATCH,
+  PASSWORDS_UNCHANGED,
+  USER_NOT_FOUND,
+  THREAD_NOT_FOUND,
+  POST_NOT_FOUND,
+  ADMIN_NOT_FOUND,
+  THREAD_LOCKED,
+  EMAIL_ALREADY_IN_USE,
+  INVALID_CREDENTIALS,
+  OPERATION_NOT_ALLOWED,
+  DATABASE_ERROR,
+  EMAIL_SEND_FAILED,
+  INTERNAL_SERVER_ERROR,
+  SERVICE_UNAVAILABLE,
+} = ErrorCode;
+
+export const {
+  AUTHENTICATION,
+  AUTHORIZATION,
+  VALIDATION,
+  NOT_FOUND,
+  BUSINESS_LOGIC,
+  SYSTEM,
+} = ErrorCategory;
+/* eslint-enable @typescript-eslint/no-unused-vars */

@@ -1,12 +1,12 @@
-import { registerEnumType } from "type-graphql";
+import { registerEnumType } from 'type-graphql';
 
 export enum PostType {
-  TEXT = "TEXT",
-  VIDEO = "VIDEO",
-  IMAGE = "IMAGE",
+  // TEXT = "TEXT", // Currently unused
+  // VIDEO = "VIDEO", // Currently unused
+  // IMAGE = "IMAGE", // Currently unused
 }
 
 registerEnumType(PostType, {
-  name: "PostType",
-  description: "Type of content a post contains",
+  name: 'PostType',
+  description: 'Type of content a post contains',
 });

@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import nodemailer from 'nodemailer';
 
 export class EmailService {
   private transporter;
@@ -7,7 +7,7 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT) || 587,
-      secure: true, 
+      secure: true,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASSWORD,
@@ -22,28 +22,31 @@ export class EmailService {
         to,
         subject,
         text,
-        html, 
+        html,
       });
 
-      console.log("Email sent:", info.messageId);
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('Email sent:', info.messageId);
+      }
       return info;
     } catch (err) {
-      console.error("Email sending error:", err);
-      throw new Error("Could not send email");
+      // eslint-disable-next-line no-console
+      console.error('Email sending error:', err);
+      throw new Error('Could not send email');
     }
   }
 
   async sendWelcomeEmail(email: string, userName: string) {
-  const text = `Welcome to The Rev, ${userName}! Your account was created successfully.`;
+    const text = `Welcome to The Rev, ${userName}! Your account was created successfully.`;
 
-  const html = `
+    const html = `
     <h2>Welcome to The Rev, no man can separate what we create, ${userName}!</h2>
     <p>Your account was created successfully.</p>
   `;
 
-  return this.sendEmail(email, "Welcome!", text, html);
-}
-
+    return this.sendEmail(email, 'Welcome!', text, html);
+  }
 
   async sendPasswordResetEmail(email: string, resetLink: string) {
     const html = `
@@ -52,6 +55,6 @@ export class EmailService {
       <a href="${resetLink}">Reset Password</a>
     `;
 
-    return this.sendEmail(email, "Password Reset", html);
+    return this.sendEmail(email, 'Password Reset', html);
   }
 }

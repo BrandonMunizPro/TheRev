@@ -7,8 +7,11 @@ import {
   BusinessLogicError,
   SystemError,
   ErrorCode,
+  ErrorCategory,
   ErrorDetails,
 } from './AppError';
+
+export { ErrorCode, ErrorCategory };
 
 export class ErrorHandler {
   // Authentication Errors
@@ -92,7 +95,7 @@ export class ErrorHandler {
   static invalidInput(
     message: string,
     field?: string,
-    value?: any,
+    value?: unknown,
     details?: ErrorDetails
   ): ValidationError {
     const errorDetails = { ...details, field, value };
@@ -123,7 +126,7 @@ export class ErrorHandler {
 
   static invalidFormat(
     field: string,
-    value: any,
+    value: unknown,
     details?: ErrorDetails
   ): ValidationError {
     const errorDetails = { ...details, field, value };
@@ -135,7 +138,7 @@ export class ErrorHandler {
 
   static duplicateValue(
     field: string,
-    value: any,
+    value: unknown,
     details?: ErrorDetails
   ): ValidationError {
     const errorDetails = { ...details, field, value };
@@ -300,7 +303,7 @@ export class ErrorHandler {
   }
 
   // Utility methods
-  static handleUnknownError(error: any): AppError {
+  static handleUnknownError(error: unknown): AppError {
     if (AppError.isAppError(error)) {
       return error;
     }
@@ -320,10 +323,16 @@ export class ErrorHandler {
     }
 
     // Handle database connection errors
-    if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND')
+    ) {
       const errorDetails = {
-        originalError: error.message,
-        errorCode: error.code,
+        originalError:
+          'message' in error ? String(error.message) : 'Unknown error',
+        errorCode: String(error.code),
       };
       return new SystemError(
         'Database connection failed',
@@ -333,7 +342,10 @@ export class ErrorHandler {
     }
 
     // Default fallback
-    const errorMessage = error.message || 'Unknown error occurred';
+    const errorMessage =
+      typeof error === 'object' && error !== null && 'message' in error
+        ? String(error.message)
+        : 'Unknown error occurred';
     const errorDetails = { originalError: errorMessage };
     return new SystemError(
       errorMessage,
@@ -345,30 +357,27 @@ export class ErrorHandler {
   // Async error wrapper for consistent error handling
   static async wrapAsync<T>(
     operation: () => Promise<T>,
-    errorHandler?: (error: any) => AppError
+    errorHandler?: () => AppError
   ): Promise<T> {
     try {
       return await operation();
-    } catch (error) {
+    } catch (caughtError) {
       if (errorHandler) {
-        throw errorHandler(error);
+        throw errorHandler();
       }
-      throw this.handleUnknownError(error);
+      throw this.handleUnknownError(caughtError);
     }
   }
 
   // Sync error wrapper for consistent error handling
-  static wrap<T>(
-    operation: () => T,
-    errorHandler?: (error: any) => AppError
-  ): T {
+  static wrap<T>(operation: () => T, errorHandler?: () => AppError): T {
     try {
       return operation();
-    } catch (error) {
+    } catch (caughtError) {
       if (errorHandler) {
-        throw errorHandler(error);
+        throw errorHandler();
       }
-      throw this.handleUnknownError(error);
+      throw this.handleUnknownError(caughtError);
     }
   }
 }
