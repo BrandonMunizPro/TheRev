@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TheRev - Revolution in Journalism</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-content">
+          <div class="logo">
+            <h1>TheRev</h1>
+            <span class="tagline">The Rev starts with you!</span>
+          </div>
+          <nav class="nav">
+            <button id="threads-btn" class="nav-btn active">Threads</button>
+            <button id="news-btn" class="nav-btn">News</button>
+            <button id="profile-btn" class="nav-btn">Profile</button>
+            <button id="browser-btn" class="nav-btn">Browser</button>
+          </nav>
+          <div class="user-rev">
+            <div class="avatar-container">
+              <img
+                id="user-avatar"
+                src="assets/default-avatar.png"
+                alt="User Rev"
+                class="rev-avatar"
+              />
+              <div class="avatar-status online"></div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Threads Section -->
+        <section id="threads-section" class="content-section active">
+          <div class="section-header">
+            <h2>Political Discussions</h2>
+            <button id="new-thread-btn" class="primary-btn">New Thread</button>
+          </div>
+          <div class="threads-container">
+            <div class="thread-card">
+              <div class="thread-header">
+                <h3>BREAKING: New Policy Announcement</h3>
+                <span class="thread-tag">featured</span>
+              </div>
+              <div class="thread-meta">
+                <span class="author">by @journalist123</span>
+                <span class="timestamp">2 hours ago</span>
+                <span class="replies">42 replies</span>
+              </div>
+              <p class="thread-preview">
+                Latest developments in the political landscape suggest major
+                changes ahead...
+              </p>
+            </div>
+            <!-- More threads will be loaded dynamically -->
+          </div>
+        </section>
+
+        <!-- News Section -->
+        <section id="news-section" class="content-section">
+          <div class="section-header">
+            <h2>Real Journalism</h2>
+            <div class="news-sources">
+              <button class="source-btn active" data-source="all">
+                All Sources
+              </button>
+              <button class="source-btn" data-source="dropsitenews">
+                Drop Site News
+              </button>
+              <button class="source-btn" data-source="independent">
+                Independent
+              </button>
+            </div>
+          </div>
+          <div class="news-container">
+            <div class="news-card">
+              <img
+                src="assets/news-placeholder.jpg"
+                alt="News image"
+                class="news-image"
+              />
+              <div class="news-content">
+                <h3>Investigative Report: Government Transparency</h3>
+                <div class="news-meta">
+                  <span class="source">Drop Site News</span>
+                  <span class="timestamp">1 hour ago</span>
+                </div>
+                <p class="news-preview">
+                  An in depth analysis of recent policy changes and their impact
+                  on public discourse...
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Profile Section -->
+        <section id="profile-section" class="content-section">
+          <div class="profile-container">
+            <div class="profile-header">
+              <div class="profile-avatar">
+                <img
+                  id="profile-avatar-img"
+                  src="assets/default-avatar.png"
+                  alt="User Rev"
+                  class="rev-avatar large"
+                />
+                <button id="customize-avatar-btn" class="customize-btn">
+                  Customize Rev
+                </button>
+              </div>
+              <div class="profile-info">
+                <h2 id="username">YourUsername</h2>
+                <p class="bio">
+                  Revolutionary thinker and political enthusiast
+                </p>
+                <div class="profile-stats">
+                  <div class="stat">
+                    <span class="stat-number">127</span>
+                    <span class="stat-label">Threads</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-number">892</span>
+                    <span class="stat-label">Posts</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-number">45</span>
+                    <span class="stat-label">Music</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="profile-content">
+              <div class="profile-section">
+                <h3>Recent Threads</h3>
+                <div class="recent-threads">
+                  <!-- Will be populated dynamically -->
+                </div>
+              </div>
+
+              <div class="profile-section">
+                <h3>Music Collection</h3>
+                <div class="music-collection">
+                  <div class="music-item">
+                    <div class="music-album-art"></div>
+                    <div class="music-info">
+                      <span class="music-title">Revolution Anthem</span>
+                      <span class="music-artist">Various Artists</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Browser Section -->
+        <section id="browser-section" class="content-section">
+          <div class="browser-container">
+            <div class="browser-controls">
+              <input
+                type="text"
+                id="browser-url"
+                placeholder="Enter URL or command (e.g., 'open youtube', 'send email to...')"
+                class="browser-url-input"
+              />
+              <button id="browser-navigate" class="primary-btn">Go</button>
+              <button id="browser-new-window" class="secondary-btn">
+                New Window
+              </button>
+            </div>
+            <div class="browser-viewport">
+              <iframe
+                id="browser-frame"
+                src="about:blank"
+                class="browser-frame"
+              ></iframe>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Avatar Customizer Modal -->
+      <div id="avatar-customizer" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>Customize Your Rev</h3>
+            <button class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="avatar-preview">
+              <img
+                id="avatar-preview-img"
+                src="assets/default-avatar.png"
+                alt="Avatar Preview"
+                class="rev-avatar large"
+              />
+            </div>
+            <div class="customization-options">
+              <div class="option-group">
+                <label>Avatar Style</label>
+                <select id="avatar-style">
+                  <option value="default">Default</option>
+                  <option value="revolutionary">Revolutionary</option>
+                  <option value="journalist">Journalist</option>
+                  <option value="activist">Activist</option>
+                </select>
+              </div>
+              <div class="option-group">
+                <label>Primary Color</label>
+                <input type="color" id="avatar-primary-color" value="#ff0000" />
+              </div>
+              <div class="option-group">
+                <label>Accent Color</label>
+                <input type="color" id="avatar-accent-color" value="#000000" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="save-avatar-btn" class="primary-btn">Save Rev</button>
+            <button id="cancel-avatar-btn" class="secondary-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
