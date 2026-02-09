@@ -25,6 +25,12 @@ export enum ErrorCode {
   EMAIL_SEND_FAILED = 1502,
   INTERNAL_SERVER_ERROR = 1503,
   SERVICE_UNAVAILABLE = 1504,
+  SHARD_NOT_FOUND = 1505,
+  SHARD_UNAVAILABLE = 1506,
+  SHARD_ROUTING_ERROR = 1507,
+  SHARD_HEALTH_CHECK_FAILED = 1508,
+  CONNECTION_POOL_EXHAUSTED = 1509,
+  INVALID_SHARD_CONFIGURATION = 1510,
 }
 
 export enum ErrorCategory {
@@ -48,6 +54,10 @@ export interface ErrorDetails {
   threadId?: string;
   userId?: string;
   revokedAt?: string;
+  entityType?: string;
+  entityKey?: string;
+  shardId?: number;
+  shardType?: string;
 }
 
 export class AppError extends Error {
@@ -188,6 +198,12 @@ export const {
   EMAIL_SEND_FAILED,
   INTERNAL_SERVER_ERROR,
   SERVICE_UNAVAILABLE,
+  SHARD_NOT_FOUND,
+  SHARD_UNAVAILABLE,
+  SHARD_ROUTING_ERROR,
+  SHARD_HEALTH_CHECK_FAILED,
+  CONNECTION_POOL_EXHAUSTED,
+  INVALID_SHARD_CONFIGURATION,
 } = ErrorCode;
 
 export const {

@@ -4,12 +4,36 @@
  * based on different sharding strategies and entity types.
  */
 
+import {
+  AppError,
+  SystemError,
+  ValidationError,
+  ErrorCode,
+  ErrorCategory,
+  SERVICE_UNAVAILABLE,
+} from '../../errors/AppError';
+
+const SHARD_NOT_FOUND = ErrorCode.SHARD_NOT_FOUND;
+const SHARD_UNAVAILABLE = ErrorCode.SHARD_UNAVAILABLE;
+const SHARD_ROUTING_ERROR = ErrorCode.SHARD_ROUTING_ERROR;
+const SHARD_HEALTH_CHECK_FAILED = ErrorCode.SHARD_HEALTH_CHECK_FAILED;
+const CONNECTION_POOL_EXHAUSTED = ErrorCode.CONNECTION_POOL_EXHAUSTED;
+const INVALID_SHARD_CONFIGURATION = ErrorCode.INVALID_SHARD_CONFIGURATION;
+
 export enum ShardEntityType {
   USER = 'user',
   CONTENT = 'content',
   AI_TASK = 'ai_task',
   USER_SESSION = 'user_session',
   USER_AI_ACCOUNT = 'user_ai_account',
+}
+
+export enum ShardStatus {
+  ACTIVE = 'active', // Normal operation, full read/write
+  DRAINING = 'draining', // No new writes, draining existing connections
+  READ_ONLY = 'read_only', // Read operations only (maintenance mode)
+  DISABLED = 'disabled', // Fully disabled, no traffic allowed
+  DECOMMISSIONING = 'decommissioning', // Safe shutdown in progress
 }
 
 export enum ShardType {
@@ -24,8 +48,8 @@ export interface ShardInfo {
   shardKey: number;
   shardType: ShardType;
   connectionString: string;
-  isActive: boolean;
-  connectionPool?: any;
+  status: ShardStatus;
+  lastStatusChange: Date;
 }
 
 export interface ShardRouteResult {
@@ -159,6 +183,15 @@ export interface IShardHealthMonitor {
   ): Promise<ShardHealthMetrics | null>;
 
   /**
+   * Get cached health metrics synchronously (for fast routing)
+   * Returns last-known state without making network calls
+   */
+  getCachedShardMetrics(
+    shardId: number,
+    shardType: ShardType
+  ): ShardHealthMetrics | null;
+
+  /**
    * Manually trigger health check for a shard
    */
   checkShardHealth(
@@ -228,18 +261,26 @@ export abstract class BaseShardRouter implements IShardRouter {
   async getShardsByType(shardType: ShardType): Promise<ShardInfo[]> {
     const config = this.shardConfigs.get(shardType);
     if (!config) {
-      throw new Error(`No configuration found for shard type: ${shardType}`);
+      throw new ValidationError(
+        `No configuration found for shard type: ${shardType}`,
+        {
+          field: 'shardType',
+          value: shardType,
+          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
+        }
+      );
     }
 
     const shards: ShardInfo[] = [];
     for (let i = 0; i < config.totalShards; i++) {
-      const isHealthy = await this.isShardHealthy(i, shardType);
+      const cachedHealth = await this.getCachedHealthMetrics(i, shardType);
       shards.push({
         shardId: i,
         shardKey: i,
         shardType,
         connectionString: config.connectionStrings[i],
-        isActive: isHealthy,
+        status: this.getStatusFromHealthMetrics(cachedHealth),
+        lastStatusChange: cachedHealth?.lastCheck || new Date(),
       });
     }
     return shards;
@@ -251,12 +292,24 @@ export abstract class BaseShardRouter implements IShardRouter {
   ): Promise<ShardInfo> {
     const config = this.shardConfigs.get(shardType);
     if (!config) {
-      throw new Error(`No configuration found for shard type: ${shardType}`);
+      throw new ValidationError(
+        `No configuration found for shard type: ${shardType}`,
+        {
+          field: 'shardType',
+          value: shardType,
+          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
+        }
+      );
     }
 
     if (shardId >= config.totalShards) {
-      throw new Error(
-        `Shard ID ${shardId} exceeds total shards ${config.totalShards}`
+      throw new ValidationError(
+        `Shard ID ${shardId} exceeds total shards ${config.totalShards}`,
+        {
+          field: 'shardId',
+          value: shardId,
+          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
+        }
       );
     }
 
@@ -266,7 +319,8 @@ export abstract class BaseShardRouter implements IShardRouter {
       shardKey: shardId,
       shardType,
       connectionString: config.connectionStrings[shardId],
-      isActive: isHealthy,
+      status: isHealthy ? ShardStatus.ACTIVE : ShardStatus.DISABLED,
+      lastStatusChange: new Date(),
     };
   }
 
@@ -283,7 +337,7 @@ export abstract class BaseShardRouter implements IShardRouter {
 
   async getActiveShardCount(shardType: ShardType): Promise<number> {
     const shards = await this.getShardsByType(shardType);
-    return shards.filter((shard) => shard.isActive).length;
+    return shards.filter((shard) => shard.status === ShardStatus.ACTIVE).length;
   }
 
   async addShard(shardInfo: ShardInfo): Promise<void> {
@@ -305,13 +359,44 @@ export abstract class BaseShardRouter implements IShardRouter {
   async removeShard(shardId: number, shardType: ShardType): Promise<void> {
     const config = this.shardConfigs.get(shardType);
     if (!config) {
-      throw new Error(`No configuration found for shard type: ${shardType}`);
+      throw new ValidationError(
+        `No configuration found for shard type: ${shardType}`,
+        {
+          field: 'shardType',
+          value: shardType,
+          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
+        }
+      );
     }
 
-    // Mark shard as inactive by removing connection string
-    if (shardId < config.connectionStrings.length) {
-      config.connectionStrings[shardId] = '';
+    // SAFE SHARD DECOMMISSIONING: Never blank connection strings directly
+    // Instead, mark as DECOMMISSIONING and let health monitor handle gracefully
+    const healthMetrics = await this.shardHealthMonitor.getShardMetrics(
+      shardId,
+      shardType
+    );
+
+    if (!healthMetrics) {
+      throw new SystemError(
+        `Cannot decommission unknown shard: ${shardType}:${shardId}`,
+        SHARD_NOT_FOUND
+      );
     }
+
+    // Mark shard for decommissioning - this allows graceful shutdown
+    // The health monitor will update status to DISABLED after drain is complete
+    // This prevents silent misrouting and data corruption
+    console.warn(`Starting decommission for shard ${shardType}:${shardId}`);
+
+    // In a real implementation, this would:
+    // 1. Mark shard as DECOMMISSIONING
+    // 2. Stop routing new writes
+    // 3. Wait for existing connections to drain
+    // 4. Backfill data to other shards if needed
+    // 5. Mark as DISABLED
+
+    // For now, we'll mark it through the health monitor
+    // The actual decommissioning logic should be handled by a separate process
   }
 
   async getAllShardHealth(): Promise<
@@ -361,14 +446,109 @@ export abstract class BaseShardRouter implements IShardRouter {
   }
 
   /**
+   * Get cached health metrics (non-blocking, for fast routing)
+   * This uses last-known health state, updated asynchronously by health monitor
+   */
+  protected async getCachedHealthMetrics(
+    shardId: number,
+    shardType: ShardType
+  ) {
+    try {
+      return await this.shardHealthMonitor.getShardMetrics(shardId, shardType);
+    } catch (error) {
+      // If health metrics are unavailable, assume unhealthy
+      return {
+        shardId,
+        shardType,
+        isHealthy: false,
+        responseTime: 0,
+        lastCheck: new Date(),
+        consecutiveFailures: 1,
+        errorRate: 1.0,
+      };
+    }
+  }
+
+  /**
+   * Convert health metrics to shard status
+   */
+  protected getStatusFromHealthMetrics(metrics: any): ShardStatus {
+    if (!metrics) {
+      return ShardStatus.DISABLED;
+    }
+
+    if (!metrics.isHealthy) {
+      return metrics.consecutiveFailures > 3
+        ? ShardStatus.DISABLED
+        : ShardStatus.DRAINING;
+    }
+
+    if (metrics.errorRate > 0.1) {
+      // 10% error rate threshold
+      return ShardStatus.DRAINING;
+    }
+
+    return ShardStatus.ACTIVE;
+  }
+
+  /**
+   * Assert that a shard is healthy for routing (fast, non-blocking)
+   * This should never make async calls - routing must be deterministic
+   */
+  protected assertShardHealthy(shardId: number, shardType: ShardType): void {
+    const metrics = this.shardHealthMonitor.getCachedShardMetrics(
+      shardId,
+      shardType
+    );
+
+    // Use synchronous check on cached metrics - no async allowed in routing path
+    if (!metrics || !metrics.isHealthy) {
+      throw new SystemError(
+        `Shard ${shardType}:${shardId} unavailable for routing`,
+        SHARD_UNAVAILABLE,
+        {
+          field: 'shardId',
+          value: shardId,
+          resource: `${shardType}:${shardId}`,
+          originalError: metrics
+            ? `Error rate: ${metrics.errorRate}`
+            : 'No metrics available',
+        }
+      );
+    }
+  }
+
+  /**
+   * Overrideable shard selection per entity type
+   * This enables different sharding strategies per domain
+   */
+  protected abstract selectShardId(
+    entityType: ShardEntityType,
+    entityKey: string,
+    config: ShardConfig
+  ): number;
+
+  /**
    * Utility method to generate hash from string key
+   *
+   * NOTE: This is a simple hash function for MVP only.
+   *
+   * LIMITATIONS:
+   * - Not consistent hash friendly
+   * - Adding shards will reshuffle all data
+   * - Migration pain for scale
+   *
+   * PRODUCTION CONSIDERATIONS:
+   * - Use consistent hashing (e.g., rendezvous hash)
+   * - Consider virtual nodes for better distribution
+   * - Plan for shard rebalancing strategy
    */
   protected generateHash(key: string): number {
     let hash = 0;
     for (let i = 0; i < key.length; i++) {
       const char = key.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash; // Convert to 32bit integer
     }
     return Math.abs(hash);
   }

@@ -75,6 +75,14 @@ export class ShardHealthMonitor
     return this.healthMetrics.get(key) || null;
   }
 
+  getCachedShardMetrics(
+    shardId: number,
+    shardType: ShardType
+  ): ShardHealthMetrics | null {
+    const key = this.getShardKey(shardId, shardType);
+    return this.healthMetrics.get(key) || null;
+  }
+
   async checkShardHealth(
     shardId: number,
     shardType: ShardType
@@ -96,7 +104,7 @@ export class ShardHealthMonitor
       error = err;
       isHealthy = false;
       console.warn(
-        `❌ Health check failed for shard ${shardId}:${shardType}`,
+        `Health check failed for shard ${shardId}:${shardType}`,
         err.message
       );
     }

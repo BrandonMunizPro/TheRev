@@ -9,6 +9,11 @@ import {
   ShardType,
   ShardEntityType,
 } from './IShardRouter';
+import {
+  ValidationError,
+  ErrorCode,
+  INVALID_SHARD_CONFIGURATION,
+} from '../../errors/AppError';
 import { ShardHealthMonitor } from './ShardHealthMonitor';
 import { ShardConnectionManager } from './ShardConnectionManager';
 
@@ -147,13 +152,21 @@ class BasicShardRouter extends BaseShardRouter {
   ): Promise<ShardRouteResult> {
     const config = this.getShardConfigForEntity(entityType);
     if (!config) {
-      throw new Error(
-        `No shard configuration found for entity type: ${entityType}`
+      throw new ValidationError(
+        `No shard configuration found for entity type: ${entityType}`,
+        {
+          field: 'entityType',
+          value: entityType,
+          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
+        }
       );
     }
 
-    // Simple routing logic for now
-    const shardId = this.generateHash(entityKey) % config.totalShards;
+    const shardId = this.selectShardId(entityType, entityKey, config);
+
+    // Fast health check using cached metrics (no async calls in routing path!)
+    this.assertShardHealthy(shardId, config.shardType);
+
     const shardInfo = await this.getShardConnection(shardId, config.shardType);
 
     return {
@@ -162,6 +175,21 @@ class BasicShardRouter extends BaseShardRouter {
       entityType,
       entityKey,
     };
+  }
+
+  /**
+   * Basic shard selection implementation for MVP
+   * Uses simple modulo hashing - suitable for initial deployment
+   */
+  protected selectShardId(
+    entityType: ShardEntityType,
+    entityKey: string,
+    config: ShardConfig
+  ): number {
+    //Simple modulo hashing for MVP
+    //This will cause massive data reshuffling when adding shards
+    //Consider consistent hashing for production scale
+    return this.generateHash(entityKey) % config.totalShards;
   }
 
   private initializeDefaultConfigs(): void {
