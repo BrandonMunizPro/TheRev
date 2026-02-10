@@ -1,14 +1,12 @@
 /**
  * ModuloShardRouter Integration Tests
- * Epic 1: Enterprise Database Foundation - Story 1.3
- *
- * Unit and integration tests for ModuloShardRouter
+ * Unit tests for ModuloShardRouter
  */
 
-import { ModuloShardRouter } from './ModuloShardRouter';
-import { ShardHealthMonitor } from './ShardHealthMonitor';
-import { ShardConnectionManager } from './ShardConnectionManager';
-import { ShardEntityType } from './IShardRouter';
+import { ModuloShardRouter } from '../../database/sharding/ModuloShardRouter';
+import { ShardHealthMonitor } from '../../database/sharding/ShardHealthMonitor';
+import { ShardConnectionManager } from '../../database/sharding/ShardConnectionManager';
+import { ShardEntityType } from '../../database/sharding/IShardRouter';
 
 describe('ModuloShardRouter', () => {
   let router: ModuloShardRouter;
@@ -150,8 +148,6 @@ describe('ModuloShardRouter', () => {
   describe('Performance Metrics', () => {
     it('should collect routing statistics', async () => {
       await router.initialize();
-
-      // Make some routing calls
       await router.routeToShard(ShardEntityType.USER, 'user1');
       await router.routeToShard(ShardEntityType.USER, 'user2');
       await router.routeToShard(ShardEntityType.CONTENT, 'user1:content1');
@@ -165,14 +161,10 @@ describe('ModuloShardRouter', () => {
 
     it('should clear routing metrics', async () => {
       await router.initialize();
-
-      // Make routing calls
       await router.routeToShard(ShardEntityType.USER, 'user1');
 
       let stats = router.getRoutingStatistics();
       expect(stats.totalRoutes).toBe(1);
-
-      // Clear metrics
       router.clearRoutingMetrics();
 
       stats = router.getRoutingStatistics();
@@ -183,8 +175,6 @@ describe('ModuloShardRouter', () => {
   describe('Health Integration', () => {
     it('should respect shard health status', async () => {
       await router.initialize();
-
-      // Mock a shard as unhealthy
       const mockUnhealthyShard = async (shardId: number, shardType: string) => {
         if (shardId === 0) {
           return Promise.resolve({
@@ -232,9 +222,6 @@ describe('ModuloShardRouter', () => {
   });
 });
 
-/**
- * Integration Test Suite for ModuloShardRouter
- */
 describe('ModuloShardRouter Integration', () => {
   let router: ModuloShardRouter;
 
@@ -254,18 +241,14 @@ describe('ModuloShardRouter Integration', () => {
   it('should handle high-volume routing', async () => {
     const startTime = Date.now();
     const routeCount = 10000;
-
     const promises = [];
     for (let i = 0; i < routeCount; i++) {
       promises.push(router.routeToShard(ShardEntityType.USER, `user-${i}`));
     }
-
     await Promise.all(promises);
     const duration = Date.now() - startTime;
-
     // Should complete 10,000 routes in under 5 seconds
     expect(duration).toBeLessThan(5000);
-
     const stats = router.getRoutingStatistics();
     expect(stats.totalRoutes).toBe(routeCount);
   });
@@ -274,18 +257,13 @@ describe('ModuloShardRouter Integration', () => {
     const key = 'consistency-test-user';
     const routeCount = 1000;
     const results = [];
-
-    // Route the same key many times concurrently
     const promises = [];
     for (let i = 0; i < routeCount; i++) {
       promises.push(
         router.routeToShard(ShardEntityType.USER, key).then((r) => r.shardId)
       );
     }
-
     const shardIds = await Promise.all(promises);
-
-    // All routes for the same key should go to the same shard
     const uniqueShardIds = [...new Set(shardIds)];
     expect(uniqueShardIds).toHaveLength(1);
     expect(uniqueShardIds[0]).toBe(shardIds[0]);

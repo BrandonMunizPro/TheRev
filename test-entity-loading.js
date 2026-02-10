@@ -38,15 +38,15 @@ try {
     entities: [User, Post, Thread, ThreadAdmin],
   });
 
-  console.log('🚀 Initializing data source...');
+  console.log('Initializing data source...');
   await testDataSource.initialize();
-  console.log('✅ Data source initialized successfully!');
+  console.log('Data source initialized successfully!');
 
   const userMeta = testDataSource.getMetadata('User');
   const postMeta = testDataSource.getMetadata('Post');
   const threadMeta = testDataSource.getMetadata('Thread');
 
-  console.log('📋 Entity metadata:');
+  console.log('Entity metadata:');
   console.log('  User:', !!userMeta);
   console.log('  Post:', !!postMeta);
   console.log('  Thread:', !!threadMeta);

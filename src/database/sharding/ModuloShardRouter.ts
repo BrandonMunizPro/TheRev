@@ -73,7 +73,7 @@ export class ModuloShardRouter extends BaseShardRouter {
     }
 
     console.debug(
-      `📍 Route ${entityType}:${entityKey} -> Shard ${shardId} (${routingKey})`
+      `Route ${entityType}:${entityKey} -> Shard ${shardId} (${routingKey})`
     );
     return shardId;
   }
@@ -220,7 +220,7 @@ export class ModuloShardRouter extends BaseShardRouter {
     // Strategy 2: Use content key directly (less optimal, but works for MVP)
     // This means content might not be perfectly co-located
     console.warn(
-      `⚠️  Content key without author prefix: ${contentKey}. May affect co-location.`
+      `Content key without author prefix: ${contentKey}. May affect co-location.`
     );
     return contentKey;
   }
@@ -408,7 +408,7 @@ export class ModuloShardRouter extends BaseShardRouter {
 
   public clearRoutingMetrics(): void {
     this.routingMetrics.clear();
-    console.log('🧹 Routing metrics cleared');
+    console.log('Routing metrics cleared');
   }
 }
 

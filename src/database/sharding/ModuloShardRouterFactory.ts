@@ -137,9 +137,9 @@ export class ModuloShardRouterUtils {
   static async initializeRouter(router: ModuloShardRouter): Promise<void> {
     try {
       await router.initialize();
-      console.log('🚀 ModuloShardRouter initialized successfully');
+      console.log('ModuloShardRouter initialized successfully');
     } catch (error) {
-      console.error('❌ Failed to initialize ModuloShardRouter:', error);
+      console.error('Failed to initialize ModuloShardRouter:', error);
       throw error;
     }
   }
@@ -150,9 +150,9 @@ export class ModuloShardRouterUtils {
   static async shutdownRouter(router: ModuloShardRouter): Promise<void> {
     try {
       await router.shutdown();
-      console.log('🛑 ModuloShardRouter shutdown successfully');
+      console.log('ModuloShardRouter shutdown successfully');
     } catch (error) {
-      console.error('❌ Failed to shutdown ModuloShardRouter:', error);
+      console.error('Failed to shutdown ModuloShardRouter:', error);
       throw error;
     }
   }
@@ -184,7 +184,7 @@ export class ModuloShardRouterUtils {
 
       return true;
     } catch (error) {
-      console.error('❌ ModuloShardRouter test failed:', error);
+      console.error('ModuloShardRouter test failed:', error);
       return false;
     }
   }
@@ -211,7 +211,7 @@ export class ModuloShardRouterUtils {
         lastHealthCheck,
       };
     } catch (error) {
-      console.error('❌ Failed to get router health:', error);
+      console.error('Failed to get router health:', error);
       return {
         isHealthy: false,
         shardCount: 0,
@@ -278,7 +278,7 @@ export class ModuloShardRouterUtils {
    */
   static logRoutingStatistics(router: ModuloShardRouter): void {
     const stats = router.getRoutingStatistics();
-    console.log('📊 ModuloShardRouter Statistics:', {
+    console.log('ModuloShardRouter Statistics:', {
       totalRoutes: stats.totalRoutes,
       routesByEntityType: stats.routesByEntityType,
       averageRoutingTime: stats.averageRoutingTime,
