@@ -136,6 +136,13 @@ export interface IShardRouter {
    * Clean up resources and shutdown
    */
   shutdown(): Promise<void>;
+
+  /**
+   * Get shard for user (convenience method for user-based routing)
+   * @param userId - User ID to route
+   * @returns Shard ID for the user
+   */
+  getShardForUser(userId: string): Promise<string | number>;
 }
 
 export interface ShardConfig {
@@ -574,5 +581,14 @@ export abstract class BaseShardRouter implements IShardRouter {
       default:
         return null;
     }
+  }
+
+  /**
+   * Default implementation of getShardForUser for user-based routing
+   * Uses USER entity type for routing
+   */
+  async getShardForUser(userId: string): Promise<string | number> {
+    const result = await this.routeToShard(ShardEntityType.USER, userId);
+    return result.shardId;
   }
 }
