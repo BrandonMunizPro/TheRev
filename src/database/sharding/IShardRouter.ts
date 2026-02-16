@@ -143,6 +143,12 @@ export interface IShardRouter {
    * @returns Shard ID for the user
    */
   getShardForUser(userId: string): Promise<string | number>;
+
+  /**
+   * @param shardType - Type of shard
+   * @param config - Configuration for the shard type
+   */
+  configure(shardType: ShardType, config: ShardConfig): void;
 }
 
 export interface ShardConfig {
@@ -421,6 +427,13 @@ export abstract class BaseShardRouter implements IShardRouter {
       isHealthy: metric.isHealthy,
       lastCheck: metric.lastCheck,
     }));
+  }
+
+  configure(shardType: ShardType, config: ShardConfig): void {
+    this.shardConfigs.set(shardType, config);
+    for (let i = 0; i < config.totalShards; i++) {
+      (this.shardHealthMonitor as any).initializeShardMetrics(i, shardType);
+    }
   }
 
   async initialize(): Promise<void> {
