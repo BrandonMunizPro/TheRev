@@ -1,0 +1,210 @@
+version: '3.8'
+
+# Infrastructure-only compose file for local development
+# Usage: docker-compose -f docker-compose.infra.yml up -d
+#
+# This sets up:
+# - PostgreSQL primary (port 5432)
+# - PostgreSQL replica 1 (port 5433) - hot standby
+# - PostgreSQL replica 2 (port 5434) - hot standby
+# - Redis single (port 6379)
+# - Redis Cluster nodes (ports 7001-7003)
+# - PgBouncer connection pool (port 6432)
+
+services:
+  # ============================================
+  # PostgreSQL Primary
+  # ============================================
+  postgres-primary:
+    image: postgres:16-alpine
+    container_name: therev-postgres-primary
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Bjornmaximus11
+      POSTGRES_DB: therev
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-primary-data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c max_connections=200
+      -c wal_level=replica
+      -c hot_standby=on
+      -c hot_standby_feedback=on
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -h localhost']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - therev-infra-network
+
+  # ============================================
+  # PostgreSQL Read Replica 1
+  # ============================================
+  postgres-replica-1:
+    image: postgres:16-alpine
+    container_name: therev-postgres-replica-1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Bjornmaximus11
+      POSTGRES_DB: therev
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres-replica-1-data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c max_connections=100
+      -c hot_standby=on
+      -c hot_standby_feedback=on
+      -c primary_conninfo=host=postgres-primary port=5432 user=postgres password=Bjornmaximus11
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -h localhost']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - therev-infra-network
+
+  # ============================================
+  # PostgreSQL Read Replica 2
+  # ============================================
+  postgres-replica-2:
+    image: postgres:16-alpine
+    container_name: therev-postgres-replica-2
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Bjornmaximus11
+      POSTGRES_DB: therev
+    ports:
+      - '5434:5432'
+    volumes:
+      - postgres-replica-2-data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c max_connections=100
+      -c hot_standby=on
+      -c hot_standby_feedback=on
+      -c primary_conninfo=host=postgres-primary port=5432 user=postgres password=Bjornmaximus11
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -h localhost']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - therev-infra-network
+
+  # ============================================
+  # Redis (Single Instance)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: therev-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - therev-infra-network
+
+  # ============================================
+  # Redis Cluster Nodes (3 nodes for testing)
+  # ============================================
+  redis-node-1:
+    image: redis:7-alpine
+    container_name: therev-redis-node-1
+    ports:
+      - '7001:6379'
+    volumes:
+      - redis-node-1-data:/data
+    command: >
+      sh -c "echo 'yes' | redis-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 --cluster-replicas 0 || true"
+      && redis-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+    networks:
+      - therev-infra-network
+
+  redis-node-2:
+    image: redis:7-alpine
+    container_name: therev-redis-node-2
+    ports:
+      - '7002:6379'
+    volumes:
+      - redis-node-2-data:/data
+    command: redis-server --port 6379 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    networks:
+      - therev-infra-network
+
+  redis-node-3:
+    image: redis:7-alpine
+    container_name: therev-redis-node-3
+    ports:
+      - '7003:6379'
+    volumes:
+      - redis-node-3-data:/data
+    command: redis-server --port 6379 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    networks:
+      - therev-infra-network
+
+  # ============================================
+  # PgBouncer (Connection Pooling)
+  # ============================================
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: therev-pgbouncer
+    environment:
+      DATABASE: therev
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 100
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 5
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Bjornmaximus11
+      POSTGRES_DB: therev
+    ports:
+      - '6432:5432'
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'bash', '-c', 'echo > /dev/tcp/127.0.0.1/5432']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - therev-infra-network
+
+volumes:
+  postgres-primary-data:
+  postgres-replica-1-data:
+  postgres-replica-2-data:
+  redis-data:
+  redis-node-1-data:
+  redis-node-2-data:
+  redis-node-3-data:
+
+networks:
+  therev-infra-network:
+    driver: bridge

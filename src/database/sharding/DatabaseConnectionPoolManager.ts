@@ -5,10 +5,8 @@
 
 import { Pool, PoolClient, PoolConfig } from 'pg';
 import { ShardType, ShardStatus } from './IShardRouter';
-import {
-  DualWriteMigrationService,
-  UserStorageLocation,
-} from './DualWriteMigrationService';
+import { DualWriteMigrationService } from './DualWriteMigrationService';
+import { UserStorageLocation } from '../../entities/MigrationState';
 
 /**
  * Connection pool statistics
