@@ -34,6 +34,9 @@ describe('ModuloShardRouter', () => {
       ],
     };
     router.configure(ShardType.USERS, testConfig);
+    for (let i = 0; i < 4; i++) {
+      healthMonitor.markShardHealthy(i, ShardType.USERS);
+    }
 
     const contentConfig: ShardConfig = {
       totalShards: 4,
@@ -46,6 +49,9 @@ describe('ModuloShardRouter', () => {
       ],
     };
     router.configure(ShardType.CONTENT, contentConfig);
+    for (let i = 0; i < 4; i++) {
+      healthMonitor.markShardHealthy(i, ShardType.CONTENT);
+    }
 
     const aiTasksConfig: ShardConfig = {
       totalShards: 4,
@@ -58,6 +64,9 @@ describe('ModuloShardRouter', () => {
       ],
     };
     router.configure(ShardType.AI_TASKS, aiTasksConfig);
+    for (let i = 0; i < 4; i++) {
+      healthMonitor.markShardHealthy(i, ShardType.AI_TASKS);
+    }
   });
 
   afterEach(async () => {
@@ -263,10 +272,12 @@ describe('ModuloShardRouter', () => {
 
 describe('ModuloShardRouter Integration', () => {
   let router: ModuloShardRouter;
+  let healthMonitor: ShardHealthMonitor;
 
   beforeEach(async () => {
+    healthMonitor = new ShardHealthMonitor();
     router = new ModuloShardRouter(
-      new ShardHealthMonitor(),
+      healthMonitor,
       new ShardConnectionManager(),
       true
     );
@@ -282,6 +293,9 @@ describe('ModuloShardRouter Integration', () => {
       ],
     };
     router.configure(ShardType.USERS, testConfig);
+    for (let i = 0; i < 4; i++) {
+      healthMonitor.markShardHealthy(i, ShardType.USERS);
+    }
 
     const contentConfig: ShardConfig = {
       totalShards: 4,
@@ -294,6 +308,9 @@ describe('ModuloShardRouter Integration', () => {
       ],
     };
     router.configure(ShardType.CONTENT, contentConfig);
+    for (let i = 0; i < 4; i++) {
+      healthMonitor.markShardHealthy(i, ShardType.CONTENT);
+    }
 
     const aiTasksConfig: ShardConfig = {
       totalShards: 4,
@@ -306,6 +323,9 @@ describe('ModuloShardRouter Integration', () => {
       ],
     };
     router.configure(ShardType.AI_TASKS, aiTasksConfig);
+    for (let i = 0; i < 4; i++) {
+      healthMonitor.markShardHealthy(i, ShardType.AI_TASKS);
+    }
 
     await router.initialize();
   });

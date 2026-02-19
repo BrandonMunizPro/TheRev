@@ -224,31 +224,31 @@ export class ShardHealthMonitor
       const metrics: ShardHealthMetrics = {
         shardId,
         shardType,
-        isHealthy: true, // Start as healthy for testing
+        isHealthy: false, // Start as unhealthy until first check passes
         responseTime: 0,
         lastCheck: new Date(),
         consecutiveFailures: 0,
-        errorRate: 0, // Start with 0% error rate
+        errorRate: 0, // Unknown - no checks performed yet
       };
       this.healthMetrics.set(key, metrics);
     }
   }
 
   /**
-   * Set shard health status directly (for testing)
+   * Mark shard as healthy (for testing or after initial setup)
    */
-  public setShardHealth(
-    shardId: number,
-    shardType: ShardType,
-    isHealthy: boolean
-  ): void {
+  public markShardHealthy(shardId: number, shardType: ShardType): void {
     const key = this.getShardKey(shardId, shardType);
-    const existing = this.healthMetrics.get(key);
-    if (existing) {
-      existing.isHealthy = isHealthy;
-      existing.lastCheck = new Date();
-      this.healthMetrics.set(key, existing);
-    }
+    const metrics: ShardHealthMetrics = {
+      shardId,
+      shardType,
+      isHealthy: true,
+      responseTime: 0,
+      lastCheck: new Date(),
+      consecutiveFailures: 0,
+      errorRate: 0,
+    };
+    this.healthMetrics.set(key, metrics);
   }
 
   /**
