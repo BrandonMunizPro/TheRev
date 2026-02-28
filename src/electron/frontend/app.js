@@ -8,6 +8,7 @@ class TheRevApp {
 
   async init() {
     await this.loadAvatarData();
+    await this.initAISettings();
     this.setupEventListeners();
     this.setupElectronListeners();
     this.loadInitialContent();
@@ -21,6 +22,9 @@ class TheRevApp {
     document
       .getElementById('news-btn')
       .addEventListener('click', () => this.switchSection('news'));
+    document
+      .getElementById('ai-settings-btn')
+      .addEventListener('click', () => this.switchSection('ai-settings'));
     document
       .getElementById('profile-btn')
       .addEventListener('click', () => this.switchSection('profile'));
@@ -277,6 +281,214 @@ class TheRevApp {
       // Populate UI with data
     } catch (error) {
       console.error('Error fetching from GraphQL:', error);
+    }
+  }
+
+  // AI Settings Methods
+  async initAISettings() {
+    this.aiAccounts = {
+      chatgpt: { connected: false, apiKey: '', model: 'gpt-4o' },
+      claude: { connected: false, apiKey: '', model: 'claude-sonnet-4-20250514' },
+      ollama: { connected: false, url: 'http://localhost:11434', model: 'llama3' }
+    };
+    
+    this.loadAIAccountsFromStorage();
+    this.setupAIEventListeners();
+    await this.checkAIProvidersHealth();
+  }
+
+  setupAIEventListeners() {
+    // Connect buttons
+    document.querySelectorAll('.connect-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => this.connectAIProvider(e.target.dataset.provider));
+    });
+
+    // Toggle switches
+    document.getElementById('chatgpt-enabled')?.addEventListener('change', (e) => {
+      this.updateProviderEnabled('chatgpt', e.target.checked);
+    });
+    document.getElementById('claude-enabled')?.addEventListener('change', (e) => {
+      this.updateProviderEnabled('claude', e.target.checked);
+    });
+    document.getElementById('ollama-enabled')?.addEventListener('change', (e) => {
+      this.updateProviderEnabled('ollama', e.target.checked);
+    });
+
+    // Preference changes
+    document.getElementById('default-provider')?.addEventListener('change', (e) => {
+      this.savePreference('defaultProvider', e.target.value);
+    });
+    document.getElementById('free-tier-only')?.addEventListener('change', (e) => {
+      this.savePreference('freeTierOnly', e.target.checked);
+    });
+    document.getElementById('browser-automation')?.addEventListener('change', (e) => {
+      this.savePreference('browserAutomation', e.target.checked);
+    });
+  }
+
+  async connectAIProvider(provider) {
+    const btn = document.querySelector(`.connect-btn[data-provider="${provider}"]`);
+    btn.textContent = 'Connecting...';
+    btn.disabled = true;
+
+    try {
+      if (provider === 'ollama') {
+        const url = document.getElementById('ollama-url')?.value || 'http://localhost:11434';
+        const model = document.getElementById('ollama-model')?.value || 'llama3';
+        
+        const response = await fetch(`${url}/api/tags`, { method: 'GET' });
+        if (response.ok) {
+          this.aiAccounts.ollama = { connected: true, url, model };
+          this.updateProviderUI('ollama', true);
+          this.updateAIStatus('ollama', 'connected');
+        } else {
+          throw new Error('Connection failed');
+        }
+      } else {
+        const apiKey = document.getElementById(`${provider}-api-key`)?.value;
+        if (!apiKey) {
+          throw new Error('API key required');
+        }
+        
+        this.aiAccounts[provider] = { 
+          connected: true, 
+          apiKey, 
+          model: document.getElementById(`${provider}-model`)?.value 
+        };
+        this.updateProviderUI(provider, true);
+      }
+      
+      this.saveAIAccountsToStorage();
+      btn.textContent = 'Connected';
+      btn.classList.add('connected');
+    } catch (error) {
+      console.error(`Error connecting to ${provider}:`, error);
+      btn.textContent = 'Connect';
+      alert(`Failed to connect to ${provider}: ${error.message}`);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  updateProviderUI(provider, connected) {
+    const card = document.querySelector(`.ai-account-card[data-provider="${provider}"]`);
+    const status = card?.querySelector('.provider-status');
+    const btn = card?.querySelector('.connect-btn');
+    
+    if (connected) {
+      card?.classList.add('connected');
+      if (status) {
+        status.textContent = 'Connected';
+        status.classList.remove('disconnected');
+        status.classList.add('connected');
+      }
+    } else {
+      card?.classList.remove('connected');
+      if (status) {
+        status.textContent = provider === 'ollama' ? 'Not Running' : 'Not Connected';
+        status.classList.add('disconnected');
+        status.classList.remove('connected');
+      }
+      if (btn) {
+        btn.textContent = 'Connect';
+        btn.classList.remove('connected');
+      }
+    }
+  }
+
+  updateProviderEnabled(provider, enabled) {
+    if (this.aiAccounts[provider]) {
+      this.aiAccounts[provider].enabled = enabled;
+      this.saveAIAccountsToStorage();
+    }
+  }
+
+  async checkAIProvidersHealth() {
+    // Check Ollama first (local)
+    try {
+      const ollama = this.aiAccounts.ollama;
+      if (ollama?.connected) {
+        const response = await fetch(`${ollama.url}/api/tags`, { method: 'GET', signal: AbortSignal.timeout(3000) });
+        if (response.ok) {
+          this.updateAIStatus('ollama', 'connected');
+        } else {
+          this.updateAIStatus('ollama', 'error');
+        }
+      }
+    } catch {
+      this.updateAIStatus('ollama', 'error');
+    }
+    
+    this.updateAIStatus('overall', 'ready');
+  }
+
+  updateAIStatus(provider, status) {
+    const statusEl = document.getElementById('ai-status');
+    const dot = statusEl?.querySelector('.status-dot');
+    const text = statusEl?.querySelector('.status-text');
+    
+    if (dot && text) {
+      dot.className = 'status-dot';
+      if (status === 'connected') {
+        dot.classList.add('connected');
+        text.textContent = 'AI Ready';
+      } else if (status === 'error') {
+        dot.classList.add('error');
+        text.textContent = 'Check Settings';
+      } else {
+        text.textContent = 'Ready';
+      }
+    }
+  }
+
+  loadAIAccountsFromStorage() {
+    try {
+      const stored = localStorage.getItem('therev_ai_accounts');
+      if (stored) {
+        this.aiAccounts = JSON.parse(stored);
+        
+        // Update UI for connected accounts
+        Object.keys(this.aiAccounts).forEach(provider => {
+          if (this.aiAccounts[provider].connected) {
+            this.updateProviderUI(provider, true);
+          }
+        });
+      }
+      
+      // Load preferences
+      const prefs = localStorage.getItem('therev_ai_preferences');
+      if (prefs) {
+        const preferences = JSON.parse(prefs);
+        if (document.getElementById('default-provider')) {
+          document.getElementById('default-provider').value = preferences.defaultProvider || 'auto';
+        }
+        if (document.getElementById('free-tier-only')) {
+          document.getElementById('free-tier-only').checked = preferences.freeTierOnly || false;
+        }
+        if (document.getElementById('browser-automation')) {
+          document.getElementById('browser-automation').checked = preferences.browserAutomation !== false;
+        }
+      }
+    } catch (e) {
+      console.error('Error loading AI accounts:', e);
+    }
+  }
+
+  saveAIAccountsToStorage() {
+    try {
+      localStorage.setItem('therev_ai_accounts', JSON.stringify(this.aiAccounts));
+    } catch (e) {
+      console.error('Error saving AI accounts:', e);
+    }
+  }
+
+  savePreference(key, value) {
+    try {
+      const prefs = JSON.parse(localStorage.getItem('therev_ai_preferences') || '{}');
+      prefs[key] = value;
+      localStorage.setItem('therev_ai_preferences', JSON.stringify(prefs));
+    } catch (e) {
+      console.error('Error saving preference:', e);
     }
   }
 }

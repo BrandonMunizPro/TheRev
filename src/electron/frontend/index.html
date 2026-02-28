@@ -15,12 +15,13 @@
             <h1>TheRev</h1>
             <span class="tagline">The Rev starts with you!</span>
           </div>
-          <nav class="nav">
-            <button id="threads-btn" class="nav-btn active">Threads</button>
-            <button id="news-btn" class="nav-btn">News</button>
-            <button id="profile-btn" class="nav-btn">Profile</button>
-            <button id="browser-btn" class="nav-btn">Browser</button>
-          </nav>
+            <nav class="nav">
+              <button id="threads-btn" class="nav-btn active">Threads</button>
+              <button id="news-btn" class="nav-btn">News</button>
+              <button id="ai-settings-btn" class="nav-btn">AI Settings</button>
+              <button id="profile-btn" class="nav-btn">Profile</button>
+              <button id="browser-btn" class="nav-btn">Browser</button>
+            </nav>
           <div class="user-rev">
             <div class="avatar-container">
               <img
@@ -96,6 +97,175 @@
                   An in depth analysis of recent policy changes and their impact
                   on public discourse...
                 </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- AI Settings Section -->
+        <section id="ai-settings-section" class="content-section">
+          <div class="ai-settings-container">
+            <div class="section-header">
+              <h2>AI Configuration</h2>
+              <span class="ai-status-indicator" id="ai-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Checking...</span>
+              </span>
+            </div>
+
+            <div class="ai-accounts-grid">
+              <!-- ChatGPT Account -->
+              <div class="ai-account-card" data-provider="chatgpt">
+                <div class="account-header">
+                  <div class="provider-logo chatgpt">GPT</div>
+                  <div class="provider-info">
+                    <h3>ChatGPT</h3>
+                    <span class="provider-status disconnected">Not Connected</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="chatgpt-enabled" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="account-form">
+                  <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="chatgpt-api-key" placeholder="sk-..." />
+                  </div>
+                  <div class="form-group">
+                    <label>Model</label>
+                    <select id="chatgpt-model">
+                      <option value="gpt-4o">GPT-4o</option>
+                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                    </select>
+                  </div>
+                  <button class="connect-btn" data-provider="chatgpt">Connect</button>
+                </div>
+              </div>
+
+              <!-- Claude Account -->
+              <div class="ai-account-card" data-provider="claude">
+                <div class="account-header">
+                  <div class="provider-logo claude">CLA</div>
+                  <div class="provider-info">
+                    <h3>Claude</h3>
+                    <span class="provider-status disconnected">Not Connected</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="claude-enabled" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="account-form">
+                  <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="claude-api-key" placeholder="sk-ant-..." />
+                  </div>
+                  <div class="form-group">
+                    <label>Model</label>
+                    <select id="claude-model">
+                      <option value="claude-opus-4-20250514">Claude Opus 4</option>
+                      <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                      <option value="claude-haiku-3-20250514">Claude Haiku</option>
+                    </select>
+                  </div>
+                  <button class="connect-btn" data-provider="claude">Connect</button>
+                </div>
+              </div>
+
+              <!-- Ollama (Local) -->
+              <div class="ai-account-card" data-provider="open_source">
+                <div class="account-header">
+                  <div class="provider-logo ollama">OLL</div>
+                  <div class="provider-info">
+                    <h3>Ollama (Local)</h3>
+                    <span class="provider-status disconnected">Not Running</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="ollama-enabled" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="account-form">
+                  <div class="form-group">
+                    <label>Local URL</label>
+                    <input type="text" id="ollama-url" placeholder="http://localhost:11434" value="http://localhost:11434" />
+                  </div>
+                  <div class="form-group">
+                    <label>Model</label>
+                    <select id="ollama-model">
+                      <option value="llama3">Llama 3</option>
+                      <option value="llama2">Llama 2</option>
+                      <option value="mistral">Mistral</option>
+                      <option value="codellama">CodeLlama</option>
+                      <option value="mixtral">Mixtral</option>
+                      <option value="phi3">Phi-3</option>
+                      <option value="gemma">Gemma</option>
+                    </select>
+                  </div>
+                  <button class="connect-btn" data-provider="ollama">Connect</button>
+                </div>
+                <div class="local-info">
+                  <span class="info-icon">ℹ️</span>
+                  <span>Runs AI locally on your machine - no API costs!</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Default Preferences -->
+            <div class="preferences-section">
+              <h3>Default Preferences</h3>
+              <div class="preference-row">
+                <div class="preference-info">
+                  <label>Preferred AI Provider</label>
+                  <span class="preference-desc">Which AI to use by default</span>
+                </div>
+                <select id="default-provider">
+                  <option value="chatgpt">ChatGPT</option>
+                  <option value="claude">Claude</option>
+                  <option value="ollama">Ollama (Local)</option>
+                  <option value="auto">Auto (Best Available)</option>
+                </select>
+              </div>
+              <div class="preference-row">
+                <div class="preference-info">
+                  <label>Cost Tier</label>
+                  <span class="preference-desc">Limit to free providers only</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="free-tier-only" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="preference-row">
+                <div class="preference-info">
+                  <label>Browser Automation</label>
+                  <span class="preference-desc">Allow AI to browse the web</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="browser-automation" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Usage Stats -->
+            <div class="usage-stats">
+              <h3>Today's Usage</h3>
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <span class="stat-value" id="requests-today">0</span>
+                  <span class="stat-label">Requests</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-value" id="tokens-today">0</span>
+                  <span class="stat-label">Tokens</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-value" id="api-cost">$0.00</span>
+                  <span class="stat-label">API Cost</span>
+                </div>
               </div>
             </div>
           </div>
