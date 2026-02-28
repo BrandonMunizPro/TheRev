@@ -356,8 +356,13 @@ export abstract class BaseShardRouter implements IShardRouter {
   async addShard(shardInfo: ShardInfo): Promise<void> {
     const config = this.shardConfigs.get(shardInfo.shardType);
     if (!config) {
-      throw new Error(
-        `No configuration found for shard type: ${shardInfo.shardType}`
+      throw new ValidationError(
+        `No configuration found for shard type: ${shardInfo.shardType}`,
+        {
+          field: 'shardType',
+          value: shardInfo.shardType,
+          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+        }
       );
     }
 

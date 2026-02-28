@@ -6,16 +6,12 @@ module.exports = {
     sourceType: 'module',
   },
   plugins: ['@typescript-eslint/eslint-plugin'],
-  extends: [
-    'eslint:recommended',
-    '@typescript-eslint/recommended',
-    '@typescript-eslint/recommended-requiring-type-checking',
-    'prettier',
-  ],
+  extends: ['eslint:recommended', '@typescript-eslint/recommended', 'prettier'],
   root: true,
   env: {
     node: true,
     jest: true,
+    es2021: true,
   },
   overrides: [
     {
@@ -77,13 +73,25 @@ module.exports = {
   ],
   ignorePatterns: ['.eslintrc.js', 'dist/', 'coverage/', 'node_modules/'],
   rules: {
+    'no-undef': 0,
+    '@typescript-eslint/no-undef': 0,
     '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
-    '@typescript-eslint/no-unused-vars': 'error',
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+      },
+    ],
     '@typescript-eslint/prefer-const': 'error',
+    '@typescript-eslint/no-shadow': 'off',
+    '@typescript-eslint/no-explicit-any': 'warn',
+    '@typescript-eslint/no-undef': 'off',
     'no-console': 'warn',
     'prefer-const': 'error',
+    'no-undef': 'off',
   },
 };

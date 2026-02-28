@@ -1,7 +1,5 @@
 /**
  * ModuloShardRouter Factory and Integration
- * Epic 1: Enterprise Database Foundation - Story 1.3
- *
  * Factory for creating configured ModuloShardRouter instances
  * Integration utilities and configuration management
  */
@@ -15,6 +13,7 @@ import {
   ShardType,
   ShardEntityType,
 } from './IShardRouter';
+import { ValidationError, ErrorCode } from '../../errors/AppError';
 
 export interface ModuloShardRouterConfig {
   enableMetrics: boolean;
@@ -106,23 +105,49 @@ export class ModuloShardRouterFactory {
    */
   static validateConfig(config: ModuloShardRouterConfig): void {
     if (config.healthCheckInterval < 1000) {
-      throw new Error('Health check interval must be at least 1000ms');
+      throw new ValidationError(
+        'Health check interval must be at least 1000ms',
+        {
+          field: 'healthCheckInterval',
+          value: config.healthCheckInterval,
+          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+        }
+      );
     }
 
     if (config.connectionTimeout < 100) {
-      throw new Error('Connection timeout must be at least 100ms');
+      throw new ValidationError('Connection timeout must be at least 100ms', {
+        field: 'connectionTimeout',
+        value: config.connectionTimeout,
+        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+      });
     }
 
     if (config.maxConnections < 1 || config.maxConnections > 100) {
-      throw new Error('Max connections must be between 1 and 100');
+      throw new ValidationError('Max connections must be between 1 and 100', {
+        field: 'maxConnections',
+        value: config.maxConnections,
+        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+      });
     }
 
     if (config.maxRetries < 0 || config.maxRetries > 10) {
-      throw new Error('Max retries must be between 0 and 10');
+      throw new ValidationError('Max retries must be between 0 and 10', {
+        field: 'maxRetries',
+        value: config.maxRetries,
+        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+      });
     }
 
     if (config.routingTimeout < 10 || config.routingTimeout > 10000) {
-      throw new Error('Routing timeout must be between 10ms and 10s');
+      throw new ValidationError(
+        'Routing timeout must be between 10ms and 10s',
+        {
+          field: 'routingTimeout',
+          value: config.routingTimeout,
+          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+        }
+      );
     }
   }
 }

@@ -7,6 +7,7 @@ import { Pool, PoolClient, PoolConfig } from 'pg';
 import { ShardType, ShardStatus } from './IShardRouter';
 import { DualWriteMigrationService } from './DualWriteMigrationService';
 import { UserStorageLocation } from '../../entities/MigrationState';
+import { SystemError, ValidationError, ErrorCode } from '../../errors/AppError';
 
 /**
  * Connection pool statistics
@@ -116,29 +117,29 @@ export class DatabaseConnectionPoolManager {
    * Uses user's storage location to determine correct pool
    */
   async getConnectionForUser(userId: string): Promise<PooledConnection> {
-    // Get user's storage location
     const storageLocation =
       await this.migrationService.getUserStorageLocation(userId);
 
-    // Determine which pool to use
     let poolKey: string;
+    let shardId: number | undefined;
 
     if (storageLocation.primary === 'legacy') {
-      // Legacy connection - use default legacy pool
       poolKey = 'legacy:default';
     } else {
-      // Sharded connection - use specific shard pool
-      const shardId =
+      shardId =
         storageLocation.shardId ||
-        (await this.shardRouter.getShardForUser(userId));
-      poolKey = `users:${shardId}`; // Assuming user shards for now
+        ((await this.shardRouter.getShardForUser(userId)) as number);
+      poolKey = `users:${shardId}`;
     }
 
-    // Get connection from appropriate pool
     const pool = this.pools.get(poolKey);
 
     if (!pool) {
-      throw new Error(`No connection pool found for ${poolKey}`);
+      throw new SystemError(
+        `No connection pool found for shard ${shardId ?? 'unknown'}`,
+        ErrorCode.SHARD_NOT_FOUND,
+        { shardId, shardType: ShardType.USERS }
+      );
     }
 
     return await pool.getConnection();
@@ -235,7 +236,7 @@ export class DatabaseConnectionPoolManager {
    * Delegates to individual pools which handle their own idle connection management
    */
   async cleanupIdleConnections(idleTimeout: number = 300000): Promise<number> {
-    let totalCleaned = 0;
+    const totalCleaned = 0;
 
     for (const [poolKey, pool] of this.pools.entries()) {
       try {

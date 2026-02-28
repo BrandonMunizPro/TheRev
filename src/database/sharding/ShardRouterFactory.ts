@@ -247,19 +247,26 @@ export class ShardUtils {
         return entityKey;
 
       default:
-        throw new Error(
-          `Cannot extract user ID from entity type: ${entityType}`
+        throw new ValidationError(
+          `Cannot extract user ID from entity type: ${entityType}`,
+          {
+            field: 'entityType',
+            value: entityType,
+            errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+          }
         );
     }
   }
 
-  /**
-   * Validate shard ID is within valid range
-   */
   static validateShardId(shardId: number, totalShards: number): void {
     if (shardId < 0 || shardId >= totalShards) {
-      throw new Error(
-        `Invalid shard ID ${shardId}. Must be between 0 and ${totalShards - 1}`
+      throw new ValidationError(
+        `Invalid shard ID ${shardId}. Must be between 0 and ${totalShards - 1}`,
+        {
+          field: 'shardId',
+          value: shardId,
+          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+        }
       );
     }
   }
@@ -319,7 +326,11 @@ export class ShardUtils {
         return ShardType.AI_TASKS;
 
       default:
-        throw new Error(`Unknown entity type: ${entityType}`);
+        throw new ValidationError(`Unknown entity type: ${entityType}`, {
+          field: 'entityType',
+          value: entityType,
+          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+        });
     }
   }
 
@@ -341,7 +352,11 @@ export class ShardUtils {
     const shardId = parseInt(shardIdStr);
 
     if (!shardType || isNaN(shardId)) {
-      throw new Error(`Invalid shard key format: ${shardKey}`);
+      throw new ValidationError(`Invalid shard key format: ${shardKey}`, {
+        field: 'shardKey',
+        value: shardKey,
+        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
+      });
     }
 
     return {
