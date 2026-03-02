@@ -6,4 +6,8 @@ export * from './AIAccountService';
 export * from './RateLimitTypes';
 export * from './RateLimiter';
 export * from './RateLimitFallbackService';
+export * from './TaskPriorityTypes';
+export * from './TaskPriorityService';
+export * from './AITaskTypes';
+export * from './AITaskManager';
 export * from './adapters';
