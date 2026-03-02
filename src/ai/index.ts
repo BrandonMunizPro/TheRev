@@ -10,4 +10,8 @@ export * from './TaskPriorityTypes';
 export * from './TaskPriorityService';
 export * from './AITaskTypes';
 export * from './AITaskManager';
+export * from './AuditTypes';
+export * from './AuditService';
+export * from './SubscriptionTypes';
+export * from './TaskSubscriptionService';
 export * from './adapters';

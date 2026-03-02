@@ -115,12 +115,14 @@
 
             <div class="ai-accounts-grid">
               <!-- ChatGPT Account -->
-              <div class="ai-account-card" data-provider="chatgpt">
+              <div class="ai-account-card" data-provider="CHATGPT">
                 <div class="account-header">
                   <div class="provider-logo chatgpt">GPT</div>
                   <div class="provider-info">
                     <h3>ChatGPT</h3>
                     <span class="provider-status disconnected">Not Connected</span>
+                    <span class="provider-latency"></span>
+                    <span class="provider-circuit"></span>
                   </div>
                   <label class="toggle-switch">
                     <input type="checkbox" id="chatgpt-enabled" />
@@ -140,17 +142,19 @@
                       <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                     </select>
                   </div>
-                  <button class="connect-btn" data-provider="chatgpt">Connect</button>
+                  <button class="connect-btn" data-provider="CHATGPT">Connect</button>
                 </div>
               </div>
 
               <!-- Claude Account -->
-              <div class="ai-account-card" data-provider="claude">
+              <div class="ai-account-card" data-provider="CLAUDE">
                 <div class="account-header">
                   <div class="provider-logo claude">CLA</div>
                   <div class="provider-info">
                     <h3>Claude</h3>
                     <span class="provider-status disconnected">Not Connected</span>
+                    <span class="provider-latency"></span>
+                    <span class="provider-circuit"></span>
                   </div>
                   <label class="toggle-switch">
                     <input type="checkbox" id="claude-enabled" />
@@ -170,17 +174,82 @@
                       <option value="claude-haiku-3-20250514">Claude Haiku</option>
                     </select>
                   </div>
-                  <button class="connect-btn" data-provider="claude">Connect</button>
+                  <button class="connect-btn" data-provider="CLAUDE">Connect</button>
+                </div>
+              </div>
+
+              <!-- Gemini Account -->
+              <div class="ai-account-card" data-provider="GEMINI">
+                <div class="account-header">
+                  <div class="provider-logo gemini">GEM</div>
+                  <div class="provider-info">
+                    <h3>Gemini</h3>
+                    <span class="provider-status disconnected">Not Connected</span>
+                    <span class="provider-latency"></span>
+                    <span class="provider-circuit"></span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="gemini-enabled" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="account-form">
+                  <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="gemini-api-key" placeholder="AIza..." />
+                  </div>
+                  <div class="form-group">
+                    <label>Model</label>
+                    <select id="gemini-model">
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                      <option value="gemini-pro">Gemini Pro</option>
+                    </select>
+                  </div>
+                  <button class="connect-btn" data-provider="GEMINI">Connect</button>
+                </div>
+              </div>
+
+              <!-- Perplexity Account -->
+              <div class="ai-account-card" data-provider="PERPLEXITY">
+                <div class="account-header">
+                  <div class="provider-logo perplexity">PER</div>
+                  <div class="provider-info">
+                    <h3>Perplexity</h3>
+                    <span class="provider-status disconnected">Not Connected</span>
+                    <span class="provider-latency"></span>
+                    <span class="provider-circuit"></span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="perplexity-enabled" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="account-form">
+                  <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="perplexity-api-key" placeholder="pplx-..." />
+                  </div>
+                  <div class="form-group">
+                    <label>Model</label>
+                    <select id="perplexity-model">
+                      <option value="llama-3.1-sonar-large-128k-online">Sonar Large</option>
+                      <option value="llama-3.1-sonar-small-128k-online">Sonar Small</option>
+                    </select>
+                  </div>
+                  <button class="connect-btn" data-provider="PERPLEXITY">Connect</button>
                 </div>
               </div>
 
               <!-- Ollama (Local) -->
-              <div class="ai-account-card" data-provider="open_source">
+              <div class="ai-account-card" data-provider="OPEN_SOURCE">
                 <div class="account-header">
                   <div class="provider-logo ollama">OLL</div>
                   <div class="provider-info">
                     <h3>Ollama (Local)</h3>
                     <span class="provider-status disconnected">Not Running</span>
+                    <span class="provider-latency"></span>
+                    <span class="provider-circuit"></span>
                   </div>
                   <label class="toggle-switch">
                     <input type="checkbox" id="ollama-enabled" />
@@ -204,11 +273,54 @@
                       <option value="gemma">Gemma</option>
                     </select>
                   </div>
-                  <button class="connect-btn" data-provider="ollama">Connect</button>
+                  <button class="connect-btn" data-provider="OPEN_SOURCE">Connect</button>
                 </div>
                 <div class="local-info">
                   <span class="info-icon">ℹ️</span>
                   <span>Runs AI locally on your machine - no API costs!</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- AI Health Dashboard -->
+            <div class="ai-health-dashboard">
+              <h3>Provider Health Status</h3>
+              <div class="health-grid" id="provider-health-grid">
+                <div class="health-card" data-provider="CHATGPT">
+                  <span class="health-provider">ChatGPT</span>
+                  <span class="health-status">-</span>
+                  <span class="health-latency">-</span>
+                  <span class="health-circuit">-</span>
+                </div>
+                <div class="health-card" data-provider="CLAUDE">
+                  <span class="health-provider">Claude</span>
+                  <span class="health-status">-</span>
+                  <span class="health-latency">-</span>
+                  <span class="health-circuit">-</span>
+                </div>
+                <div class="health-card" data-provider="GEMINI">
+                  <span class="health-provider">Gemini</span>
+                  <span class="health-status">-</span>
+                  <span class="health-latency">-</span>
+                  <span class="health-circuit">-</span>
+                </div>
+                <div class="health-card" data-provider="PERPLEXITY">
+                  <span class="health-provider">Perplexity</span>
+                  <span class="health-status">-</span>
+                  <span class="health-latency">-</span>
+                  <span class="health-circuit">-</span>
+                </div>
+                <div class="health-card" data-provider="OPEN_SOURCE">
+                  <span class="health-provider">Ollama</span>
+                  <span class="health-status">-</span>
+                  <span class="health-latency">-</span>
+                  <span class="health-circuit">-</span>
+                </div>
+                <div class="health-card" data-provider="DETERMINISTIC">
+                  <span class="health-provider">Fallback</span>
+                  <span class="health-status healthy">Always Available</span>
+                  <span class="health-latency">&lt;100ms</span>
+                  <span class="health-circuit">-</span>
                 </div>
               </div>
             </div>
@@ -222,10 +334,24 @@
                   <span class="preference-desc">Which AI to use by default</span>
                 </div>
                 <select id="default-provider">
-                  <option value="chatgpt">ChatGPT</option>
-                  <option value="claude">Claude</option>
-                  <option value="ollama">Ollama (Local)</option>
                   <option value="auto">Auto (Best Available)</option>
+                  <option value="CHATGPT">ChatGPT</option>
+                  <option value="CLAUDE">Claude</option>
+                  <option value="GEMINI">Gemini</option>
+                  <option value="PERPLEXITY">Perplexity</option>
+                  <option value="OPEN_SOURCE">Ollama (Local)</option>
+                </select>
+              </div>
+              <div class="preference-row">
+                <div class="preference-info">
+                  <label>Routing Strategy</label>
+                  <span class="preference-desc">How to select providers</span>
+                </div>
+                <select id="routing-strategy">
+                  <option value="health-weighted">Health-Weighted (Recommended)</option>
+                  <option value="latency">Lowest Latency</option>
+                  <option value="cost">Lowest Cost</option>
+                  <option value="capability">Best Capability Match</option>
                 </select>
               </div>
               <div class="preference-row">

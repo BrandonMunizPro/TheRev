@@ -32,19 +32,22 @@ export class OllamaAdapter extends BaseAIAdapter {
       ? `${request.systemPrompt}\n\n${request.prompt}`
       : request.prompt;
 
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: request.model || this.model,
-        prompt,
-        temperature: request.temperature ?? 0.7,
-        options: {
-          num_predict: request.maxTokens ?? 2048,
-        },
-        stream: false,
+    const response = await this.executeWithTimeout(
+      () => fetch(`${this.baseUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: request.model || this.model,
+          prompt,
+          temperature: request.temperature ?? 0.7,
+          options: {
+            num_predict: request.maxTokens ?? 2048,
+          },
+          stream: false,
+        }),
       }),
-    });
+      request.maxTokens ? undefined : this.config.timeout
+    );
 
     if (!response.ok) {
       throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
@@ -73,19 +76,22 @@ export class OllamaAdapter extends BaseAIAdapter {
       ? `${request.systemPrompt}\n\n${request.prompt}`
       : request.prompt;
 
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: request.model || this.model,
-        prompt,
-        temperature: request.temperature ?? 0.7,
-        options: {
-          num_predict: request.maxTokens ?? 2048,
-        },
-        stream: true,
+    const response = await this.executeWithTimeout(
+      () => fetch(`${this.baseUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: request.model || this.model,
+          prompt,
+          temperature: request.temperature ?? 0.7,
+          options: {
+            num_predict: request.maxTokens ?? 2048,
+          },
+          stream: true,
+        }),
       }),
-    });
+      request.maxTokens ? undefined : this.config.timeout
+    );
 
     if (!response.ok || !response.body) {
       throw new Error(`Ollama stream failed: ${response.status}`);
@@ -163,10 +169,10 @@ export class OllamaAdapter extends BaseAIAdapter {
   }
 }
 
-export function createOllamaAdapter(config?: OllamaConfig): OllamaAdapter {
+export async function createOllamaAdapter(config?: OllamaConfig): Promise<OllamaAdapter> {
   const adapter = new OllamaAdapter();
   if (config) {
-    adapter.initialize(config);
+    await adapter.initialize(config);
   }
   return adapter;
 }

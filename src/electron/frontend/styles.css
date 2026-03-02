@@ -891,3 +891,109 @@ input:checked + .slider:before {
   font-size: 12px;
   color: var(--text-secondary);
 }
+
+/* AI Health Dashboard */
+.ai-health-dashboard {
+  background: var(--background-color);
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 24px;
+}
+
+.ai-health-dashboard h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.health-card {
+  background: var(--card-background);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.health-provider {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.health-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.health-status.healthy {
+  color: #10a37f;
+}
+
+.health-status.error {
+  color: #ef4444;
+}
+
+.health-status.circuit-open {
+  color: #f59e0b;
+}
+
+.health-latency {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.health-circuit {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.health-circuit.closed {
+  color: #10a37f;
+}
+
+.health-circuit.open {
+  color: #ef4444;
+}
+
+.health-circuit.half-open {
+  color: #f59e0b;
+}
+
+/* Provider Logos */
+.provider-logo.gemini {
+  background: linear-gradient(135deg, #4285f4, #1a73e8);
+}
+
+.provider-logo.perplexity {
+  background: linear-gradient(135deg, #00d4aa, #00a080);
+}
+
+/* Provider Status Details */
+.provider-latency {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: block;
+}
+
+.provider-circuit {
+  font-size: 11px;
+  display: block;
+}
+
+.provider-circuit.closed {
+  color: #10a37f;
+}
+
+.provider-circuit.open {
+  color: #ef4444;
+}
+
+.provider-circuit.half-open {
+  color: #f59e0b;
+}

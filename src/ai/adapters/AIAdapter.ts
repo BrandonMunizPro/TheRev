@@ -2,6 +2,7 @@ import {
   AIProvider,
   IntentClassificationResult,
 } from '../AIIntentTypes';
+import { CircuitState, CircuitBreaker, CircuitBreakerConfig } from './CircuitBreaker';
 
 export interface AIRequest {
   provider: AIProvider;
@@ -55,6 +56,18 @@ export interface AIAdapter {
   isHealthy(): Promise<boolean>;
   
   estimateTokens(text: string): number;
+
+  getCircuitBreakerState(): CircuitState;
+  
+  getCircuitBreakerStats(): {
+    state: string;
+    failureCount: number;
+    successCount: number;
+    lastFailureTime: Date | null;
+    nextAttemptTime: Date | null;
+  };
+  
+  resetCircuitBreaker(): void;
 }
 
 export abstract class BaseAIAdapter implements AIAdapter {
@@ -63,6 +76,11 @@ export abstract class BaseAIAdapter implements AIAdapter {
   
   protected config: AIAdapterConfig = {};
   protected initialized = false;
+  protected circuitBreaker: CircuitBreaker;
+  
+  constructor(circuitBreakerConfig?: CircuitBreakerConfig) {
+    this.circuitBreaker = new CircuitBreaker(circuitBreakerConfig);
+  }
   
   async initialize(config: AIAdapterConfig): Promise<void> {
     this.config = { timeout: 30000, maxRetries: 3, ...config };
@@ -90,6 +108,34 @@ export abstract class BaseAIAdapter implements AIAdapter {
     if (!this.initialized) {
       throw new Error(`${this.provider} adapter not initialized`);
     }
+    if (this.circuitBreaker.getState() === 'OPEN') {
+      throw new Error(`${this.provider} circuit breaker is OPEN`);
+    }
+  }
+
+  protected async executeWithTimeout<T>(
+    operation: () => Promise<T>,
+    timeoutMs?: number
+  ): Promise<T> {
+    const timeout = timeoutMs ?? this.config.timeout ?? 30000;
+    return Promise.race([
+      operation(),
+      new Promise<T>((_, reject) => 
+        setTimeout(() => reject(new Error(`Request timeout after ${timeout}ms`)), timeout)
+      )
+    ]);
+  }
+
+  getCircuitBreakerState(): CircuitState {
+    return this.circuitBreaker.getState();
+  }
+
+  getCircuitBreakerStats() {
+    return this.circuitBreaker.getStats();
+  }
+
+  resetCircuitBreaker(): void {
+    this.circuitBreaker.reset();
   }
 }
 

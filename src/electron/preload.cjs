@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('save-avatar-customization', avatarData),
   getAvatarData: () => ipcRenderer.invoke('get-avatar-data'),
 
+  // Ollama management
+  checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),
+  startOllama: () => ipcRenderer.invoke('start-ollama'),
+  openOllamaDownload: () => ipcRenderer.invoke('open-ollama-download'),
+
   // Event listeners
   onAvatarUpdated: (callback) => {
     ipcRenderer.on('avatar-updated', (event, data) => callback(data));

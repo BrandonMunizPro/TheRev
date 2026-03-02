@@ -1,8 +1,10 @@
-const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
+const fs = require('fs');
 
 let mainWindow;
+let ollamaProcess = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -151,6 +153,78 @@ ipcMain.handle('save-avatar-customization', async (event, avatarData) => {
 ipcMain.handle('get-avatar-data', async () => {
   // Retrieve avatar data
   return {};
+});
+
+// Ollama management functions
+function checkOllamaRunning() {
+  return new Promise((resolve) => {
+    exec('curl -s http://localhost:11434/api/tags', { timeout: 3000 }, (error) => {
+      resolve(!error);
+    });
+  });
+}
+
+function startOllama() {
+  return new Promise((resolve, reject) => {
+    if (ollamaProcess) {
+      resolve(true);
+      return;
+    }
+
+    // Try to start Ollama - just run the command
+    const isWindows = process.platform === 'win32';
+    const command = isWindows ? 'start "" ollama serve' : 'ollama serve';
+    
+    exec(command, { shell: true }, (error) => {
+      // Even if there's an error, wait and check if it started
+      setTimeout(async () => {
+        const running = await checkOllamaRunning();
+        if (running) {
+          resolve(true);
+        } else {
+          reject(new Error('Failed to start Ollama. Please make sure Ollama is installed.'));
+        }
+      }, 3000);
+    });
+  });
+}
+
+// IPC handlers for Ollama management
+ipcMain.handle('check-ollama-status', async () => {
+  // First check if it's already running
+  const running = await checkOllamaRunning();
+  if (running) {
+    return { installed: true, running: true, needsInstall: false };
+  }
+
+  // Try to start it - if it works, we know it's installed
+  return new Promise((resolve) => {
+    exec('ollama --version', { timeout: 5000 }, (error) => {
+      if (error) {
+        // Try Windows executable name too
+        exec('ollama.exe --version', { timeout: 5000 }, (err2) => {
+          resolve({ installed: !err2, running: false, needsInstall: !!err2 });
+        });
+      } else {
+        resolve({ installed: true, running: false, needsInstall: false });
+      }
+    });
+  });
+});
+
+ipcMain.handle('start-ollama', async () => {
+  try {
+    await startOllama();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('open-ollama-download', async () => {
+  // Open Ollama download page
+  shell.openExternal('https://ollama.com/download');
+  return true;
 });
 
 app.whenReady().then(createWindow);
