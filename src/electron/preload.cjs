@@ -17,6 +17,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startOllama: () => ipcRenderer.invoke('start-ollama'),
   openOllamaDownload: () => ipcRenderer.invoke('open-ollama-download'),
 
+  // Browser Automation
+  launchBrowserAutomation: (config) =>
+    ipcRenderer.invoke('browser-automation:launch', config),
+  executeBrowserAutomation: (action, params) =>
+    ipcRenderer.invoke('browser-automation:execute', { action, params }),
+  navigateBrowser: (url) =>
+    ipcRenderer.invoke('browser-automation:navigate', url),
+  takeScreenshot: () => ipcRenderer.invoke('browser-automation:screenshot'),
+  fillForm: (formData) =>
+    ipcRenderer.invoke('browser-automation:fill-form', formData),
+  closeBrowserAutomation: () => ipcRenderer.invoke('browser-automation:close'),
+  openAIBrowser: () => ipcRenderer.invoke('open-ai-browser'),
+
   // Event listeners
   onAvatarUpdated: (callback) => {
     ipcRenderer.on('avatar-updated', (event, data) => callback(data));

@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rev AI Browser</title>
+    <style>
+      :root {
+        --primary: #ff0000;
+        --secondary: #000000;
+        --accent: #ffffff;
+        --bg: #1a1a1a;
+        --surface: #2d2d2d;
+        --text: #ffffff;
+        --text-secondary: #b0b0b0;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        background: var(--surface);
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        border-bottom: 1px solid #404040;
+      }
+
+      .rev-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary), #ff6600);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: bold;
+        border: 3px solid var(--accent);
+        box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+        cursor: pointer;
+      }
+
+      .header-title {
+        flex: 1;
+      }
+      .header-title h1 {
+        font-size: 20px;
+        color: var(--primary);
+      }
+      .header-title span {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .command-bar {
+        background: var(--surface);
+        padding: 15px 20px;
+        display: flex;
+        gap: 10px;
+        border-bottom: 1px solid #404040;
+      }
+
+      .command-input {
+        flex: 1;
+        background: var(--bg);
+        border: 1px solid #404040;
+        color: var(--text);
+        padding: 12px 15px;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+
+      .command-input:focus {
+        outline: none;
+        border-color: var(--primary);
+      }
+
+      .command-btn {
+        background: var(--primary);
+        border: none;
+        color: white;
+        padding: 12px 25px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+      }
+
+      .command-btn:hover {
+        background: #cc0000;
+      }
+
+      .quick-commands {
+        display: flex;
+        gap: 10px;
+        padding: 10px 20px;
+        background: var(--surface);
+        border-bottom: 1px solid #404040;
+        flex-wrap: wrap;
+      }
+
+      .quick-btn {
+        background: #404040;
+        color: var(--text);
+        border: none;
+        padding: 8px 15px;
+        border-radius: 20px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .quick-btn:hover {
+        background: var(--primary);
+      }
+
+      .content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .browser-frame {
+        flex: 1;
+        border: none;
+        width: 100%;
+        background: white;
+      }
+
+      .status-bar {
+        background: var(--surface);
+        padding: 8px 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        border-top: 1px solid #404040;
+      }
+
+      .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #00ff00;
+      }
+      .status-indicator.error {
+        background: #ff0000;
+      }
+      .status-indicator.ai {
+        background: #00ccff;
+      }
+
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.9);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 20px;
+        z-index: 1000;
+      }
+
+      .loading-overlay.active {
+        display: flex;
+      }
+
+      .loading-spinner {
+        width: 60px;
+        height: 60px;
+        border: 4px solid #404040;
+        border-top-color: var(--primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .loading-text {
+        font-size: 18px;
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="rev-avatar" id="revAvatar">R</div>
+      <div class="header-title">
+        <h1>Rev AI Browser</h1>
+        <span>Type a website or click a button</span>
+      </div>
+    </div>
+
+    <div class="command-bar">
+      <input
+        type="text"
+        class="command-input"
+        id="commandInput"
+        placeholder="Type website: youtube.com, gmail.com, wikipedia.org"
+      />
+      <button class="command-btn" id="executeBtn">Go</button>
+    </div>
+
+    <div class="quick-commands">
+      <button class="quick-btn" data-url="https://www.youtube.com">
+        YouTube
+      </button>
+      <button class="quick-btn" data-url="https://mail.google.com">
+        Gmail
+      </button>
+      <button class="quick-btn" data-url="https://wikipedia.org">
+        Wikipedia
+      </button>
+      <button class="quick-btn" data-url="https://twitter.com">Twitter</button>
+      <button class="quick-btn" data-url="https://reddit.com">Reddit</button>
+      <button class="quick-btn" data-url="https://news.google.com">News</button>
+    </div>
+
+    <div class="content">
+      <iframe
+        class="browser-frame"
+        id="browserFrame"
+        src="about:blank"
+      ></iframe>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-indicator" id="statusIndicator"></div>
+      <span id="statusText">Ready</span>
+      <span id="urlText"></span>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="loading-spinner"></div>
+      <div class="loading-text" id="loadingText">Loading...</div>
+    </div>
+
+    <script>
+      const commandInput = document.getElementById('commandInput');
+      const executeBtn = document.getElementById('executeBtn');
+      const browserFrame = document.getElementById('browserFrame');
+      const statusIndicator = document.getElementById('statusIndicator');
+      const statusText = document.getElementById('statusText');
+      const urlText = document.getElementById('urlText');
+      const loadingOverlay = document.getElementById('loadingOverlay');
+      const loadingText = document.getElementById('loadingText');
+
+      // Quick command buttons - use automation server
+      document.querySelectorAll('.quick-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const url = btn.dataset.url;
+          commandInput.value = url;
+          loadWithAutomation(url);
+        });
+      });
+
+      executeBtn.addEventListener('click', executeCommand);
+      commandInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') executeCommand();
+      });
+
+      async function executeCommand() {
+        let input = commandInput.value.trim().toLowerCase();
+        if (!input) return;
+
+        // Remove common prefixes
+        input = input.replace(
+          /^(go to |open |visit |navigate to |http:\/\/|https:\/\/)/,
+          ''
+        );
+
+        // Remove trailing slashes
+        input = input.replace(/\/$/, '');
+
+        let url = null;
+
+        // Check for common sites
+        if (input.includes('youtube')) url = 'https://www.youtube.com';
+        else if (
+          input.includes('gmail') ||
+          (input.includes('mail') && input.includes('google'))
+        )
+          url = 'https://mail.google.com';
+        else if (input.includes('google') && input.includes('mail'))
+          url = 'https://mail.google.com';
+        else if (input.includes('wiki')) url = 'https://wikipedia.org';
+        else if (input.includes('twitter') || input.includes('x.com'))
+          url = 'https://twitter.com';
+        else if (input.includes('reddit')) url = 'https://reddit.com';
+        else if (input.includes('facebook')) url = 'https://facebook.com';
+        else if (input.includes('instagram')) url = 'https://instagram.com';
+        else if (input.includes('tiktok')) url = 'https://tiktok.com';
+        else if (input.includes('news')) url = 'https://news.google.com';
+        else if (input.includes('amazon')) url = 'https://amazon.com';
+        else if (input.includes('netflix')) url = 'https://netflix.com';
+        else if (input.includes('spotify')) url = 'https://spotify.com';
+        else if (input.includes('twitch')) url = 'https://twitch.tv';
+        else if (input.includes('github')) url = 'https://github.com';
+        else if (input.includes('chatgpt') || input.includes('openai'))
+          url = 'https://chat.openai.com';
+        else if (input.includes('claude')) url = 'https://claude.ai';
+        else if (input.includes('ollama')) url = 'http://localhost:11434';
+        // Check if it's a valid domain
+        else if (input.includes('.') && !input.includes(' ')) {
+          url = 'https://' + input;
+        }
+        // Default to Google search
+        else {
+          url = 'https://www.google.com/search?q=' + encodeURIComponent(input);
+        }
+
+        if (url) {
+          commandInput.value = url;
+          loadWithAutomation(url);
+        }
+      }
+
+      async function loadWithAutomation(url) {
+        showLoading('Loading ' + url + '...');
+
+        try {
+          // Use automation server to navigate (bypasses iframe blocking)
+          const response = await fetch('http://localhost:9222/api/navigate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url }),
+          });
+
+          const result = await response.json();
+          console.log('Navigate result:', result);
+
+          if (result.success) {
+            // Get screenshot to display
+            const screenshotRes = await fetch(
+              'http://localhost:9222/api/screenshot',
+              {
+                method: 'POST',
+              }
+            );
+            const screenshotData = await screenshotRes.json();
+
+            if (screenshotData.success) {
+              // Display screenshot in iframe
+              browserFrame.srcdoc = `<html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff;"><img src="data:image/png;base64,${screenshotData.screenshot}" style="width:100%;height:100%;object-fit:contain;" /></body></html>`;
+              hideLoading();
+              statusText.textContent = 'Loaded: ' + result.title;
+              urlText.textContent = url;
+              statusIndicator.classList.remove('error');
+            } else {
+              hideLoading();
+              statusText.textContent =
+                'Navigation OK, screenshot failed: ' + screenshotData.error;
+            }
+          } else {
+            hideLoading();
+            statusText.textContent = 'Failed: ' + result.error;
+            statusIndicator.classList.add('error');
+          }
+        } catch (e) {
+          console.error('Error:', e);
+          hideLoading();
+          statusText.textContent = 'Error: ' + e.message;
+          statusIndicator.classList.add('error');
+        }
+      }
+
+      function showLoading(text) {
+        loadingText.textContent = text;
+        loadingOverlay.classList.add('active');
+      }
+
+      function hideLoading() {
+        loadingOverlay.classList.remove('active');
+      }
+
+      commandInput.focus();
+    </script>
+  </body>
+</html>

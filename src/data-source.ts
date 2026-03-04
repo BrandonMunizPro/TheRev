@@ -4,6 +4,7 @@ import { User } from './entities/User';
 import { Thread } from './entities/Thread';
 import { Post } from './entities/Post';
 import { ThreadAdmin } from './entities/ThreadAdmin';
+import { TaskEntity, TaskEvent, TaskMetrics, Worker } from './entities/Task';
 
 const isTest = process.env.NODE_ENV === 'test';
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -22,7 +23,16 @@ export const AppDataSource = new DataSource({
     (isTest ? process.env.DB_TEST_DATABASE : process.env.DB_DATABASE),
   synchronize: isTest, // true for tests, false for production
   logging: isDevelopment,
-  entities: [User, Thread, Post, ThreadAdmin],
+  entities: [
+    User,
+    Thread,
+    Post,
+    ThreadAdmin,
+    TaskEntity,
+    TaskEvent,
+    TaskMetrics,
+    Worker,
+  ],
   migrations: isTest ? undefined : ['./src/migrations/*.ts'],
   subscribers: [],
 

@@ -1,10 +1,18 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  dialog,
+  shell,
+} = require('electron');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 
 let mainWindow;
 let ollamaProcess = null;
+let browserAutomationProcess = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -114,24 +122,38 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-function createBrowserWindow() {
+function createBrowserWindow(url = 'https://www.google.com') {
   const browserWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
       webSecurity: false,
     },
-    title: 'Rev Sandbox Browser',
+    title: 'Rev Browser',
   });
 
-  browserWindow.loadURL('https://www.google.com');
+  // Load the URL directly
+  browserWindow.loadURL(url);
   return browserWindow;
 }
 
 // IPC handlers for sandbox browser commands
 ipcMain.handle('execute-browser-command', async (event, command) => {
+  // Handle special commands
+  if (command.startsWith('open-url:')) {
+    const url = command.replace('open-url:', '');
+    createBrowserWindow(url);
+    return 'Opened: ' + url;
+  }
+
+  if (command === 'open-new-browser-window') {
+    createBrowserWindow();
+    return 'New browser window opened';
+  }
+
   return new Promise((resolve, reject) => {
     exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -158,9 +180,13 @@ ipcMain.handle('get-avatar-data', async () => {
 // Ollama management functions
 function checkOllamaRunning() {
   return new Promise((resolve) => {
-    exec('curl -s http://localhost:11434/api/tags', { timeout: 3000 }, (error) => {
-      resolve(!error);
-    });
+    exec(
+      'curl -s http://localhost:11434/api/tags',
+      { timeout: 3000 },
+      (error) => {
+        resolve(!error);
+      }
+    );
   });
 }
 
@@ -174,7 +200,7 @@ function startOllama() {
     // Try to start Ollama - just run the command
     const isWindows = process.platform === 'win32';
     const command = isWindows ? 'start "" ollama serve' : 'ollama serve';
-    
+
     exec(command, { shell: true }, (error) => {
       // Even if there's an error, wait and check if it started
       setTimeout(async () => {
@@ -182,7 +208,11 @@ function startOllama() {
         if (running) {
           resolve(true);
         } else {
-          reject(new Error('Failed to start Ollama. Please make sure Ollama is installed.'));
+          reject(
+            new Error(
+              'Failed to start Ollama. Please make sure Ollama is installed.'
+            )
+          );
         }
       }, 3000);
     });
@@ -225,6 +255,132 @@ ipcMain.handle('open-ollama-download', async () => {
   // Open Ollama download page
   shell.openExternal('https://ollama.com/download');
   return true;
+});
+
+// Browser Automation IPC Handlers
+ipcMain.handle('browser-automation:launch', async (event, config) => {
+  try {
+    // Start the browser automation service if not already running
+    if (!browserAutomationProcess) {
+      const scriptPath = path.join(
+        __dirname,
+        '../browser/automation-server.cjs'
+      );
+      console.log('[Browser Automation] Starting server from:', scriptPath);
+
+      // Check if the file exists
+      if (!fs.existsSync(scriptPath)) {
+        return { success: false, error: 'Automation server script not found' };
+      }
+
+      browserAutomationProcess = spawn('node', [scriptPath], {
+        stdio: 'pipe',
+        env: { ...process.env, PORT: '9222' },
+        detached: false,
+      });
+
+      browserAutomationProcess.stdout.on('data', (data) => {
+        console.log('[Browser Automation]:', data.toString());
+      });
+
+      browserAutomationProcess.stderr.on('data', (data) => {
+        console.error('[Browser Automation Error]:', data.toString());
+      });
+
+      browserAutomationProcess.on('error', (err) => {
+        console.error('[Browser Automation] Process error:', err);
+      });
+
+      // Wait for server to start and verify it's running
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // Test if server is responding
+      try {
+        const testReq = await fetch('http://localhost:9222/api/status');
+        if (testReq.ok) {
+          console.log('[Browser Automation] Server is running');
+        }
+      } catch (e) {
+        return {
+          success: false,
+          error: 'Server failed to start: ' + e.message,
+        };
+      }
+    }
+
+    return { success: true, port: 9222 };
+  } catch (error) {
+    console.error('[Browser Automation] Launch error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle(
+  'browser-automation:execute',
+  async (event, { action, params }) => {
+    try {
+      const response = await fetch('http://localhost:9222/api/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, params }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Automation failed: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+);
+
+ipcMain.handle('browser-automation:navigate', async (event, url) => {
+  return await fetch('http://localhost:9222/api/navigate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  })
+    .then((r) => r.json())
+    .catch((e) => ({ success: false, error: e.message }));
+});
+
+ipcMain.handle('browser-automation:screenshot', async () => {
+  try {
+    const response = await fetch('http://localhost:9222/api/screenshot', {
+      method: 'POST',
+    });
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-automation:fill-form', async (event, formData) => {
+  try {
+    const response = await fetch('http://localhost:9222/api/fill-form', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formData }),
+    });
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-automation:close', async () => {
+  if (browserAutomationProcess) {
+    browserAutomationProcess.kill();
+    browserAutomationProcess = null;
+  }
+  return { success: true };
+});
+
+ipcMain.handle('open-ai-browser', async () => {
+  createBrowserWindow();
+  return { success: true };
 });
 
 app.whenReady().then(createWindow);

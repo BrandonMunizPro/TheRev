@@ -34,3 +34,9 @@ coverage/
 
 tmp/
 temp/
+
+# Windows reserved names
+nul
+con
+aux
+prn

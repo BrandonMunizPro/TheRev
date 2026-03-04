@@ -1,9 +1,9 @@
 import { registerEnumType } from 'type-graphql';
 
 export enum UserRole {
-  // STANDARD = "STANDARD", // Currently unused
-  // ADMIN = "ADMIN", // Currently unused
-  // THREAD_ADMIN = "THREAD_ADMIN", // Currently unused
+  STANDARD = "STANDARD",
+  ADMIN = "ADMIN",
+  THREAD_ADMIN = "THREAD_ADMIN",
 }
 
 registerEnumType(UserRole, {

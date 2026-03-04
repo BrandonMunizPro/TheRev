@@ -15,22 +15,48 @@ class TheRevApp {
   }
 
   setupEventListeners() {
+    // Use event delegation - attach to document for dynamically created elements
+
     // Navigation
     document
       .getElementById('threads-btn')
-      .addEventListener('click', () => this.switchSection('threads'));
+      ?.addEventListener('click', () => this.switchSection('threads'));
     document
       .getElementById('news-btn')
-      .addEventListener('click', () => this.switchSection('news'));
+      ?.addEventListener('click', () => this.switchSection('news'));
     document
       .getElementById('ai-settings-btn')
-      .addEventListener('click', () => this.switchSection('ai-settings'));
+      ?.addEventListener('click', () => this.switchSection('ai-settings'));
     document
       .getElementById('profile-btn')
-      .addEventListener('click', () => this.switchSection('profile'));
+      ?.addEventListener('click', () => this.switchSection('profile'));
     document
       .getElementById('browser-btn')
-      .addEventListener('click', () => this.switchSection('browser'));
+      ?.addEventListener('click', () => this.switchSection('browser'));
+
+    // Use delegation for browser section elements (they may not exist yet)
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+
+      // Ask Rev button
+      if (target.id === 'ai-command-btn' || target.closest('#ai-command-btn')) {
+        this.executeAICommand();
+      }
+
+      // New Window button
+      if (
+        target.id === 'browser-new-window' ||
+        target.closest('#browser-new-window')
+      ) {
+        this.openNewBrowserWindow();
+      }
+    });
+
+    document.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && e.target.id === 'ai-command-input') {
+        this.executeAICommand();
+      }
+    });
 
     // Avatar customizer
     document
@@ -53,8 +79,20 @@ class TheRevApp {
     document
       .getElementById('browser-new-window')
       .addEventListener('click', () => this.openNewBrowserWindow());
-    document.getElementById('browser-url').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') this.navigateBrowser();
+    document
+      .getElementById('browser-url')
+      ?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') this.navigateBrowser();
+      });
+
+    // Quick site buttons - also use delegation
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.quick-site-btn');
+      if (btn) {
+        const url = btn.dataset.url;
+        const frame = document.getElementById('browser-frame');
+        if (frame && url) frame.src = url;
+      }
     });
 
     // New thread button
@@ -209,6 +247,41 @@ class TheRevApp {
     }
   }
 
+  async executeAICommand() {
+    const input = document.getElementById('ai-command-input');
+    const command = input.value.trim();
+    if (!command) return;
+
+    const statusEl = document.getElementById('browser-status');
+    const statusText = statusEl?.querySelector('.status-text');
+    if (statusText) statusText.textContent = 'Rev is thinking...';
+
+    try {
+      const response = await fetch(
+        'http://localhost:4000/api/ai-browser-command',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success && result.url) {
+        if (statusText) statusText.textContent = 'Opening: ' + result.url;
+        window.open(result.url, '_blank');
+        input.value = '';
+        if (statusText) statusText.textContent = 'Done!';
+      } else {
+        if (statusText)
+          statusText.textContent = 'Error: ' + (result.error || 'Failed');
+      }
+    } catch (error) {
+      if (statusText) statusText.textContent = 'Error: ' + error.message;
+    }
+  }
+
   openNewBrowserWindow() {
     if (window.electronAPI) {
       window.electronAPI.executeCommand('open-new-browser-window');
@@ -277,14 +350,18 @@ class TheRevApp {
       });
 
       if (!response.ok) {
-        console.log('GraphQL backend not available yet - this is expected during development');
+        console.log(
+          'GraphQL backend not available yet - this is expected during development'
+        );
         return;
       }
 
       const data = await response.json();
       console.log('GraphQL data:', data);
     } catch (error) {
-      console.log('GraphQL backend not running on localhost:4000 - this is expected during development');
+      console.log(
+        'GraphQL backend not running on localhost:4000 - this is expected during development'
+      );
     }
   }
 
@@ -292,35 +369,55 @@ class TheRevApp {
   async initAISettings() {
     this.aiAccounts = {
       CHATGPT: { connected: false, enabled: true, apiKey: '', model: 'gpt-4o' },
-      CLAUDE: { connected: false, enabled: true, apiKey: '', model: 'claude-sonnet-4-20250514' },
-      GEMINI: { connected: false, enabled: true, apiKey: '', model: 'gemini-1.5-pro' },
-      PERPLEXITY: { connected: false, enabled: true, apiKey: '', model: 'llama-3.1-sonar-large-128k-online' },
-      OPEN_SOURCE: { connected: false, enabled: true, url: 'http://localhost:11434', model: 'llama3' }
+      CLAUDE: {
+        connected: false,
+        enabled: true,
+        apiKey: '',
+        model: 'claude-sonnet-4-20250514',
+      },
+      GEMINI: {
+        connected: false,
+        enabled: true,
+        apiKey: '',
+        model: 'gemini-1.5-pro',
+      },
+      PERPLEXITY: {
+        connected: false,
+        enabled: true,
+        apiKey: '',
+        model: 'llama-3.1-sonar-large-128k-online',
+      },
+      OPEN_SOURCE: {
+        connected: false,
+        enabled: true,
+        url: 'http://localhost:11434',
+        model: 'llama3',
+      },
     };
-    
+
     this.healthStatus = {};
-    
+
     this.loadAIAccountsFromStorage();
     this.setupAIEventListeners();
-    
+
     // Auto-check and start Ollama if available
     await this.autoStartOllama();
-    
+
     await this.checkAIProvidersHealth();
     this.startHealthMonitoring();
   }
 
   async autoStartOllama() {
     if (!window.electronAPI) return; // Not in Electron
-    
+
     try {
       const status = await window.electronAPI.checkOllamaStatus();
-      
+
       if (status.needsInstall) {
         console.log('Ollama not installed - user can download from ollama.com');
         return;
       }
-      
+
       if (!status.running) {
         // Try to auto-start Ollama silently
         console.log('Attempting to auto-start Ollama...');
@@ -336,53 +433,73 @@ class TheRevApp {
 
   setupAIEventListeners() {
     // Connect buttons
-    document.querySelectorAll('.connect-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => this.connectAIProvider(e.target.dataset.provider));
+    document.querySelectorAll('.connect-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) =>
+        this.connectAIProvider(e.target.dataset.provider)
+      );
     });
 
     // Toggle switches for all providers
-    ['CHATGPT', 'CLAUDE', 'GEMINI', 'PERPLEXITY', 'OPEN_SOURCE'].forEach(provider => {
-      const el = document.getElementById(`${provider.toLowerCase()}-enabled`) || 
-                 document.getElementById(`${provider.toLowerCase()}-enabled`);
-      if (el) {
-        el.addEventListener('change', (e) => {
-          this.updateProviderEnabled(provider, e.target.checked);
-        });
+    ['CHATGPT', 'CLAUDE', 'GEMINI', 'PERPLEXITY', 'OPEN_SOURCE'].forEach(
+      (provider) => {
+        const el =
+          document.getElementById(`${provider.toLowerCase()}-enabled`) ||
+          document.getElementById(`${provider.toLowerCase()}-enabled`);
+        if (el) {
+          el.addEventListener('change', (e) => {
+            this.updateProviderEnabled(provider, e.target.checked);
+          });
+        }
       }
-    });
+    );
 
     // Preference changes
-    document.getElementById('default-provider')?.addEventListener('change', (e) => {
-      this.savePreference('defaultProvider', e.target.value);
-    });
-    document.getElementById('routing-strategy')?.addEventListener('change', (e) => {
-      this.savePreference('routingStrategy', e.target.value);
-    });
-    document.getElementById('free-tier-only')?.addEventListener('change', (e) => {
-      this.savePreference('freeTierOnly', e.target.checked);
-    });
-    document.getElementById('browser-automation')?.addEventListener('change', (e) => {
-      this.savePreference('browserAutomation', e.target.checked);
-    });
+    document
+      .getElementById('default-provider')
+      ?.addEventListener('change', (e) => {
+        this.savePreference('defaultProvider', e.target.value);
+      });
+    document
+      .getElementById('routing-strategy')
+      ?.addEventListener('change', (e) => {
+        this.savePreference('routingStrategy', e.target.value);
+      });
+    document
+      .getElementById('free-tier-only')
+      ?.addEventListener('change', (e) => {
+        this.savePreference('freeTierOnly', e.target.checked);
+      });
+    document
+      .getElementById('browser-automation')
+      ?.addEventListener('change', (e) => {
+        this.savePreference('browserAutomation', e.target.checked);
+      });
   }
 
   async connectAIProvider(provider) {
-    const btn = document.querySelector(`.connect-btn[data-provider="${provider}"]`);
+    const btn = document.querySelector(
+      `.connect-btn[data-provider="${provider}"]`
+    );
     btn.textContent = 'Connecting...';
     btn.disabled = true;
 
     try {
       if (provider === 'OPEN_SOURCE' || provider === 'ollama') {
-        const url = document.getElementById('ollama-url')?.value || 'http://localhost:11434';
-        const model = document.getElementById('ollama-model')?.value || 'llama3';
-        
+        const url =
+          document.getElementById('ollama-url')?.value ||
+          'http://localhost:11434';
+        const model =
+          document.getElementById('ollama-model')?.value || 'llama3';
+
         // Check Ollama status via Electron API (which can auto-start it)
         if (window.electronAPI) {
           const status = await window.electronAPI.checkOllamaStatus();
-          
+
           if (status.needsInstall) {
             // Ollama not installed - prompt user
-            const install = confirm('Ollama is not installed. Would you like to download it?');
+            const install = confirm(
+              'Ollama is not installed. Would you like to download it?'
+            );
             if (install) {
               await window.electronAPI.openOllamaDownload();
             }
@@ -390,7 +507,7 @@ class TheRevApp {
             btn.disabled = false;
             return;
           }
-          
+
           if (!status.running) {
             // Ollama installed but not running - try to start it
             btn.textContent = 'Starting Ollama...';
@@ -401,48 +518,71 @@ class TheRevApp {
             }
           }
         }
-        
+
         // Now try to connect
         const start = Date.now();
-        const response = await fetch(`${url}/api/tags`, { method: 'GET', signal: AbortSignal.timeout(10000) });
+        const response = await fetch(`${url}/api/tags`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(10000),
+        });
         const latency = Date.now() - start;
-        
+
         if (response.ok) {
-          this.aiAccounts.OPEN_SOURCE = { connected: true, enabled: true, url, model, latency };
+          this.aiAccounts.OPEN_SOURCE = {
+            connected: true,
+            enabled: true,
+            url,
+            model,
+            latency,
+          };
           this.updateProviderUI('OPEN_SOURCE', true);
           this.updateAIStatus('OPEN_SOURCE', 'connected', latency);
-          this.healthStatus[provider] = { isHealthy: true, latency, circuitState: 'CLOSED' };
+          this.healthStatus[provider] = {
+            isHealthy: true,
+            latency,
+            circuitState: 'CLOSED',
+          };
         } else {
           throw new Error('Connection failed');
         }
       } else {
-        const apiKey = document.getElementById(`${provider.toLowerCase()}-api-key`)?.value;
+        const apiKey = document.getElementById(
+          `${provider.toLowerCase()}-api-key`
+        )?.value;
         if (!apiKey) {
           throw new Error('API key required');
         }
-        
+
         // Validate the API key by making a test request
         const isValid = await this.validateProviderAPI(provider, apiKey);
         if (!isValid) {
           throw new Error('Invalid API key');
         }
-        
-        this.aiAccounts[provider] = { 
-          connected: true, 
+
+        this.aiAccounts[provider] = {
+          connected: true,
           enabled: true,
-          apiKey, 
-          model: document.getElementById(`${provider.toLowerCase()}-model`)?.value 
+          apiKey,
+          model: document.getElementById(`${provider.toLowerCase()}-model`)
+            ?.value,
         };
         this.updateProviderUI(provider, true);
-        this.healthStatus[provider] = { isHealthy: true, latency: 1500, circuitState: 'CLOSED' };
+        this.healthStatus[provider] = {
+          isHealthy: true,
+          latency: 1500,
+          circuitState: 'CLOSED',
+        };
       }
-      
+
       this.saveAIAccountsToStorage();
       this.updateHealthDashboard();
-      
     } catch (error) {
       console.error(`Error connecting to ${provider}:`, error);
-      this.healthStatus[provider] = { isHealthy: false, latency: 0, circuitState: 'OPEN' };
+      this.healthStatus[provider] = {
+        isHealthy: false,
+        latency: 0,
+        circuitState: 'OPEN',
+      };
       this.updateProviderUI(provider, false);
     } finally {
       btn.disabled = false;
@@ -454,11 +594,13 @@ class TheRevApp {
     if (provider === 'CHATGPT') {
       try {
         const res = await fetch('https://api.openai.com/v1/models', {
-          headers: { 'Authorization': `Bearer ${apiKey}` },
-          signal: AbortSignal.timeout(5000)
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(5000),
         });
         return res.ok;
-      } catch { return false; }
+      } catch {
+        return false;
+      }
     }
     if (provider === 'CLAUDE') {
       // Claude doesn't have a simple list endpoint, just assume valid if format looks right
@@ -474,10 +616,12 @@ class TheRevApp {
   }
 
   updateProviderUI(provider, connected) {
-    const card = document.querySelector(`.ai-account-card[data-provider="${provider}"]`);
+    const card = document.querySelector(
+      `.ai-account-card[data-provider="${provider}"]`
+    );
     const status = card?.querySelector('.provider-status');
     const btn = card?.querySelector('.connect-btn');
-    
+
     if (connected) {
       card?.classList.add('connected');
       if (status) {
@@ -488,7 +632,8 @@ class TheRevApp {
     } else {
       card?.classList.remove('connected');
       if (status) {
-        status.textContent = provider === 'ollama' ? 'Not Running' : 'Not Connected';
+        status.textContent =
+          provider === 'ollama' ? 'Not Running' : 'Not Connected';
         status.classList.add('disconnected');
         status.classList.remove('connected');
       }
@@ -508,34 +653,44 @@ class TheRevApp {
   }
 
   async checkAIProvidersHealth() {
-    const providers = ['CHATGPT', 'CLAUDE', 'GEMINI', 'PERPLEXITY', 'OPEN_SOURCE'];
+    const providers = [
+      'CHATGPT',
+      'CLAUDE',
+      'GEMINI',
+      'PERPLEXITY',
+      'OPEN_SOURCE',
+    ];
     let anyHealthy = false;
-    
+
     for (const provider of providers) {
       const account = this.aiAccounts[provider];
-      
+
       if (!account?.connected || !account?.enabled) {
-        this.healthStatus[provider] = { isHealthy: false, latency: 0, circuitState: 'N/A' };
+        this.healthStatus[provider] = {
+          isHealthy: false,
+          latency: 0,
+          circuitState: 'N/A',
+        };
         continue;
       }
-      
+
       try {
         let latency = 0;
         let isHealthy = false;
-        
+
         if (provider === 'OPEN_SOURCE') {
           const start = Date.now();
-          const response = await fetch(`${account.url}/api/tags`, { 
-            method: 'GET', 
-            signal: AbortSignal.timeout(5000) 
+          const response = await fetch(`${account.url}/api/tags`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(5000),
           });
           latency = Date.now() - start;
           isHealthy = response.ok;
         } else if (provider === 'CHATGPT') {
           const start = Date.now();
           const res = await fetch('https://api.openai.com/v1/models', {
-            headers: { 'Authorization': `Bearer ${account.apiKey}` },
-            signal: AbortSignal.timeout(5000)
+            headers: { Authorization: `Bearer ${account.apiKey}` },
+            signal: AbortSignal.timeout(5000),
           });
           latency = Date.now() - start;
           isHealthy = res.ok;
@@ -544,20 +699,23 @@ class TheRevApp {
           isHealthy = true;
           latency = 1500;
         }
-        
-        this.healthStatus[provider] = { 
-          isHealthy, 
-          latency, 
-          circuitState: isHealthy ? 'CLOSED' : 'OPEN' 
+
+        this.healthStatus[provider] = {
+          isHealthy,
+          latency,
+          circuitState: isHealthy ? 'CLOSED' : 'OPEN',
         };
-        
+
         if (isHealthy) anyHealthy = true;
-        
       } catch (error) {
-        this.healthStatus[provider] = { isHealthy: false, latency: 0, circuitState: 'OPEN' };
+        this.healthStatus[provider] = {
+          isHealthy: false,
+          latency: 0,
+          circuitState: 'OPEN',
+        };
       }
     }
-    
+
     this.updateHealthDashboard();
     this.updateAIStatus('overall', anyHealthy ? 'ready' : 'error');
   }
@@ -570,24 +728,33 @@ class TheRevApp {
   }
 
   updateHealthDashboard() {
-    const providers = ['CHATGPT', 'CLAUDE', 'GEMINI', 'PERPLEXITY', 'OPEN_SOURCE'];
-    
-    providers.forEach(provider => {
+    const providers = [
+      'CHATGPT',
+      'CLAUDE',
+      'GEMINI',
+      'PERPLEXITY',
+      'OPEN_SOURCE',
+    ];
+
+    providers.forEach((provider) => {
       const health = this.healthStatus[provider];
-      const card = document.querySelector(`.health-card[data-provider="${provider}"]`);
-      
+      const card = document.querySelector(
+        `.health-card[data-provider="${provider}"]`
+      );
+
       if (!card) return;
-      
+
       const statusEl = card.querySelector('.health-status');
       const latencyEl = card.querySelector('.health-latency');
       const circuitEl = card.querySelector('.health-circuit');
-      
+
       if (health) {
         statusEl.textContent = health.isHealthy ? 'Healthy' : 'Unavailable';
         statusEl.className = `health-status ${health.isHealthy ? 'healthy' : 'error'}`;
-        
-        latencyEl.textContent = health.latency > 0 ? `${health.latency}ms` : '-';
-        
+
+        latencyEl.textContent =
+          health.latency > 0 ? `${health.latency}ms` : '-';
+
         circuitEl.textContent = health.circuitState;
         circuitEl.className = `health-circuit ${health.circuitState.toLowerCase()}`;
       } else {
@@ -604,7 +771,7 @@ class TheRevApp {
     const statusEl = document.getElementById('ai-status');
     const dot = statusEl?.querySelector('.status-dot');
     const text = statusEl?.querySelector('.status-text');
-    
+
     if (dot && text) {
       dot.className = 'status-dot';
       if (status === 'connected') {
@@ -624,30 +791,34 @@ class TheRevApp {
       const stored = localStorage.getItem('therev_ai_accounts');
       if (stored) {
         this.aiAccounts = JSON.parse(stored);
-        
+
         // Update UI for connected accounts
-        Object.keys(this.aiAccounts).forEach(provider => {
+        Object.keys(this.aiAccounts).forEach((provider) => {
           if (this.aiAccounts[provider].connected) {
             this.updateProviderUI(provider, true);
           }
         });
       }
-      
+
       // Load preferences
       const prefs = localStorage.getItem('therev_ai_preferences');
       if (prefs) {
         const preferences = JSON.parse(prefs);
         if (document.getElementById('default-provider')) {
-          document.getElementById('default-provider').value = preferences.defaultProvider || 'auto';
+          document.getElementById('default-provider').value =
+            preferences.defaultProvider || 'auto';
         }
         if (document.getElementById('routing-strategy')) {
-          document.getElementById('routing-strategy').value = preferences.routingStrategy || 'health-weighted';
+          document.getElementById('routing-strategy').value =
+            preferences.routingStrategy || 'health-weighted';
         }
         if (document.getElementById('free-tier-only')) {
-          document.getElementById('free-tier-only').checked = preferences.freeTierOnly || false;
+          document.getElementById('free-tier-only').checked =
+            preferences.freeTierOnly || false;
         }
         if (document.getElementById('browser-automation')) {
-          document.getElementById('browser-automation').checked = preferences.browserAutomation !== false;
+          document.getElementById('browser-automation').checked =
+            preferences.browserAutomation !== false;
         }
       }
     } catch (e) {
@@ -657,7 +828,10 @@ class TheRevApp {
 
   saveAIAccountsToStorage() {
     try {
-      localStorage.setItem('therev_ai_accounts', JSON.stringify(this.aiAccounts));
+      localStorage.setItem(
+        'therev_ai_accounts',
+        JSON.stringify(this.aiAccounts)
+      );
     } catch (e) {
       console.error('Error saving AI accounts:', e);
     }
@@ -665,7 +839,9 @@ class TheRevApp {
 
   savePreference(key, value) {
     try {
-      const prefs = JSON.parse(localStorage.getItem('therev_ai_preferences') || '{}');
+      const prefs = JSON.parse(
+        localStorage.getItem('therev_ai_preferences') || '{}'
+      );
       prefs[key] = value;
       localStorage.setItem('therev_ai_preferences', JSON.stringify(prefs));
     } catch (e) {

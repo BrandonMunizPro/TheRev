@@ -1,9 +1,9 @@
 import { registerEnumType } from 'type-graphql';
 
 export enum PostType {
-  // TEXT = "TEXT", // Currently unused
-  // VIDEO = "VIDEO", // Currently unused
-  // IMAGE = "IMAGE", // Currently unused
+  TEXT = "TEXT",
+  VIDEO = "VIDEO",
+  IMAGE = "IMAGE",
 }
 
 registerEnumType(PostType, {
