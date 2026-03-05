@@ -290,8 +290,8 @@ export class BrowserManager extends EventEmitter {
 
   private async handleType(
     tabId: string,
-    selector: string,
-    value: string,
+    selector?: string,
+    value?: string,
     options?: Record<string, any>
   ): Promise<any> {
     console.log(`Type on tab ${tabId}, selector ${selector}:`, value);
@@ -348,15 +348,15 @@ export class BrowserManager extends EventEmitter {
     return { evaluated: true };
   }
 
-  private async handleGetText(tabId: string, selector: string): Promise<any> {
+  private async handleGetText(tabId: string, selector?: string): Promise<any> {
     console.log(`Get text from tab ${tabId}, selector:`, selector);
     return { text: '' };
   }
 
   private async handleGetAttribute(
     tabId: string,
-    selector: string,
-    attribute: string
+    selector?: string,
+    attribute?: string
   ): Promise<any> {
     console.log(
       `Get attribute from tab ${tabId}, selector:`,

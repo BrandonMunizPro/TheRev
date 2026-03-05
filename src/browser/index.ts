@@ -39,3 +39,26 @@ export {
   PuppeteerService,
   PuppeteerServiceConfig,
 } from './BrowserAdapter';
+export {
+  BrowserAIActionType,
+  BrowserAIAction,
+  RiskLevel,
+  AIActionSuggestion,
+  ApprovalRequest,
+  ApprovalStatus,
+  BrowserAIContext,
+  BrowserAIResult,
+  PageContent,
+  PageElement,
+} from './AIBrowserTypes';
+export {
+  AIBrowserService,
+  SimpleAIAnalyzer,
+  AIAnalyzer,
+} from './AIBrowserService';
+export {
+  BrowserAIOrchestrator,
+  BrowserAITask,
+  BrowserAITaskStatus,
+  BrowserAITaskStep,
+} from './BrowserAIOrchestrator';

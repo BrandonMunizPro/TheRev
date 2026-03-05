@@ -13,6 +13,7 @@
         --surface: #2d2d2d;
         --text: #ffffff;
         --text-secondary: #b0b0b0;
+        --ai-blue: #00ccff;
       }
 
       * {
@@ -32,112 +33,194 @@
 
       .header {
         background: var(--surface);
-        padding: 15px 20px;
+        padding: 12px 20px;
         display: flex;
         align-items: center;
-        gap: 20px;
+        gap: 15px;
         border-bottom: 1px solid #404040;
+        z-index: 100;
       }
 
       .rev-avatar {
-        width: 50px;
-        height: 50px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
         background: linear-gradient(135deg, var(--primary), #ff6600);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 24px;
+        font-size: 20px;
         font-weight: bold;
-        border: 3px solid var(--accent);
-        box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
-        cursor: pointer;
+        border: 2px solid var(--accent);
+        box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
       }
 
       .header-title {
         flex: 1;
       }
       .header-title h1 {
-        font-size: 20px;
+        font-size: 18px;
         color: var(--primary);
+        margin: 0;
       }
       .header-title span {
-        font-size: 12px;
+        font-size: 11px;
         color: var(--text-secondary);
       }
 
-      .command-bar {
-        background: var(--surface);
-        padding: 15px 20px;
+      .url-bar {
+        flex: 2;
         display: flex;
         gap: 10px;
-        border-bottom: 1px solid #404040;
+        align-items: center;
       }
 
-      .command-input {
+      .url-input {
         flex: 1;
         background: var(--bg);
         border: 1px solid #404040;
         color: var(--text);
-        padding: 12px 15px;
+        padding: 10px 15px;
         border-radius: 8px;
         font-size: 14px;
       }
 
-      .command-input:focus {
+      .url-input:focus {
         outline: none;
         border-color: var(--primary);
       }
 
-      .command-btn {
+      .go-btn {
         background: var(--primary);
         border: none;
         color: white;
-        padding: 12px 25px;
+        padding: 10px 20px;
         border-radius: 8px;
         cursor: pointer;
-        font-size: 14px;
         font-weight: bold;
       }
 
-      .command-btn:hover {
-        background: #cc0000;
-      }
-
-      .quick-commands {
+      .main-container {
+        flex: 1;
         display: flex;
-        gap: 10px;
-        padding: 10px 20px;
-        background: var(--surface);
-        border-bottom: 1px solid #404040;
-        flex-wrap: wrap;
+        overflow: hidden;
       }
 
-      .quick-btn {
-        background: #404040;
-        color: var(--text);
-        border: none;
-        padding: 8px 15px;
-        border-radius: 20px;
-        cursor: pointer;
-        font-size: 12px;
-      }
-
-      .quick-btn:hover {
-        background: var(--primary);
-      }
-
-      .content {
+      .browser-area {
         flex: 1;
         display: flex;
         flex-direction: column;
         position: relative;
       }
+
       .browser-frame {
         flex: 1;
         border: none;
         width: 100%;
         background: white;
+      }
+
+      webview {
+        flex: 1;
+        width: 100%;
+        border: none;
+        background: white;
+      }
+
+      .ai-chat-panel {
+        width: 350px;
+        background: var(--surface);
+        border-left: 1px solid #404040;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .chat-header {
+        padding: 15px;
+        border-bottom: 1px solid #404040;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .chat-header h2 {
+        font-size: 16px;
+        color: var(--ai-blue);
+      }
+
+      .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+
+      .message {
+        padding: 12px 15px;
+        border-radius: 12px;
+        max-width: 90%;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .message.user {
+        background: var(--primary);
+        align-self: flex-end;
+        border-bottom-right-radius: 4px;
+      }
+
+      .message.ai {
+        background: var(--surface);
+        border: 1px solid #404040;
+        align-self: flex-start;
+        border-bottom-left-radius: 4px;
+      }
+
+      .message.ai .avatar {
+        display: inline-block;
+        margin-right: 8px;
+      }
+
+      .chat-input-area {
+        padding: 15px;
+        border-top: 1px solid #404040;
+        display: flex;
+        gap: 10px;
+      }
+
+      .chat-input {
+        flex: 1;
+        background: var(--bg);
+        border: 1px solid #404040;
+        color: var(--text);
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        resize: none;
+        min-height: 50px;
+        max-height: 120px;
+      }
+
+      .chat-input:focus {
+        outline: none;
+        border-color: var(--ai-blue);
+      }
+
+      .send-btn {
+        background: var(--ai-blue);
+        border: none;
+        color: #000;
+        padding: 12px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        align-self: flex-end;
+      }
+
+      .send-btn:hover {
+        background: #00aadd;
       }
 
       .status-bar {
@@ -160,8 +243,19 @@
       .status-indicator.error {
         background: #ff0000;
       }
-      .status-indicator.ai {
-        background: #00ccff;
+      .status-indicator.thinking {
+        background: #ffa500;
+        animation: pulse 1s infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
       }
 
       .loading-overlay {
@@ -170,7 +264,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.9);
+        background: rgba(0, 0, 0, 0.8);
         display: none;
         align-items: center;
         justify-content: center;
@@ -184,10 +278,10 @@
       }
 
       .loading-spinner {
-        width: 60px;
-        height: 60px;
+        width: 50px;
+        height: 50px;
         border: 4px solid #404040;
-        border-top-color: var(--primary);
+        border-top-color: var(--ai-blue);
         border-radius: 50%;
         animation: spin 1s linear infinite;
       }
@@ -198,32 +292,58 @@
         }
       }
 
-      .loading-text {
-        font-size: 18px;
+      .quick-actions {
+        display: flex;
+        gap: 8px;
+        padding: 10px 15px;
+        background: var(--surface);
+        border-bottom: 1px solid #404040;
+        flex-wrap: wrap;
+      }
+
+      .quick-btn {
+        background: #404040;
         color: var(--text);
+        border: none;
+        padding: 6px 12px;
+        border-radius: 15px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .quick-btn:hover {
+        background: var(--ai-blue);
+        color: #000;
+      }
+
+      .page-info {
+        font-size: 12px;
+        color: var(--text-secondary);
+        padding: 8px 15px;
+        background: var(--bg);
+        border-bottom: 1px solid #404040;
       }
     </style>
   </head>
   <body>
     <div class="header">
-      <div class="rev-avatar" id="revAvatar">R</div>
+      <div class="rev-avatar">R</div>
       <div class="header-title">
         <h1>Rev AI Browser</h1>
-        <span>Type a website or click a button</span>
+        <span>AI-powered browsing with continuous chat</span>
+      </div>
+      <div class="url-bar">
+        <input
+          type="text"
+          class="url-input"
+          id="urlInput"
+          placeholder="Enter URL or search..."
+        />
+        <button class="go-btn" id="goBtn">Go</button>
       </div>
     </div>
 
-    <div class="command-bar">
-      <input
-        type="text"
-        class="command-input"
-        id="commandInput"
-        placeholder="Type website: youtube.com, gmail.com, wikipedia.org"
-      />
-      <button class="command-btn" id="executeBtn">Go</button>
-    </div>
-
-    <div class="quick-commands">
+    <div class="quick-actions">
       <button class="quick-btn" data-url="https://www.youtube.com">
         YouTube
       </button>
@@ -238,12 +358,40 @@
       <button class="quick-btn" data-url="https://news.google.com">News</button>
     </div>
 
-    <div class="content">
-      <iframe
-        class="browser-frame"
-        id="browserFrame"
-        src="about:blank"
-      ></iframe>
+    <div class="main-container">
+      <div class="browser-area">
+        <webview
+          id="browserFrame"
+          src="about:blank"
+          partition="persist:ai-browser"
+          allowpopups="true"
+        ></webview>
+        <div class="page-info" id="pageInfo">Navigate to a page to start</div>
+      </div>
+
+      <div class="ai-chat-panel">
+        <div class="chat-header">
+          <span style="font-size: 20px">🤖</span>
+          <h2>Chat with Rev</h2>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+          <div class="message ai">
+            <span class="avatar">🤖</span>
+            Hi! I'm Rev, your AI browsing assistant. Ask me anything about the
+            current page or ask me to navigate somewhere!
+          </div>
+        </div>
+
+        <div class="chat-input-area">
+          <textarea
+            class="chat-input"
+            id="chatInput"
+            placeholder="Ask Rev about this page or what to do..."
+          ></textarea>
+          <button class="send-btn" id="sendBtn">Send</button>
+        </div>
+      </div>
     </div>
 
     <div class="status-bar">
@@ -254,136 +402,298 @@
 
     <div class="loading-overlay" id="loadingOverlay">
       <div class="loading-spinner"></div>
-      <div class="loading-text" id="loadingText">Loading...</div>
+      <div id="loadingText">Loading...</div>
     </div>
 
     <script>
-      const commandInput = document.getElementById('commandInput');
-      const executeBtn = document.getElementById('executeBtn');
+      const urlInput = document.getElementById('urlInput');
+      const goBtn = document.getElementById('goBtn');
       const browserFrame = document.getElementById('browserFrame');
+      const pageInfo = document.getElementById('pageInfo');
+      const chatInput = document.getElementById('chatInput');
+      const sendBtn = document.getElementById('sendBtn');
+      const chatMessages = document.getElementById('chatMessages');
       const statusIndicator = document.getElementById('statusIndicator');
       const statusText = document.getElementById('statusText');
       const urlText = document.getElementById('urlText');
       const loadingOverlay = document.getElementById('loadingOverlay');
       const loadingText = document.getElementById('loadingText');
 
-      // Quick command buttons - use automation server
-      document.querySelectorAll('.quick-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const url = btn.dataset.url;
-          commandInput.value = url;
-          loadWithAutomation(url);
-        });
+      let currentUrl = 'about:blank';
+
+      // Set up webview event listeners
+      browserFrame.addEventListener('did-start-loading', () => {
+        showLoading('Loading...');
       });
 
-      executeBtn.addEventListener('click', executeCommand);
-      commandInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') executeCommand();
+      browserFrame.addEventListener('did-stop-loading', () => {
+        hideLoading();
+        try {
+          const url = browserFrame.getURL();
+          if (url && url !== 'about:blank') {
+            currentUrl = url;
+            urlInput.value = url;
+            const title = browserFrame.getTitle();
+            pageInfo.textContent = 'Current page: ' + title;
+            urlText.textContent = url;
+            statusText.textContent = 'Page loaded';
+            statusIndicator.classList.remove('error');
+          }
+        } catch (e) {
+          console.log('Could not get webview info:', e);
+        }
       });
 
-      async function executeCommand() {
-        let input = commandInput.value.trim().toLowerCase();
-        if (!input) return;
+      browserFrame.addEventListener('did-fail-load', (event) => {
+        hideLoading();
+        statusText.textContent = 'Failed to load: ' + event.errorDescription;
+        statusIndicator.classList.add('error');
+      });
 
-        // Remove common prefixes
-        input = input.replace(
-          /^(go to |open |visit |navigate to |http:\/\/|https:\/\/)/,
-          ''
-        );
+      // Navigation
+      async function navigateTo(url) {
+        showLoading('Navigating...');
 
-        // Remove trailing slashes
-        input = input.replace(/\/$/, '');
-
-        let url = null;
-
-        // Check for common sites
-        if (input.includes('youtube')) url = 'https://www.youtube.com';
-        else if (
-          input.includes('gmail') ||
-          (input.includes('mail') && input.includes('google'))
-        )
-          url = 'https://mail.google.com';
-        else if (input.includes('google') && input.includes('mail'))
-          url = 'https://mail.google.com';
-        else if (input.includes('wiki')) url = 'https://wikipedia.org';
-        else if (input.includes('twitter') || input.includes('x.com'))
-          url = 'https://twitter.com';
-        else if (input.includes('reddit')) url = 'https://reddit.com';
-        else if (input.includes('facebook')) url = 'https://facebook.com';
-        else if (input.includes('instagram')) url = 'https://instagram.com';
-        else if (input.includes('tiktok')) url = 'https://tiktok.com';
-        else if (input.includes('news')) url = 'https://news.google.com';
-        else if (input.includes('amazon')) url = 'https://amazon.com';
-        else if (input.includes('netflix')) url = 'https://netflix.com';
-        else if (input.includes('spotify')) url = 'https://spotify.com';
-        else if (input.includes('twitch')) url = 'https://twitch.tv';
-        else if (input.includes('github')) url = 'https://github.com';
-        else if (input.includes('chatgpt') || input.includes('openai'))
-          url = 'https://chat.openai.com';
-        else if (input.includes('claude')) url = 'https://claude.ai';
-        else if (input.includes('ollama')) url = 'http://localhost:11434';
-        // Check if it's a valid domain
-        else if (input.includes('.') && !input.includes(' ')) {
-          url = 'https://' + input;
-        }
-        // Default to Google search
-        else {
-          url = 'https://www.google.com/search?q=' + encodeURIComponent(input);
+        // Clean up URL
+        let finalUrl = url.trim().toLowerCase();
+        if (
+          !finalUrl.startsWith('http://') &&
+          !finalUrl.startsWith('https://')
+        ) {
+          // Check if it looks like a domain
+          if (finalUrl.includes('.') && !finalUrl.includes(' ')) {
+            finalUrl = 'https://' + finalUrl;
+          } else {
+            // Search
+            finalUrl =
+              'https://www.google.com/search?q=' + encodeURIComponent(finalUrl);
+          }
         }
 
-        if (url) {
-          commandInput.value = url;
-          loadWithAutomation(url);
+        try {
+          // Use webview's loadURL method - this loads the actual site
+          browserFrame.loadURL(finalUrl);
+          currentUrl = finalUrl;
+          urlInput.value = finalUrl;
+          pageInfo.textContent = 'Loading: ' + finalUrl;
+          urlText.textContent = finalUrl;
+          statusText.textContent = 'Loading...';
+          statusIndicator.classList.remove('error');
+
+          // Add AI message
+          addMessage(
+            'ai',
+            `Navigating to ${finalUrl}. You can interact with the page directly while I help you!`
+          );
+        } catch (error) {
+          hideLoading();
+          statusText.textContent = 'Navigation failed: ' + error.message;
+          statusIndicator.classList.add('error');
         }
       }
 
-      async function loadWithAutomation(url) {
-        showLoading('Loading ' + url + '...');
+      goBtn.addEventListener('click', () => navigateTo(urlInput.value));
+      urlInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') navigateTo(urlInput.value);
+      });
+
+      // Quick buttons
+      document.querySelectorAll('.quick-btn').forEach((btn) => {
+        btn.addEventListener('click', () => navigateTo(btn.dataset.url));
+      });
+
+      // Chat with AI
+      async function sendMessage() {
+        const message = chatInput.value.trim();
+        if (!message) return;
+
+        addMessage('user', message);
+        chatInput.value = '';
+
+        setThinking(true);
 
         try {
-          // Use automation server to navigate (bypasses iframe blocking)
-          const response = await fetch('http://localhost:9222/api/navigate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: url }),
-          });
+          // Use IPC to execute AI command in webview directly
+          const response = await fetch(
+            'http://localhost:4000/api/ai-browser-command',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: message }),
+            }
+          );
 
           const result = await response.json();
-          console.log('Navigate result:', result);
+          console.log('[Chat] AI result:', result);
 
-          if (result.success) {
-            // Get screenshot to display
-            const screenshotRes = await fetch(
-              'http://localhost:9222/api/screenshot',
-              {
-                method: 'POST',
+          // If executed actions, run them in the webview
+          if (result.executed && result.actions) {
+            // Check original message for navigation intent
+            const msgLower = message.toLowerCase();
+
+            // Always navigate if it's a search or YouTube command
+            if (
+              msgLower.includes('youtube') ||
+              msgLower.includes('search') ||
+              msgLower.includes('go to') ||
+              msgLower.includes('navigate')
+            ) {
+              let url = 'https://www.youtube.com';
+
+              if (msgLower.includes('youtube')) {
+                const searchMatch =
+                  message.match(/search\s+(.+?)(?:on|\s+youtube|$)/i) ||
+                  message.match(/(?:youtube|yt)[\s:,-]*(.+)/i);
+                if (searchMatch) {
+                  let query = (searchMatch[1] || '')
+                    .replace(
+                      /^(go to|search|find|to|and|youtube|search youtube)\s*/gi,
+                      ''
+                    )
+                    .replace(/youtube/gi, '')
+                    .trim();
+                  if (query) {
+                    url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+                  }
+                }
+              } else if (
+                msgLower.includes('search') ||
+                msgLower.includes('google')
+              ) {
+                let searchTerm = message
+                  .replace(/search\s*(for)?\s*/i, '')
+                  .replace(/google\s*/i, '')
+                  .replace(/find\s*/i, '')
+                  .replace(/youtube\s*/gi, '')
+                  .trim();
+                if (searchTerm) {
+                  url = `https://www.google.com/search?q=${encodeURIComponent(searchTerm)}`;
+                }
+              } else if (
+                msgLower.includes('go to') ||
+                msgLower.includes('navigate')
+              ) {
+                const urlMatch = message.match(
+                  /(?:go to|navigate to)\s+(https?:\/\/\S+|\S+\.\S+)/i
+                );
+                if (urlMatch) {
+                  url = urlMatch[1].startsWith('http')
+                    ? urlMatch[1]
+                    : 'https://' + urlMatch[1];
+                }
               }
-            );
-            const screenshotData = await screenshotRes.json();
 
-            if (screenshotData.success) {
-              // Display screenshot in iframe
-              browserFrame.srcdoc = `<html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff;"><img src="data:image/png;base64,${screenshotData.screenshot}" style="width:100%;height:100%;object-fit:contain;" /></body></html>`;
-              hideLoading();
-              statusText.textContent = 'Loaded: ' + result.title;
-              urlText.textContent = url;
-              statusIndicator.classList.remove('error');
-            } else {
-              hideLoading();
-              statusText.textContent =
-                'Navigation OK, screenshot failed: ' + screenshotData.error;
+              console.log('[Chat] Navigating to:', url);
+              browserFrame.loadURL(url);
+
+              // Wait for page to load then try to type search
+              await new Promise((r) => setTimeout(r, 2000));
+
+              // Try to type and search if it's a search command
+              if (msgLower.includes('search')) {
+                let searchTerm = '';
+                const termMatch = message.match(
+                  /search\s+(?:for\s+)?(.+?)(?:\s+on|\s+in|\s+at|\s+youtube|$)/i
+                );
+                if (termMatch) {
+                  searchTerm = termMatch[1].trim();
+                } else {
+                  searchTerm = message
+                    .replace(/search/i, '')
+                    .replace(/youtube/gi, '')
+                    .trim();
+                }
+
+                if (searchTerm) {
+                  try {
+                    await browserFrame.executeJavaScript(`
+                      (function() {
+                        const selectors = ['input[aria-label="Search"]', 'input[name="search"]', '#search-input', 
+                                          'input[type="search"]', 'input[type="text"]', 'ytd-searchbox input'];
+                        for (const sel of selectors) {
+                          const el = document.querySelector(sel);
+                          if (el && el.offsetParent !== null) {
+                            el.focus();
+                            el.value = '${searchTerm.replace(/'/g, "\\'")}';
+                            el.dispatchEvent(new Event('input', {bubbles:true}));
+                            return true;
+                          }
+                        }
+                        return false;
+                      })();
+                    `);
+
+                    // Press Enter
+                    await new Promise((r) => setTimeout(r, 500));
+                    await browserFrame.executeJavaScript(`
+                      (function() {
+                        const inp = document.querySelector('input[aria-label="Search"], input[name="search"], #search-input');
+                        if (inp) { inp.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true})); return true; }
+                        return false;
+                      })();
+                    `);
+                  } catch (e) {
+                    console.log('Auto-search error:', e.message);
+                  }
+                }
+              }
             }
+
+            addMessage(
+              'ai',
+              result.response || 'Executed your request in the browser!'
+            );
+
+            // Show contextual information if available
+            if (result.context) {
+              setTimeout(() => {
+                addMessage(
+                  'ai',
+                  '📚 <strong>Quick Context:</strong> ' + result.context
+                );
+              }, 500);
+            }
+          } else if (result.url) {
+            // Navigate to URL
+            browserFrame.loadURL(result.url);
+            addMessage('ai', `Navigating to ${result.url}`);
+          } else if (result.response) {
+            // Show AI response
+            addMessage('ai', result.response);
           } else {
-            hideLoading();
-            statusText.textContent = 'Failed: ' + result.error;
-            statusIndicator.classList.add('error');
+            addMessage(
+              'ai',
+              result.error || "I'm not sure how to help with that."
+            );
           }
-        } catch (e) {
-          console.error('Error:', e);
-          hideLoading();
-          statusText.textContent = 'Error: ' + e.message;
-          statusIndicator.classList.add('error');
+        } catch (error) {
+          addMessage('ai', 'Sorry, I encountered an error: ' + error.message);
         }
+
+        setThinking(false);
+      }
+
+      sendBtn.addEventListener('click', sendMessage);
+      chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      function addMessage(type, content) {
+        const div = document.createElement('div');
+        div.className = `message ${type}`;
+        div.innerHTML =
+          type === 'ai' ? `<span class="avatar">🤖</span>${content}` : content;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      function setThinking(thinking) {
+        statusIndicator.classList.toggle('thinking', thinking);
+        statusText.textContent = thinking ? 'Rev is thinking...' : 'Ready';
+        sendBtn.disabled = thinking;
       }
 
       function showLoading(text) {
@@ -394,8 +704,6 @@
       function hideLoading() {
         loadingOverlay.classList.remove('active');
       }
-
-      commandInput.focus();
     </script>
   </body>
 </html>

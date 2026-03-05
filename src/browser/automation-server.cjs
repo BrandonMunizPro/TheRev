@@ -75,12 +75,114 @@ app.post('/api/execute', async (req, res) => {
 
     let result = { success: true };
 
+    const SEARCH_INPUT_SELECTORS = [
+      'input[aria-label="Search"]',
+      'input[name="search"]',
+      '#search-input',
+      'input[type="search"]',
+      'input[type="text"]',
+      '#search',
+      'ytd-searchbox input',
+    ];
+
+    const SEARCH_BUTTON_SELECTORS = [
+      'button[aria-label="Search"]',
+      'button#search-icon-legacy',
+      '#search-icon-legacy',
+      'button[type="submit"]',
+      'ytd-searchbox button',
+    ];
+
+    async function trySelectors(selectors, actionFn) {
+      for (const selector of selectors) {
+        try {
+          const count = await p.locator(selector).count();
+          if (count > 0) {
+            console.log(`[API] Found element with selector: ${selector}`);
+            await actionFn(selector);
+            return true;
+          }
+        } catch (e) {
+          console.log(`[API] Selector ${selector} failed:`, e.message);
+        }
+      }
+      return false;
+    }
+
     switch (action) {
       case 'click':
-        await p.click(params.selector);
+      case 'clickFirstVideo':
+        // Special handling for YouTube - click first video result
+        if (action === 'clickFirstVideo') {
+          console.log('[API] Clicking first video on YouTube...');
+          // Wait for results to load
+          await p
+            .waitForSelector('ytd-video-renderer, ytd-grid-video-renderer', {
+              timeout: 10000,
+            })
+            .catch(() => {});
+
+          // Try to click the first video
+          const videoSelectors = [
+            'ytd-video-renderer #thumbnail',
+            'ytd-grid-video-renderer #thumbnail',
+            'ytd-video-renderer a#thumbnail',
+            '#video-title',
+            'ytd-video-renderer',
+            '.ytp-title-link',
+          ];
+
+          for (const sel of videoSelectors) {
+            try {
+              const el = await p.$(sel);
+              if (el) {
+                await el.click();
+                console.log('[API] Clicked first video!');
+                result = { success: true, action: 'clickFirstVideo' };
+                break;
+              }
+            } catch (e) {
+              console.log(`[API] Video selector ${sel} failed:`, e.message);
+            }
+          }
+
+          // If still no result, try JavaScript click
+          if (!result.success) {
+            try {
+              await p.evaluate(() => {
+                const video = document.querySelector(
+                  'ytd-video-renderer, ytd-grid-video-renderer'
+                );
+                if (video) {
+                  const link = video.querySelector('a#thumbnail, #thumbnail');
+                  if (link) link.click();
+                  else video.click();
+                }
+              });
+              result = {
+                success: true,
+                action: 'clickFirstVideo',
+                method: 'js',
+              };
+            } catch (e) {
+              result = {
+                success: false,
+                error: 'Could not find video to click',
+              };
+            }
+          }
+        } else {
+          await trySelectors(
+            SEARCH_BUTTON_SELECTORS,
+            async (sel) => await p.click(sel)
+          );
+        }
         break;
       case 'type':
-        await p.fill(params.selector, params.value);
+        await trySelectors(
+          SEARCH_INPUT_SELECTORS,
+          async (sel) => await p.fill(sel, params.value)
+        );
         break;
       case 'scroll':
         await p.evaluate(
@@ -144,6 +246,26 @@ app.get('/api/status', async (req, res) => {
     browserOpen: !!browser,
     pageOpen: !!page,
   });
+});
+
+app.post('/api/get-content', async (req, res) => {
+  try {
+    const p = await ensureBrowser();
+
+    // Get page content
+    const text = await p.evaluate(() => document.body.innerText);
+    const title = await p.title();
+    const url = p.url();
+
+    res.json({
+      success: true,
+      text: text || '',
+      title: title || '',
+      url: url || '',
+    });
+  } catch (error) {
+    res.json({ success: false, error: error.message });
+  }
 });
 
 app.post('/api/close', async (req, res) => {

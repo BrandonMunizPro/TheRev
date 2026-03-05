@@ -30,6 +30,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeBrowserAutomation: () => ipcRenderer.invoke('browser-automation:close'),
   openAIBrowser: () => ipcRenderer.invoke('open-ai-browser'),
 
+  // AI Brain
+  'ai-brain:execute': (params) =>
+    ipcRenderer.invoke('ai-brain:execute', params),
+  'ai-brain:approve': (params) =>
+    ipcRenderer.invoke('ai-brain:approve', params),
+  'ai-brain:navigate': (url) => ipcRenderer.invoke('ai-brain:navigate', url),
+  'ai-brain:get-task': (taskId) =>
+    ipcRenderer.invoke('ai-brain:get-task', taskId),
+
   // Event listeners
   onAvatarUpdated: (callback) => {
     ipcRenderer.on('avatar-updated', (event, data) => callback(data));
@@ -48,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onShowAbout: (callback) => {
     ipcRenderer.on('show-about', callback);
+  },
+  onAIApprovalRequest: (callback) => {
+    ipcRenderer.on('ai-approval-request', (event, data) => callback(data));
   },
 
   // Remove listeners

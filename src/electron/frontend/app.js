@@ -3,6 +3,7 @@ class TheRevApp {
   constructor() {
     this.currentSection = 'threads';
     this.avatarData = {};
+    this.currentApprovalRequest = null;
     this.init();
   }
 
@@ -12,6 +13,37 @@ class TheRevApp {
     this.setupEventListeners();
     this.setupElectronListeners();
     this.loadInitialContent();
+    this.setupWebviewListeners();
+  }
+
+  setupWebviewListeners() {
+    const webview = document.getElementById('browser-frame');
+    if (!webview || webview.tagName !== 'WEBVIEW') return;
+
+    webview.addEventListener('did-start-loading', () => {
+      const statusEl = document.getElementById('browser-status');
+      const statusText = statusEl?.querySelector('.status-text');
+      if (statusText) statusText.textContent = 'Loading...';
+    });
+
+    webview.addEventListener('did-stop-loading', () => {
+      const statusEl = document.getElementById('browser-status');
+      const statusText = statusEl?.querySelector('.status-text');
+      try {
+        const url = webview.getURL();
+        const title = webview.getTitle();
+        if (statusText) statusText.textContent = title || url;
+      } catch (e) {
+        if (statusText) statusText.textContent = 'Page loaded';
+      }
+    });
+
+    webview.addEventListener('did-fail-load', (event) => {
+      const statusEl = document.getElementById('browser-status');
+      const statusText = statusEl?.querySelector('.status-text');
+      if (statusText)
+        statusText.textContent = 'Failed to load: ' + event.errorDescription;
+    });
   }
 
   setupEventListeners() {
@@ -56,6 +88,32 @@ class TheRevApp {
       if (e.key === 'Enter' && e.target.id === 'ai-command-input') {
         this.executeAICommand();
       }
+    });
+
+    // Browser mode switch
+    const browserModeSelect = document.getElementById('browser-input-mode');
+    if (browserModeSelect) {
+      browserModeSelect.addEventListener('change', (e) => {
+        const isAiMode = e.target.value === 'ai';
+        const input = document.getElementById('ai-command-input');
+        const btn = document.getElementById('ai-command-btn');
+        if (input) {
+          input.placeholder = isAiMode
+            ? 'Ask Rev: "Go to Gmail and find emails about meeting"'
+            : 'Type a website: youtube.com, gmail.com';
+        }
+        if (btn) {
+          btn.textContent = isAiMode ? '🤖 Ask Rev' : 'Go';
+        }
+      });
+    }
+
+    // AI approval buttons
+    document.getElementById('ai-approve-btn')?.addEventListener('click', () => {
+      this.respondToApproval(true);
+    });
+    document.getElementById('ai-deny-btn')?.addEventListener('click', () => {
+      this.respondToApproval(false);
     });
 
     // Avatar customizer
@@ -249,37 +307,151 @@ class TheRevApp {
 
   async executeAICommand() {
     const input = document.getElementById('ai-command-input');
+    const modeSelect = document.getElementById('browser-input-mode');
     const command = input.value.trim();
     if (!command) return;
 
+    const isAiMode = modeSelect?.value === 'ai';
     const statusEl = document.getElementById('browser-status');
     const statusText = statusEl?.querySelector('.status-text');
-    if (statusText) statusText.textContent = 'Rev is thinking...';
+    const aiResponseArea = document.getElementById('ai-response-area');
+    const aiResponseText = document.getElementById('ai-response-text');
+    const aiApprovalSection = document.getElementById('ai-approval-section');
+
+    // URL Mode - use webview to load actual sites
+    if (!isAiMode) {
+      let finalUrl = command;
+      if (!command.startsWith('http://') && !command.startsWith('https://')) {
+        finalUrl = `https://${command}`;
+      }
+
+      if (statusText) statusText.textContent = 'Loading: ' + finalUrl;
+
+      const frame = document.getElementById('browser-frame');
+      if (frame && frame.tagName === 'WEBVIEW') {
+        // Use webview's loadURL for actual site rendering
+        frame
+          .loadURL(finalUrl)
+          .then(() => {
+            if (statusText) statusText.textContent = 'Loaded: ' + finalUrl;
+          })
+          .catch((err) => {
+            if (statusText) statusText.textContent = 'Error: ' + err.message;
+          });
+      } else if (frame) {
+        // Fallback for iframe
+        frame.src = finalUrl;
+        if (statusText) statusText.textContent = 'Opening: ' + finalUrl;
+      }
+      return;
+    }
+
+    // AI Mode
+    if (statusText) statusText.textContent = '🤖 Rev is thinking...';
+    if (aiResponseArea) aiResponseArea.style.display = 'none';
 
     try {
-      const response = await fetch(
-        'http://localhost:4000/api/ai-browser-command',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command }),
+      if (window.electronAPI?.['ai-brain:execute']) {
+        const result = await window.electronAPI['ai-brain:execute']({
+          task: command,
+          userId: 'local-user',
+        });
+
+        console.log('AI Brain result:', result);
+
+        if (result.success) {
+          if (result.approvalRequest) {
+            if (aiResponseText) {
+              aiResponseText.textContent = result.approvalRequest.actions
+                .map((a) => `${a.type}: ${a.reason}`)
+                .join(' | ');
+            }
+            if (aiApprovalSection) aiApprovalSection.style.display = 'flex';
+            if (aiResponseArea) aiResponseArea.style.display = 'block';
+            if (statusText) statusText.textContent = '⚠️ Approval needed';
+            this.currentApprovalRequest = {
+              ...result.approvalRequest,
+              originalCommand: command,
+            };
+          } else if (result.actions) {
+            if (aiResponseText)
+              aiResponseText.textContent = `Executed: ${result.actions.map((a) => a.type).join(', ')}`;
+            if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+            if (aiResponseArea) aiResponseArea.style.display = 'block';
+            if (statusText) statusText.textContent = '✅ Done';
+            input.value = '';
+          }
+        } else {
+          if (aiResponseText)
+            aiResponseText.textContent = 'Error: ' + (result.error || 'Failed');
+          if (aiResponseArea) aiResponseArea.style.display = 'block';
+          if (statusText)
+            statusText.textContent = 'Error: ' + (result.error || 'Failed');
         }
-      );
-
-      const result = await response.json();
-
-      if (result.success && result.url) {
-        if (statusText) statusText.textContent = 'Opening: ' + result.url;
-        window.open(result.url, '_blank');
-        input.value = '';
-        if (statusText) statusText.textContent = 'Done!';
-      } else {
-        if (statusText)
-          statusText.textContent = 'Error: ' + (result.error || 'Failed');
       }
     } catch (error) {
       if (statusText) statusText.textContent = 'Error: ' + error.message;
     }
+  }
+
+  showApprovalDialog(approvalRequest) {
+    const approved = confirm(
+      `🤖 Rev wants to perform:\n\n${approvalRequest.actions.map((a) => `• ${a.type}: ${a.reason}`).join('\n')}\n\nAllow?`
+    );
+
+    if (window.electronAPI?.['ai-brain:approve']) {
+      window.electronAPI['ai-brain:approve']({
+        taskId: approvalRequest.id,
+        approved,
+      }).then((result) => {
+        const statusText = document.querySelector(
+          '#browser-status .status-text'
+        );
+        if (statusText) {
+          statusText.textContent = approved ? '✅ Approved!' : '❌ Denied';
+        }
+      });
+    }
+  }
+
+  async respondToApproval(approved) {
+    if (!this.currentApprovalRequest) return;
+
+    const statusText = document.querySelector('#browser-status .status-text');
+    const aiApprovalSection = document.getElementById('ai-approval-section');
+    const aiResponseText = document.getElementById('ai-response-text');
+    const command = this.currentApprovalRequest.originalCommand;
+
+    if (!approved) {
+      if (statusText) statusText.textContent = '❌ Denied';
+      if (aiResponseText) aiResponseText.textContent = 'Action denied';
+      if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+      this.currentApprovalRequest = null;
+      return;
+    }
+
+    // Approved - open AI browser window
+    if (statusText) statusText.textContent = '✅ Opening AI Browser...';
+
+    try {
+      // Use IPC to open the AI browser window
+      if (window.electronAPI?.openAIBrowser) {
+        await window.electronAPI.openAIBrowser();
+        if (statusText) statusText.textContent = '✅ AI Browser opened!';
+        if (aiResponseText)
+          aiResponseText.textContent =
+            'AI Browser opened - you can now chat with Rev there!';
+      } else {
+        // Fallback - open directly
+        window.open('ai-browser.html', '_blank', 'width=1200,height=800');
+        if (statusText) statusText.textContent = '✅ AI Browser opened!';
+      }
+    } catch (error) {
+      if (statusText) statusText.textContent = 'Error: ' + error.message;
+    }
+
+    if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+    this.currentApprovalRequest = null;
   }
 
   openNewBrowserWindow() {
@@ -422,8 +594,16 @@ class TheRevApp {
         // Try to auto-start Ollama silently
         console.log('Attempting to auto-start Ollama...');
         const result = await window.electronAPI.startOllama();
+        
         if (result.success) {
           console.log('Ollama auto-started successfully');
+          if (result.model) {
+            console.log(`Ollama model ready: ${result.model}`);
+          } else if (result.message) {
+            console.log(result.message);
+          }
+        } else if (result.error) {
+          console.log('Ollama auto-start failed:', result.error);
         }
       }
     } catch (error) {
@@ -512,9 +692,22 @@ class TheRevApp {
             // Ollama installed but not running - try to start it
             btn.textContent = 'Starting Ollama...';
             const result = await window.electronAPI.startOllama();
+            
             if (!result.success) {
               console.error('Failed to start Ollama:', result.error);
-              // Continue anyway - maybe it started
+              btn.textContent = 'Connect';
+              btn.disabled = false;
+              return;
+            }
+            
+            // Check if model was pulled
+            if (result.model) {
+              console.log(`Ollama ready with model: ${result.model}`);
+            } else if (result.message) {
+              console.log(result.message);
+              btn.textContent = 'Downloading model...';
+              // Wait a bit and check again
+              await new Promise(r => setTimeout(r, 3000));
             }
           }
         }

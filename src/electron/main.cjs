@@ -6,6 +6,9 @@ const {
   dialog,
   shell,
 } = require('electron');
+app.commandLine.appendSwitch('enable-webview');
+app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
+
 const path = require('path');
 const { exec, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
@@ -23,6 +26,8 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
       webSecurity: false, // For sandbox browser
+      webviewTag: true,
+      partition: 'persist:main',
     },
     icon: path.join(__dirname, '../assets/icon.png'),
     titleBarStyle: 'hiddenInset',
@@ -219,6 +224,44 @@ function startOllama() {
   });
 }
 
+// Check if Ollama has models, if not pull llama3
+async function ensureOllamaModel() {
+  try {
+    const response = await fetch('http://localhost:11434/api/tags');
+    const data = await response.json();
+
+    if (!data.models || data.models.length === 0) {
+      console.log('[Ollama] No models found, pulling llama3...');
+
+      // Pull llama3 model
+      const pullResponse = await fetch('http://localhost:11434/api/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'llama3' }),
+      });
+
+      if (pullResponse.ok) {
+        console.log('[Ollama] Successfully pulled llama3 model');
+        return {
+          success: true,
+          model: 'llama3',
+          message: 'Model llama3 installed',
+        };
+      } else {
+        return { success: false, error: 'Failed to pull model' };
+      }
+    }
+
+    return {
+      success: true,
+      model: data.models[0].name,
+      message: 'Model already installed',
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // IPC handlers for Ollama management
 ipcMain.handle('check-ollama-status', async () => {
   // First check if it's already running
@@ -245,7 +288,14 @@ ipcMain.handle('check-ollama-status', async () => {
 ipcMain.handle('start-ollama', async () => {
   try {
     await startOllama();
-    return { success: true };
+
+    // Wait a moment for Ollama to fully start
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Check and pull model if needed
+    const modelResult = await ensureOllamaModel();
+
+    return { success: true, ...modelResult };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -378,9 +428,488 @@ ipcMain.handle('browser-automation:close', async () => {
   return { success: true };
 });
 
+let aiBrowserWindow = null;
+let aiWebview = null;
+
+// Get or create the AI browser window
+function getOrCreateAIBrowserWindow() {
+  if (!aiBrowserWindow || aiBrowserWindow.isDestroyed()) {
+    aiBrowserWindow = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.cjs'),
+        webSecurity: false,
+        webviewTag: true,
+        partition: 'persist:ai-browser',
+      },
+      title: 'Rev AI Browser',
+    });
+
+    aiBrowserWindow.loadFile(path.join(__dirname, 'frontend/ai-browser.html'));
+
+    aiBrowserWindow.on('closed', () => {
+      aiBrowserWindow = null;
+      aiWebview = null;
+    });
+  }
+  return aiBrowserWindow;
+}
+
 ipcMain.handle('open-ai-browser', async () => {
-  createBrowserWindow();
+  const win = getOrCreateAIBrowserWindow();
+  win.focus();
   return { success: true };
+});
+
+// ============================================
+// DIRECT WEBVIEW CONTROL - AI controls the actual webview
+// ============================================
+
+ipcMain.handle('webview:execute', async (event, { action, params }) => {
+  try {
+    const win = getOrCreateAIBrowserWindow();
+
+    // Get the webview from the window
+    const webview = win.webContents
+      .getAllWebContents()
+      .find((w) => w.getURL().includes('webview'));
+
+    if (!webview) {
+      // Try to find webview element via JavaScript
+      const result = await win.webContents.executeJavaScript(`
+        (function() {
+          const webview = document.querySelector('webview');
+          if (!webview) return { success: false, error: 'No webview found' };
+          
+          // Return webview element info
+          return { success: true, exists: true, url: webview.getAttribute('src') };
+        })();
+      `);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: 'Webview not ready. Please open the AI Browser first.',
+        };
+      }
+    }
+
+    // Execute the action directly in the webview
+    switch (action) {
+      case 'navigate': {
+        const url = params.url;
+        const result = await win.webContents.executeJavaScript(`
+          (function() {
+            const webview = document.querySelector('webview');
+            if (webview) {
+              webview.loadURL('${url.replace(/'/g, "\\'")}');
+              return { success: true, url: '${url}' };
+            }
+            return { success: false, error: 'Webview not found' };
+          })();
+        `);
+        return result;
+      }
+
+      case 'type': {
+        const { selector, value } = params;
+        const result = await win.webContents.executeJavaScript(`
+          (function() {
+            const webview = document.querySelector('webview');
+            if (!webview) return { success: false, error: 'Webview not found' };
+            
+            // Try multiple selectors
+            const selectors = ${JSON.stringify([
+              'input[aria-label="Search"]',
+              'input[name="search"]',
+              '#search-input',
+              'input[type="search"]',
+              'input[type="text"]',
+              'input[id="search"]',
+              'ytd-searchbox input',
+              '#search',
+            ])};
+            
+            let element = null;
+            for (const sel of selectors) {
+              try {
+                const els = webview.document.querySelectorAll(sel);
+                for (const el of els) {
+                  if (el.offsetParent !== null) { // visible
+                    element = el;
+                    break;
+                  }
+                }
+                if (element) break;
+              } catch(e) {}
+            }
+            
+            if (element) {
+              element.focus();
+              element.value = '${value.replace(/'/g, "\\'")}';
+              element.dispatchEvent(new Event('input', { bubbles: true }));
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+              return { success: true, selector: element.tagName + '.' + element.className };
+            }
+            return { success: false, error: 'Search input not found' };
+          })();
+        `);
+        return result;
+      }
+
+      case 'click': {
+        const { selector } = params;
+        const result = await win.webContents.executeJavaScript(`
+          (function() {
+            const webview = document.querySelector('webview');
+            if (!webview) return { success: false, error: 'Webview not found' };
+            
+            // Try multiple search button selectors
+            const selectors = ${JSON.stringify([
+              'button[aria-label="Search"]',
+              'button#search-icon-legacy',
+              '#search-icon-legacy',
+              'button[type="submit"]',
+              'ytd-searchbox button',
+              '#search-button',
+            ])};
+            
+            let element = null;
+            for (const sel of selectors) {
+              try {
+                const els = webview.document.querySelectorAll(sel);
+                for (const el of els) {
+                  if (el.offsetParent !== null) {
+                    element = el;
+                    break;
+                  }
+                }
+                if (element) break;
+              } catch(e) {}
+            }
+            
+            if (element) {
+              element.click();
+              return { success: true };
+            }
+            
+            // Try pressing Enter key as fallback
+            const searchInput = webview.document.querySelector('input[aria-label="Search"], input[name="search"], #search-input');
+            if (searchInput) {
+              searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+              return { success: true, method: 'enter-key' };
+            }
+            
+            return { success: false, error: 'Search button not found' };
+          })();
+        `);
+        return result;
+      }
+
+      case 'scroll': {
+        const { x, y } = params;
+        const result = await win.webContents.executeJavaScript(`
+          (function() {
+            const webview = document.querySelector('webview');
+            if (webview) {
+              webview.executeJavaScript('window.scrollTo(${x || 0}, ${y || 300})');
+              return { success: true };
+            }
+            return { success: false, error: 'Webview not found' };
+          })();
+        `);
+        return result;
+      }
+
+      case 'getContent': {
+        const result = await win.webContents.executeJavaScript(`
+          (function() {
+            const webview = document.querySelector('webview');
+            if (webview) {
+              try {
+                const title = webview.getTitle();
+                const url = webview.getURL();
+                return { success: true, title, url };
+              } catch(e) {
+                return { success: false, error: e.message };
+              }
+            }
+            return { success: false, error: 'Webview not found' };
+          })();
+        `);
+        return result;
+      }
+
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Get webview URL for context
+ipcMain.handle('webview:getUrl', async () => {
+  try {
+    const win = getOrCreateAIBrowserWindow();
+    const result = await win.webContents.executeJavaScript(`
+      (function() {
+        const webview = document.querySelector('webview');
+        if (webview) {
+          return { success: true, url: webview.getAttribute('src'), title: webview.getTitle ? webview.getTitle() : '' };
+        }
+        return { success: false, error: 'No webview' };
+      })();
+    `);
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ============================================
+// AI BRAIN IPC HANDLERS (Uses webview directly now)
+// ============================================
+
+const AUTOMATION_SERVER = 'http://localhost:9222';
+
+ipcMain.handle('ai-brain:execute', async (event, { task, userId }) => {
+  try {
+    // First get the current page context from webview
+    let pageContext = '';
+    try {
+      const win = getOrCreateAIBrowserWindow();
+      const contextResult = await win.webContents.executeJavaScript(`
+        (function() {
+          const webview = document.querySelector('webview');
+          if (!webview) return { success: false };
+          try {
+            const title = webview.getTitle ? webview.getTitle() : '';
+            const url = webview.getAttribute('src') || '';
+            return { success: true, title, url };
+          } catch(e) { return { success: false }; }
+        })();
+      `);
+      if (contextResult?.success) {
+        pageContext = `Current page: ${contextResult.title} (${contextResult.url})`;
+      }
+    } catch (e) {}
+
+    // Use the AI backend to plan actions
+    const response = await fetch(
+      'http://localhost:4000/api/ai-browser-command',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: task }),
+      }
+    );
+
+    const result = await response.json();
+
+    console.log('[AI Brain] Result:', JSON.stringify(result).substring(0, 500));
+
+    // Handle executed browser actions - NOW EXECUTE IN WEBVIEW
+    if (result.success && result.executed && result.actions) {
+      const win = getOrCreateAIBrowserWindow();
+      const executedActions = [];
+
+      // Execute each action in the webview
+      for (const actionDesc of result.actions) {
+        // Parse action from description
+        const lowerDesc = actionDesc.toLowerCase();
+
+        if (
+          lowerDesc.includes('go to') ||
+          lowerDesc.includes('navigate') ||
+          lowerDesc.includes('youtube')
+        ) {
+          // Extract URL and navigate
+          let url = 'https://www.youtube.com';
+          if (lowerDesc.includes('youtube')) {
+            const searchMatch = task.match(/search\s+(.+?)(?:on|\s+youtube)/i);
+            if (searchMatch) {
+              url = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchMatch[1])}`;
+            }
+          }
+
+          const navResult = await win.webContents.executeJavaScript(`
+            (function() {
+              const webview = document.querySelector('webview');
+              if (webview) {
+                webview.loadURL('${url}');
+                return { success: true, url: '${url}' };
+              }
+              return { success: false, error: 'No webview' };
+            })();
+          `);
+          executedActions.push({ action: 'navigate', result: navResult });
+        } else if (lowerDesc.includes('search') || lowerDesc.includes('type')) {
+          // Type in search box
+          const searchMatch =
+            task.match(/search\s+(.+?)(?:on|\s+youtube|$)/i) ||
+            task.match(/(?:search|find|look up)\s+(.+)/i);
+          const searchTerm = searchMatch
+            ? searchMatch[1]
+            : task.replace(/search/i, '').trim();
+
+          // Type in search
+          const typeResult = await win.webContents.executeJavaScript(`
+            (function() {
+              const webview = document.querySelector('webview');
+              if (!webview) return { success: false, error: 'No webview' };
+              
+              const selectors = ['input[aria-label="Search"]', 'input[name="search"]', '#search-input', 
+                                 'input[type="search"]', 'input[type="text"]', 'ytd-searchbox input'];
+              let el = null;
+              for (const sel of selectors) {
+                try {
+                  const els = webview.document.querySelectorAll(sel);
+                  for (const e of els) { if (e.offsetParent !== null) { el = e; break; } }
+                  if (el) break;
+                } catch(e) {}
+              }
+              
+              if (el) { el.focus(); el.value = '${searchTerm.replace(/'/g, "\\'")}'; el.dispatchEvent(new Event('input', {bubbles:true})); 
+                return { success: true, value: '${searchTerm.replace(/'/g, "\\'")}' }; }
+              return { success: false, error: 'Search input not found' };
+            })();
+          `);
+          executedActions.push({ action: 'type', result: typeResult });
+
+          // Click search button or press enter
+          await new Promise((r) => setTimeout(r, 500));
+          const clickResult = await win.webContents.executeJavaScript(`
+            (function() {
+              const webview = document.querySelector('webview');
+              if (!webview) return { success: false };
+              
+              const btnSelectors = ['button[aria-label="Search"]', 'button#search-icon-legacy', 'ytd-searchbox button'];
+              let el = null;
+              for (const sel of btnSelectors) {
+                try {
+                  const els = webview.document.querySelectorAll(sel);
+                  for (const e of els) { if (e.offsetParent !== null) { el = e; break; } }
+                  if (el) break;
+                } catch(e) {}
+              }
+              
+              if (el) { el.click(); return { success: true }; }
+              
+              // Press Enter
+              const inp = webview.document.querySelector('input[aria-label="Search"], input[name="search"]');
+              if (inp) { inp.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true})); 
+                return { success: true, method: 'enter' }; }
+              return { success: false, error: 'No button found' };
+            })();
+          `);
+          executedActions.push({ action: 'click', result: clickResult });
+        } else if (lowerDesc.includes('scroll')) {
+          await win.webContents.executeJavaScript(`
+            const webview = document.querySelector('webview');
+            if (webview) webview.executeJavaScript('window.scrollBy(0, 500)');
+          `);
+          executedActions.push({ action: 'scroll', result: { success: true } });
+        }
+      }
+
+      const successCount = executedActions.filter(
+        (a) => a.result?.success
+      ).length;
+
+      return {
+        success: true,
+        executed: true,
+        actions: result.actions,
+        steps: executedActions,
+        message: `🤖 Executed ${executedActions.length} actions in webview (${successCount} succeeded)`,
+        response: `I executed ${executedActions.length} actions in the browser:\n\n${executedActions.map((a, i) => `✅ ${i + 1}. ${a.action}: ${a.result?.success ? 'Success' : 'Failed'}`).join('\n')}\n\nThe page should now show the results!`,
+      };
+    }
+
+    // Handle AI text response
+    if (result.success && result.isAIResponse && result.response) {
+      return {
+        success: true,
+        actions: [
+          {
+            type: 'AI_RESPONSE',
+            content: result.response,
+            provider: result.provider,
+            model: result.model,
+          },
+        ],
+        response: result.response,
+      };
+    }
+
+    // Handle navigation URL - navigate in webview
+    if (result.success && result.url) {
+      const win = getOrCreateAIBrowserWindow();
+
+      // Navigate in webview
+      const navResult = await win.webContents.executeJavaScript(`
+        (function() {
+          const webview = document.querySelector('webview');
+          if (webview) {
+            webview.loadURL('${result.url.replace(/'/g, "\\'")}');
+            return { success: true };
+          }
+          return { success: false };
+        })();
+      `);
+
+      return {
+        success: true,
+        executed: true,
+        actions: [{ type: 'NAVIGATE', value: result.url }],
+        response: `🚀 Navigated to ${result.url}`,
+      };
+    }
+
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-brain:approve', async (event, { taskId, approved }) => {
+  try {
+    if (approved) {
+      // Execute the approved action - get screenshot
+      const screenshotRes = await fetch(`${AUTOMATION_SERVER}/api/screenshot`, {
+        method: 'POST',
+      });
+      const screenshot = await screenshotRes.json();
+      return {
+        success: true,
+        actions: [{ type: 'screenshot', result: screenshot }],
+      };
+    }
+    return { success: true, message: 'Denied' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-brain:navigate', async (event, url) => {
+  try {
+    const response = await fetch(`${AUTOMATION_SERVER}/api/navigate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-brain:get-task', async (event, taskId) => {
+  return null;
 });
 
 app.whenReady().then(createWindow);

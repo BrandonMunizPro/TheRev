@@ -10,8 +10,11 @@ therev is an enterprise social media platform where users interact through **AI 
 - **Database**: PostgreSQL with TypeORM
 - **Caching**: Redis Cluster
 - **API**: GraphQL with Type-GraphQL
-- **Testing**: Jest with comprehensive test coverage with containerize Integrartion tests
+- **Testing**: Jest with comprehensive test coverage with containerized Integration tests
 - **Frontend**: Electron desktop application
+- **Browser**: Playwright automation for AI-controlled browsing
+
+### Quick Start
 
 ```bash
 # Clone repository
@@ -30,26 +33,55 @@ docker-compose up -d postgres redis
 
 # Run database migrations
 npm run migration:run
+```
 
-# Start development server
+### Running the App
+
+#### Option 1: Full Development (recommended)
+
+```bash
+# Terminal 1: Start browser automation server (required for AI browsing)
+node src/browser/automation-server.cjs
+
+# Terminal 2: Start backend
 npm run start:dev
 
-# Start Electron app (separate terminal)
+# Terminal 3: Start Electron app
 npm run electron:dev
 ```
+
+#### Option 2: Quick Start
+
+```bash
+# This runs both backend and Electron concurrently
+npm run electron:dev
+```
+
+### Features
+
+#### AI Browser Integration
+
+- **Natural Language Commands**: Tell Rev what to do - "Go to Gmail and search for meeting emails"
+- **Smart Action Planning**: AI analyzes pages and suggests actions
+- **User Approval Workflow**: AI asks before executing risky actions (typing, clicking submit)
+- **Risk Assessment**: Each action is rated (SAFE → CRITICAL) for security
+
+#### Multi-AI Provider Support
+
+- ChatGPT (OpenAI)
+- Claude (Anthropic)
+- Gemini (Google)
+- Perplexity
+- Ollama (Local/open-source)
+
+#### Smart Fallback
+
+- Automatically switches providers when one is rate-limited or fails
+- Circuit breaker prevents cascading failures
+- Health-weighted routing for best performance
+
+---
 
 <div align="center">
   <strong>Built with ❤️ for the future of AI powered social interaction</strong>
 </div>
-
-## Browser AI Integration (Critical Future Feature)
-For full functionality, the AI should be able to see and interact with opened browser pages
-
-### Future Ideas (Post-MVP+)
-- **Interest-based loading pages**: Generate user's avatar in context-relevant scenarios (political debates, news room, etc.)
-- **Topic-based avatar scenes**: If user talks about basketball, show avatar in jersey; about cooking, in chef attire
-- **AI-generated contextual images**: Create dynamic backgrounds based on conversation topics
-- **Advanced avatar emotions**: Real-time emotion detection and avatar response
-- **Avatar animations from video**: Generate avatar animations from sample videos
-- **Collaborative avatars**: Multiple users' avatars interacting in shared spaces
-

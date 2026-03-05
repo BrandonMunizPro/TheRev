@@ -162,7 +162,10 @@ export class OllamaAdapter extends BaseAIAdapter {
         method: 'GET',
         signal: AbortSignal.timeout(5000),
       });
-      return response.ok;
+      if (!response.ok) return false;
+      
+      const data = await response.json() as { models?: Array<{ name: string }> };
+      return (data.models?.length ?? 0) > 0;
     } catch {
       return false;
     }

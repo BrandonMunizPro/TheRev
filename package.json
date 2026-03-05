@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.cjs",
-    "start:dev": "node server.cjs",
+    "start:dev": "ts-node -r tsconfig-paths/register src/index.ts",
     "build": "tsc",
     "build:start": "npm run build && node dist/index.js",
     "start:full": "npm run build && node dist/index.js",

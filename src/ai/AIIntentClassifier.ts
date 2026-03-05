@@ -29,7 +29,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /draft\s+(a\s+)?(post|article)/i,
       /compose\s+(a\s+)?(post|message)/i,
     ],
-    keywords: ['write post', 'create post', 'draft article', 'compose content', 'write article'],
+    keywords: [
+      'write post',
+      'create post',
+      'draft article',
+      'compose content',
+      'write article',
+    ],
     weight: 1.0,
   },
   {
@@ -66,7 +72,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /suggest\s+(some\s+)?(ideas?|topics?)/i,
       /what\s+should\s+(I\s+)?(write|post|create)/i,
     ],
-    keywords: ['generate idea', 'brainstorm', 'suggest topics', 'what should I write', 'come up with'],
+    keywords: [
+      'generate idea',
+      'brainstorm',
+      'suggest topics',
+      'what should I write',
+      'come up with',
+    ],
     weight: 1.0,
   },
   {
@@ -90,8 +102,28 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /open\s+(the\s+)?(website|url|page)/i,
       /visit\s+(the\s+)?site/i,
       /browse\s+to/i,
+      /search\s+(.*?)\s+on\s+(youtube|gmail|reddit|wiki|wikipedia|google)/i,
+      /(youtube|gmail|reddit|wiki|wikipedia|google)\s+search\s+(for\s+)?/i,
+      /^search\s+(.+?)\s+(on\s+)?youtube/i,
+      /^(youtube|gmail|reddit|google)\s+(.+)/i,
+      /find\s+(.+?)\s+on\s+(youtube|google|reddit)/i,
+      /look\s+up\s+(.+?)\s+on\s+(youtube|google)/i,
     ],
-    keywords: ['go to', 'navigate to', 'open website', 'visit', 'browse to'],
+    keywords: [
+      'go to',
+      'navigate to',
+      'open website',
+      'visit',
+      'browse to',
+      'search youtube',
+      'search on youtube',
+      'search reddit',
+      'search gmail',
+      'search google',
+      'youtube search',
+      'find on youtube',
+      'look up on youtube',
+    ],
     weight: 1.0,
   },
   {
@@ -116,7 +148,14 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /pros?\s+(and\s+)?cons?/i,
       /which\s+(is\s+)?better/i,
     ],
-    keywords: ['compare', 'versus', 'vs', 'difference between', 'pros and cons', 'which better'],
+    keywords: [
+      'compare',
+      'versus',
+      'vs',
+      'difference between',
+      'pros and cons',
+      'which better',
+    ],
     weight: 1.0,
   },
   {
@@ -126,7 +165,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /convert\s+(to\s+)?(english|spanish|french|german|chinese|japanese|korean)/i,
       /in\s+(english|spanish|french|german|chinese|japanese|korean)/i,
     ],
-    keywords: ['translate', 'translation', 'in spanish', 'in french', 'to english'],
+    keywords: [
+      'translate',
+      'translation',
+      'in spanish',
+      'in french',
+      'to english',
+    ],
     weight: 1.0,
   },
   {
@@ -138,7 +183,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /proofread/i,
       /edit\s+(for\s+)?(grammar|spelling)/i,
     ],
-    keywords: ['correct grammar', 'fix grammar', 'grammar check', 'proofread', 'fix spelling'],
+    keywords: [
+      'correct grammar',
+      'fix grammar',
+      'grammar check',
+      'proofread',
+      'fix spelling',
+    ],
     weight: 1.0,
   },
   {
@@ -163,7 +214,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /break\s+down/i,
       /simplify/i,
     ],
-    keywords: ['simplify', 'simpler', 'easier to understand', 'explain like im 5', 'break down'],
+    keywords: [
+      'simplify',
+      'simpler',
+      'easier to understand',
+      'explain like im 5',
+      'break down',
+    ],
     weight: 1.0,
   },
   {
@@ -175,7 +232,12 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /outline\s+(for|of)/i,
       /structure/i,
     ],
-    keywords: ['create outline', 'generate outline', 'outline for', 'structure'],
+    keywords: [
+      'create outline',
+      'generate outline',
+      'outline for',
+      'structure',
+    ],
     weight: 1.0,
   },
   {
@@ -187,7 +249,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /keywords?\s+(for|optim)/i,
       /meta\s+(description|title)/i,
     ],
-    keywords: ['seo', 'search engine', 'rank higher', 'keywords', 'meta description'],
+    keywords: [
+      'seo',
+      'search engine',
+      'rank higher',
+      'keywords',
+      'meta description',
+    ],
     weight: 1.0,
   },
   {
@@ -198,7 +266,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /draft\s+(a\s+)?(tweet|post)/i,
       /social\s+media/i,
     ],
-    keywords: ['twitter post', 'facebook post', 'tweet', 'social media', 'linkedin'],
+    keywords: [
+      'twitter post',
+      'facebook post',
+      'tweet',
+      'social media',
+      'linkedin',
+    ],
     weight: 1.0,
   },
   {
@@ -207,12 +281,35 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /automate/i,
       /auto\s+fill/i,
       /click\s+(the\s+)?/i,
+      /click\s+on\s+(the\s+)?/i,
+      /click\s+(on\s+)?this/i,
       /type\s+(into)?/i,
       /scroll/i,
       /wait\s+(for)?/i,
+      /play\s+(the\s+)?(video)?/i,
+      /watch\s+(the\s+)?(video)?/i,
+      /open\s+(the\s+)?video/i,
+      /start\s+(the\s+)?video/i,
+      /pause\s+(the\s+)?video/i,
+      /select\s+(the\s+)?/i,
+      /navigate\s+to/i,
     ],
-    keywords: ['automate', 'auto fill', 'click', 'type into', 'scroll', 'automation'],
-    weight: 0.8,
+    keywords: [
+      'automate',
+      'auto fill',
+      'click',
+      'click on',
+      'click this',
+      'type into',
+      'scroll',
+      'automation',
+      'play',
+      'watch',
+      'open video',
+      'start video',
+      'select',
+    ],
+    weight: 0.9,
   },
   {
     intent: AIIntentType.FORM_FILLING,
@@ -246,7 +343,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /get\s+(content\s+)?from/i,
       /download\s+(from)?/i,
     ],
-    keywords: ['scrape', 'crawl', 'extract from web', 'get from page', 'download'],
+    keywords: [
+      'scrape',
+      'crawl',
+      'extract from web',
+      'get from page',
+      'download',
+    ],
     weight: 1.0,
   },
   {
@@ -258,7 +361,13 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /integrate\s+(with)?/i,
       /webhook/i,
     ],
-    keywords: ['connect to api', 'call api', 'fetch from api', 'integrate', 'webhook'],
+    keywords: [
+      'connect to api',
+      'call api',
+      'fetch from api',
+      'integrate',
+      'webhook',
+    ],
     weight: 1.0,
   },
 ];
@@ -285,15 +394,15 @@ export class AIIntentClassifier {
 
   classify(input: string): IntentClassificationResult {
     const normalizedInput = input.trim().toLowerCase();
-    
+
     const scoredIntents = this.calculateIntentScores(normalizedInput);
-    
+
     if (scoredIntents.length === 0) {
       return this.createUnknownResult(input);
     }
 
     const bestMatch = scoredIntents[0];
-    
+
     if (bestMatch.score < this.config.confidenceThreshold) {
       return this.createUnknownResult(input);
     }
@@ -322,7 +431,11 @@ export class AIIntentClassifier {
       parameters: this.extractParameters(intent, input),
       entities,
       requiresReasoning: classification === IntentClassification.AI_POWERED,
-      requiresWebAccess: [AIIntentType.NAVIGATE_URL, AIIntentType.EXTRACT_INFO, AIIntentType.SCREEN_SCRAPE].includes(intent),
+      requiresWebAccess: [
+        AIIntentType.NAVIGATE_URL,
+        AIIntentType.EXTRACT_INFO,
+        AIIntentType.SCREEN_SCRAPE,
+      ].includes(intent),
       estimatedComplexity: complexity,
       fallbackIntents,
       rawInput: input,
@@ -330,7 +443,9 @@ export class AIIntentClassifier {
     };
   }
 
-  private calculateIntentScores(input: string): Array<{ intent: AIIntentType; score: number }> {
+  private calculateIntentScores(
+    input: string
+  ): Array<{ intent: AIIntentType; score: number }> {
     const scores = new Map<AIIntentType, number>();
 
     for (const pattern of this.intentPatterns) {
@@ -389,7 +504,9 @@ export class AIIntentClassifier {
       }
     }
 
-    const topicMatch = input.match(/(?:about|on|regarding|subject[:\s]+)([^,.\n]+)/i);
+    const topicMatch = input.match(
+      /(?:about|on|regarding|subject[:\s]+)([^,.\n]+)/i
+    );
     if (topicMatch) {
       entities.push({
         type: 'topic',
@@ -401,13 +518,28 @@ export class AIIntentClassifier {
     return entities;
   }
 
-  private extractParameters(intent: AIIntentType, input: string): { name: string; value: string | number | boolean | object; required: boolean; type: 'string' | 'number' | 'boolean' | 'object' | 'array' }[] {
-    const parameters: { name: string; value: string | number | boolean | object; required: boolean; type: 'string' | 'number' | 'boolean' | 'object' | 'array' }[] = [];
+  private extractParameters(
+    intent: AIIntentType,
+    input: string
+  ): {
+    name: string;
+    value: string | number | boolean | object;
+    required: boolean;
+    type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  }[] {
+    const parameters: {
+      name: string;
+      value: string | number | boolean | object;
+      required: boolean;
+      type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+    }[] = [];
 
     switch (intent) {
       case AIIntentType.WRITE_POST:
       case AIIntentType.CREATE_SOCIAL_POST:
-        const topicMatch = input.match(/(?:about|on|regarding|subject[:\s]+)([^,.\n]+)/i);
+        const topicMatch = input.match(
+          /(?:about|on|regarding|subject[:\s]+)([^,.\n]+)/i
+        );
         if (topicMatch) {
           parameters.push({
             name: 'topic',
@@ -452,7 +584,9 @@ export class AIIntentClassifier {
         break;
 
       case AIIntentType.TRANSLATE_TEXT:
-        const langMatch = input.match(/(?:to|in)\s+(english|spanish|french|german|chinese|japanese|korean|portuguese|italian|russian)/i);
+        const langMatch = input.match(
+          /(?:to|in)\s+(english|spanish|french|german|chinese|japanese|korean|portuguese|italian|russian)/i
+        );
         if (langMatch) {
           parameters.push({
             name: 'targetLanguage',
@@ -476,7 +610,10 @@ export class AIIntentClassifier {
     return parameters;
   }
 
-  private selectProvider(intent: AIIntentType, classification: IntentClassification): AIProvider {
+  private selectProvider(
+    intent: AIIntentType,
+    classification: IntentClassification
+  ): AIProvider {
     if (classification === IntentClassification.DETERMINISTIC) {
       return AIProvider.DETERMINISTIC;
     }
@@ -487,36 +624,48 @@ export class AIIntentClassifier {
   private generateProcessingHints(
     intent: AIIntentType,
     classification: IntentClassification
-  ): { maxTokens?: number; temperature?: number; systemPrompt?: string } | undefined {
+  ):
+    | { maxTokens?: number; temperature?: number; systemPrompt?: string }
+    | undefined {
     if (classification === IntentClassification.DETERMINISTIC) {
       return undefined;
     }
 
-    const hints: Partial<Record<AIIntentType, { maxTokens?: number; temperature?: number; systemPrompt?: string }>> = {
+    const hints: Partial<
+      Record<
+        AIIntentType,
+        { maxTokens?: number; temperature?: number; systemPrompt?: string }
+      >
+    > = {
       [AIIntentType.WRITE_POST]: {
         maxTokens: 2000,
         temperature: 0.7,
-        systemPrompt: 'You are a professional content writer. Write engaging, well-structured posts.',
+        systemPrompt:
+          'You are a professional content writer. Write engaging, well-structured posts.',
       },
       [AIIntentType.SUMMARIZE_CONTENT]: {
         maxTokens: 500,
         temperature: 0.3,
-        systemPrompt: 'You are a summarization expert. Provide concise, accurate summaries.',
+        systemPrompt:
+          'You are a summarization expert. Provide concise, accurate summaries.',
       },
       [AIIntentType.GENERATE_IDEA]: {
         maxTokens: 1000,
         temperature: 0.9,
-        systemPrompt: 'You are a creative brainstorming assistant. Generate innovative ideas.',
+        systemPrompt:
+          'You are a creative brainstorming assistant. Generate innovative ideas.',
       },
       [AIIntentType.ANALYZE_DATA]: {
         maxTokens: 2000,
         temperature: 0.2,
-        systemPrompt: 'You are a data analyst. Provide accurate, detailed analysis with insights.',
+        systemPrompt:
+          'You are a data analyst. Provide accurate, detailed analysis with insights.',
       },
       [AIIntentType.CORRECT_GRAMMAR]: {
         maxTokens: 2000,
         temperature: 0.1,
-        systemPrompt: 'You are a grammar expert. Correct grammar and spelling errors while preserving meaning.',
+        systemPrompt:
+          'You are a grammar expert. Correct grammar and spelling errors while preserving meaning.',
       },
     };
 
@@ -545,6 +694,8 @@ export class AIIntentClassifier {
   }
 }
 
-export function createIntentClassifier(config?: Partial<IntentClassifierConfig>): AIIntentClassifier {
+export function createIntentClassifier(
+  config?: Partial<IntentClassifierConfig>
+): AIIntentClassifier {
   return new AIIntentClassifier(config);
 }
