@@ -9,6 +9,26 @@ import { UserRole } from '../graphql/enums/UserRole';
 export class AuthResolver {
   private usersModel = new UsersModel();
 
+  @Mutation(() => String)
+  async forgotPassword(@Arg('userName') userName: string): Promise<string> {
+    const result = await this.usersModel.forgotPassword(userName);
+    return result;
+  }
+
+  @Mutation(() => String)
+  async resetPassword(
+    @Arg('userName') userName: string,
+    @Arg('resetToken') resetToken: string,
+    @Arg('newPassword') newPassword: string
+  ): Promise<string> {
+    const result = await this.usersModel.resetPassword(
+      userName,
+      resetToken,
+      newPassword
+    );
+    return result;
+  }
+
   @Mutation(() => User)
   async login(
     @Arg('email') email: string,

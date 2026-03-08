@@ -1,12 +1,16 @@
-import 'reflect-metadata';
 import 'dotenv/config';
+import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { User } from './entities/User';
 import { Thread } from './entities/Thread';
 import { Post } from './entities/Post';
 import { ThreadAdmin } from './entities/ThreadAdmin';
 import { TaskEntity, TaskEvent, TaskMetrics, Worker } from './entities/Task';
-import { MigrationState, UserStorageLocation, MigrationBatchLog } from './entities/MigrationState';
+import {
+  MigrationState,
+  UserStorageLocation,
+  MigrationBatchLog,
+} from './entities/MigrationState';
 
 const isTest = process.env.NODE_ENV === 'test';
 const isDevelopment = process.env.NODE_ENV === 'development';

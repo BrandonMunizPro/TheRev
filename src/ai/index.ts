@@ -15,3 +15,5 @@ export * from './AuditService';
 export * from './SubscriptionTypes';
 export * from './TaskSubscriptionService';
 export * from './adapters';
+export * from './AIActionTypes';
+export * from './AIActionTracker';

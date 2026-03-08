@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import 'reflect-metadata';
 import express from 'express';
+import path from 'path';
 import { getUserFromRequest } from './auth/getUserFromRequest';
 import { createYoga } from 'graphql-yoga';
 import { AppDataSource } from './data-source';
@@ -133,15 +134,25 @@ async function initializeAIProviders() {
 }
 
 async function startServer() {
+  console.log('[DB] Attempting to connect to:', process.env.DB_DATABASE);
   try {
     await AppDataSource.initialize();
     if (process.env.NODE_ENV !== 'production') {
       console.log('📡 NEXUS database connected');
     }
+  } catch (dbError) {
+    console.log('[DB] Connection error:', dbError);
+    console.log('📡 Database not connected (running without DB)');
+  }
 
-    // Initialize AI providers
+  // Initialize AI providers
+  try {
     await initializeAIProviders();
+  } catch (aiError) {
+    console.log('📡 AI providers not initialized:', aiError);
+  }
 
+  try {
     const schema = await buildSchema({
       resolvers: [
         AuthResolver,
@@ -162,7 +173,129 @@ async function startServer() {
     });
 
     app.use(express.json());
+
+    // Serve static files for password reset
+    app.get('/reset-password.html', (req, res) => {
+      res.sendFile(
+        path.join(__dirname, 'electron/frontend/reset-password.html')
+      );
+    });
+
     app.use('/graphql', yoga as any);
+
+    // Import services for REST endpoints
+    const { TaskAnalyticsService } =
+      await import('./services/TaskAnalyticsService');
+    const { EnterpriseAuditService, TypeORMEnterpriseAuditRepository } =
+      await import('./audit');
+    const { ShardHealthMonitor } =
+      await import('./database/sharding/ShardHealthMonitor');
+
+    // Services will use existing DB connection if available
+    const analyticsService = AppDataSource.isInitialized
+      ? new TaskAnalyticsService(AppDataSource.manager)
+      : null;
+    const auditRepository = AppDataSource.isInitialized
+      ? new TypeORMEnterpriseAuditRepository(AppDataSource.manager)
+      : null;
+    const auditService = auditRepository
+      ? new EnterpriseAuditService(auditRepository)
+      : null;
+    const shardHealthMonitor = new ShardHealthMonitor();
+
+    // Analytics Endpoint
+    app.get('/api/analytics', async (req, res) => {
+      try {
+        if (!analyticsService) {
+          return res.json({
+            totalTokens: 0,
+            totalTasks: 0,
+            totalCost: 0,
+            avgResponseTime: 0,
+            byProvider: {},
+            workers: [],
+            queues: [],
+            period: '24h',
+            message: 'Database not connected',
+          });
+        }
+
+        const period = (req.query.period as string) || '24h';
+        const systemHealth = await analyticsService.getSystemHealth();
+        const workers = await analyticsService.getAllWorkerMetrics();
+
+        const totals = {
+          totalTokens: systemHealth.totalTasksCompleted * 500,
+          totalTasks: systemHealth.totalTasksCompleted,
+          totalCost: systemHealth.totalTasksCompleted * 0.01,
+          avgResponseTime: Math.round(systemHealth.averageProcessingTime),
+        };
+
+        const byProvider: Record<string, number> = {};
+        workers.forEach((w) => {
+          byProvider['Ollama'] = (byProvider['Ollama'] || 0) + w.tasksProcessed;
+        });
+
+        res.json({
+          ...totals,
+          byProvider,
+          workers,
+          queues: systemHealth.queues,
+          period,
+        });
+      } catch (error) {
+        console.error('[Analytics] Error:', error);
+        res.json({
+          totalTokens: 0,
+          totalTasks: 0,
+          totalCost: 0,
+          avgResponseTime: 0,
+          byProvider: {},
+          workers: [],
+          queues: [],
+          period: '24h',
+        });
+      }
+    });
+
+    // Audit Log Endpoint
+    app.get('/api/audit-log', async (req, res) => {
+      try {
+        if (!auditService) {
+          return res.json([]);
+        }
+
+        const filter = {
+          category: (req.query.category as string) || undefined,
+          startDate: req.query.startDate
+            ? new Date(req.query.startDate as string)
+            : undefined,
+          endDate: req.query.endDate
+            ? new Date(req.query.endDate as string)
+            : undefined,
+          userId: (req.query.userId as string) || undefined,
+          severity: (req.query.severity as string) || undefined,
+        };
+
+        const logs = await auditService.query({ ...filter, limit: 100 });
+        res.json(logs);
+      } catch (error) {
+        console.error('[Audit] Error:', error);
+        res.json([]);
+      }
+    });
+
+    // Shard Health Endpoint
+    app.get('/api/shard-health', async (req, res) => {
+      try {
+        const health = await shardHealthMonitor.getHealthMetrics();
+        res.json(health);
+      } catch (error) {
+        console.error('[Shard Health] Error:', error);
+        // Return empty array on error
+        res.json([]);
+      }
+    });
 
     // AI Browser Command Endpoint
     app.post('/api/ai-browser-command', async (req, res) => {
@@ -184,45 +317,66 @@ async function startServer() {
           intentResult.confidence
         );
 
-        // For automation/deterministic tasks, use Browser Agent to execute in browser
-        if (
+        // For simple navigation commands (google x, youtube x, tell me about x), return URL immediately
+        const lower = command.toLowerCase();
+        const isSimpleNavigation =
           intentResult.intent === AIIntentType.NAVIGATE_URL ||
-          intentResult.intent === AIIntentType.DETERMINISTIC_AUTOMATION ||
-          intentResult.intent === AIIntentType.FORM_FILLING ||
-          intentResult.intent === AIIntentType.SCREEN_SCRAPE ||
-          intentResult.classification === IntentClassification.DETERMINISTIC
-        ) {
+          intentResult.intent === AIIntentType.UNKNOWN ||
+          lower.includes('google') ||
+          lower.includes('youtube') ||
+          lower.includes('search') ||
+          lower.startsWith('tell me about') ||
+          lower.startsWith('what is') ||
+          lower.startsWith('who is') ||
+          lower.startsWith('look up');
+
+        if (isSimpleNavigation) {
+          // FAST PATH - just extract URL and return immediately
+          const url = extractNavigationUrl(command, intentResult);
+          console.log('[Ask Rev] Fast navigation to:', url);
+
+          // Generate context async (don't wait)
+          const contextPromise = browserAgent
+            .generateContextInfo(command, [])
+            .catch(() => null);
+
+          // Start generating context in background but return immediately
+          contextPromise.then((context) => {
+            console.log('[Ask Rev] Context ready:', context?.substring(0, 50));
+          });
+
+          return res.json({
+            success: true,
+            url,
+            command,
+            intent: intentResult.intent,
+            // Don't wait for context - it loads async on frontend
+            context: null,
+            fast: true,
+          });
+        } else {
+          // For complex automation tasks, use Browser Agent
           console.log('[Ask Rev] Using Browser Agent for automation...');
 
           try {
             const agentResult = await browserAgent.executeTask(command);
 
             if (agentResult.success && agentResult.results) {
-              // Get screenshot of final state
-              let screenshot = null;
-              try {
-                const ssRes = await fetch(
-                  'http://localhost:9222/api/screenshot',
-                  { method: 'POST' }
-                );
-                const ssData = await ssRes.json();
-                screenshot = ssData.screenshot;
-              } catch {}
-
               return res.json({
                 success: true,
                 executed: true,
                 actions: agentResult.actions.map((a) => a.description),
                 steps: agentResult.results,
-                screenshot,
                 intent: intentResult.intent,
                 message: `Executed ${agentResult.actions.length} browser actions`,
                 url: agentResult.results[0]?.result?.url || null,
-                context: agentResult.context || null,
+                // Context will load async on frontend
+                context: null,
               });
             } else {
-              // Fallback to URL navigation
+              // Fallback to URL navigation - FAST
               const url = extractNavigationUrl(command, intentResult);
+
               return res.json({
                 success: true,
                 url,
@@ -230,18 +384,23 @@ async function startServer() {
                 intent: intentResult.intent,
                 confidence: intentResult.confidence,
                 fallback: true,
+                // Context will load async on frontend
+                context: null,
               });
             }
           } catch (agentError) {
             console.error('[Ask Rev] Browser agent error:', agentError);
-            // Fallback to simple navigation
+            // Fallback to simple navigation - FAST
             const url = extractNavigationUrl(command, intentResult);
+
             return res.json({
               success: true,
               url,
               command,
               intent: intentResult.intent,
               confidence: intentResult.confidence,
+              // Context will load async on frontend
+              context: null,
             });
           }
         }
@@ -299,6 +458,7 @@ async function startServer() {
           intent: intentResult.intent,
           confidence: intentResult.confidence,
           isAIResponse: true,
+          context: aiResponse.content, // Include response as context too
         });
       } catch (error: unknown) {
         const errorMessage =
@@ -336,6 +496,26 @@ async function startServer() {
           url: `https://www.google.com/search?q=${query}`,
           error: errorMessage,
         });
+      }
+    });
+
+    // Context endpoint - returns context for a search query
+    app.post('/api/ai-context', async (req, res) => {
+      try {
+        const { command } = req.body;
+        if (!command) {
+          return res.json({ success: false, error: 'No command provided' });
+        }
+
+        // Generate context using BrowserAgent
+        const contextInfo = await browserAgent.generateContextInfo(command, []);
+
+        res.json({
+          success: true,
+          context: contextInfo,
+        });
+      } catch (error) {
+        res.json({ success: false, context: null });
       }
     });
 
@@ -517,7 +697,11 @@ async function startServer() {
       }
     });
   } catch (error) {
-    console.error('DB init error:', error);
+    console.error('Server init error:', error);
+    // Start basic server without GraphQL
+    app.listen(PORT, () => {
+      console.log(`🧠 NEXUS core listening on http://localhost:${PORT}`);
+    });
   }
 }
 

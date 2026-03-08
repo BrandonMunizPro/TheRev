@@ -654,12 +654,35 @@
               }, 500);
             }
           } else if (result.url) {
-            // Navigate to URL
+            // Navigate to URL - IMMEDIATELY
             browserFrame.loadURL(result.url);
             addMessage('ai', `Navigating to ${result.url}`);
+            
+            // Context loads ASYNC - pop up after
+            if (result.context) {
+              setTimeout(() => {
+                addMessage(
+                  'ai',
+                  '📚 <strong>Quick Context:</strong> ' + result.context
+                );
+              }, 1500);
+            } else {
+              // Try to get context async if not provided
+              fetchContextAsync(message);
+            }
           } else if (result.response) {
             // Show AI response
             addMessage('ai', result.response);
+            
+            // Also show context if available
+            if (result.context && result.context !== result.response) {
+              setTimeout(() => {
+                addMessage(
+                  'ai',
+                  '📚 <strong>Quick Context:</strong> ' + result.context
+                );
+              }, 500);
+            }
           } else {
             addMessage(
               'ai',
@@ -671,6 +694,31 @@
         }
 
         setThinking(false);
+      }
+
+      // Async function to fetch context after navigation
+      async function fetchContextAsync(query) {
+        try {
+          const ctxResponse = await fetch(
+            'http://localhost:4000/api/ai-context',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: query }),
+            }
+          );
+          const ctxResult = await ctxResponse.json();
+          if (ctxResult.context) {
+            setTimeout(() => {
+              addMessage(
+                'ai',
+                '📚 <strong>Quick Context:</strong> ' + ctxResult.context
+              );
+            }, 1500);
+          }
+        } catch (e) {
+          console.log('Context fetch error:', e);
+        }
       }
 
       sendBtn.addEventListener('click', sendMessage);

@@ -17,6 +17,6 @@
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["src/index.ts", "src/data-source.ts", "src/resolvers/**/*.ts", "src/entities/**/*.ts", "src/services/**/*.ts", "src/models/**/*.ts", "src/auth/**/*.ts", "src/graphql/**/*.ts", "src/ai/**/*.ts", "src/dao/**/*.ts", "src/database/**/*.ts", "src/migrations/**/*.ts", "src/errors/**/*.ts", "src/cache/redis/AITaskQueueManager.ts"],
+  "include": ["src/index.ts", "src/data-source.ts", "src/resolvers/**/*.ts", "src/entities/**/*.ts", "src/services/**/*.ts", "src/models/**/*.ts", "src/auth/**/*.ts", "src/graphql/**/*.ts", "src/ai/**/*.ts", "src/dao/**/*.ts", "src/database/**/*.ts", "src/migrations/**/*.ts", "src/errors/**/*.ts", "src/cache/redis/AITaskQueueManager.ts", "src/audit/**/*.ts", "src/security/**/*.ts"],
   "exclude": ["node_modules", "dist", "src/electron", "src/tests", "src/browser", "src/cache/redis/RedisClusterManager.ts"]
 }

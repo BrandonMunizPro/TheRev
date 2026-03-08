@@ -147,7 +147,7 @@ Always use the most specific selector available. For YouTube, use aria-label sel
     }
   }
 
-  private async generateContextInfo(
+  async generateContextInfo(
     userTask: string,
     results: any[]
   ): Promise<string> {

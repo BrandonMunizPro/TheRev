@@ -7,7 +7,219 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="app">
+    <!-- Full Screen Login Page -->
+    <div id="login-page">
+      <div class="login-container">
+        <div class="login-header">
+          <h1>TheRev</h1>
+          <p>Revolution starts with you</p>
+        </div>
+
+        <form id="login-form" class="login-form">
+          <div class="form-group">
+            <input
+              type="text"
+              id="login-email"
+              required
+              placeholder="Email or Username"
+              autocomplete="username"
+            />
+          </div>
+          <div class="form-group">
+            <input
+              type="password"
+              id="login-password"
+              required
+              placeholder="Password"
+              autocomplete="current-password"
+            />
+          </div>
+          <div
+            id="login-error"
+            class="error-message"
+            style="display: none"
+          ></div>
+
+          <button type="submit" class="primary-btn full-width">Sign In</button>
+
+          <div class="login-links">
+            <a href="#" id="forgot-password">Forgot Password?</a>
+            <span class="divider">|</span>
+            <a href="#" id="show-register">Create Account</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div id="register-modal" class="modal">
+      <div class="modal-content login-modal">
+        <div class="modal-header">
+          <h3>Create Account</h3>
+          <button class="close-btn" onclick="closeRegisterModal()">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="register-form">
+            <div class="form-group">
+              <label for="reg-username">Username</label>
+              <input
+                type="text"
+                id="reg-username"
+                required
+                placeholder="username"
+              />
+            </div>
+            <div class="form-group">
+              <label for="reg-email">Email</label>
+              <input
+                type="email"
+                id="reg-email"
+                required
+                placeholder="your@email.com"
+              />
+            </div>
+            <div class="form-group">
+              <label for="reg-firstName">First Name</label>
+              <input
+                type="text"
+                id="reg-firstName"
+                required
+                placeholder="First name"
+              />
+            </div>
+            <div class="form-group">
+              <label for="reg-lastName">Last Name</label>
+              <input
+                type="text"
+                id="reg-lastName"
+                required
+                placeholder="Last name"
+              />
+            </div>
+            <div class="form-group">
+              <label for="reg-password">Password</label>
+              <input
+                type="password"
+                id="reg-password"
+                required
+                placeholder="Create a password"
+              />
+            </div>
+            <div class="form-group">
+              <label for="reg-ideology">Ideology (optional)</label>
+              <input
+                type="text"
+                id="reg-ideology"
+                placeholder="Liberal, Conservative, Moderate, etc."
+              />
+            </div>
+            <div
+              id="register-error"
+              class="error-message"
+              style="display: none"
+            ></div>
+            <button type="submit" class="primary-btn full-width">
+              Create Account
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div id="forgot-password-modal" class="modal">
+      <div class="modal-content login-modal">
+        <div class="modal-header">
+          <h3>Reset Password</h3>
+          <button class="close-btn" onclick="closeForgotPasswordModal()">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="forgot-password-form">
+            <p class="form-description">
+              Enter your username to receive a password reset link.
+            </p>
+            <div class="form-group">
+              <label for="fp-username">Username</label>
+              <input
+                type="text"
+                id="fp-username"
+                required
+                placeholder="Enter your username"
+              />
+            </div>
+            <div
+              id="forgot-password-error"
+              class="error-message"
+              style="display: none"
+            ></div>
+            <div
+              id="forgot-password-success"
+              class="success-message"
+              style="display: none"
+            ></div>
+            <button type="submit" class="primary-btn full-width">
+              Send Reset Link
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reset Password Modal -->
+    <div id="reset-password-modal" class="modal">
+      <div class="modal-content login-modal">
+        <div class="modal-header">
+          <h3>Create New Password</h3>
+          <button class="close-btn" onclick="closeResetPasswordModal()">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="reset-password-form">
+            <input type="hidden" id="rp-token" />
+            <div class="form-group">
+              <label for="rp-password">New Password</label>
+              <input
+                type="password"
+                id="rp-password"
+                required
+                placeholder="Enter new password"
+                minlength="8"
+              />
+            </div>
+            <div class="form-group">
+              <label for="rp-confirm-password">Confirm Password</label>
+              <input
+                type="password"
+                id="rp-confirm-password"
+                required
+                placeholder="Confirm new password"
+                minlength="8"
+              />
+            </div>
+            <div
+              id="reset-password-error"
+              class="error-message"
+              style="display: none"
+            ></div>
+            <div
+              id="reset-password-success"
+              class="success-message"
+              style="display: none"
+            ></div>
+            <button type="submit" class="primary-btn full-width">
+              Reset Password
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="app" style="display: none">
       <!-- Header -->
       <header class="header">
         <div class="header-content">
@@ -19,11 +231,28 @@
             <button id="threads-btn" class="nav-btn active">Threads</button>
             <button id="news-btn" class="nav-btn">News</button>
             <button id="ai-settings-btn" class="nav-btn">AI Settings</button>
+            <button id="tasks-btn" class="nav-btn">Tasks</button>
+            <button id="analytics-btn" class="nav-btn">Analytics</button>
+            <button id="audit-btn" class="nav-btn">Audit Log</button>
+            <button id="shards-btn" class="nav-btn">Shards</button>
             <button id="profile-btn" class="nav-btn">Profile</button>
             <button id="browser-btn" class="nav-btn">Browser</button>
           </nav>
-          <div class="user-rev">
-            <div class="avatar-container">
+          <div class="user-rev" id="user-rev-container">
+            <!-- Default: show Sign In button -->
+            <button
+              class="login-btn"
+              id="header-login-btn"
+              onclick="showLoginModal()"
+            >
+              Sign In
+            </button>
+            <!-- Avatar will replace this when logged in -->
+            <div
+              class="avatar-container"
+              id="avatar-container"
+              style="display: none"
+            >
               <img
                 id="user-avatar"
                 src="assets/default-avatar.png"
@@ -617,6 +846,179 @@
             <div class="browser-status" id="browser-status">
               <span class="status-indicator disconnected"></span>
               <span class="status-text">Ask Rev anything</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tasks Section -->
+        <section id="tasks-section" class="content-section">
+          <div class="tasks-container">
+            <div class="section-header">
+              <h2>AI Tasks</h2>
+              <div class="task-filters">
+                <select id="task-status-filter">
+                  <option value="all">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="processing">Processing</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+            </div>
+            <div class="task-stats">
+              <div class="stat-card">
+                <span class="stat-value" id="stat-pending">0</span>
+                <span class="stat-label">Pending</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-value" id="stat-processing">0</span>
+                <span class="stat-label">Processing</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-value" id="stat-completed">0</span>
+                <span class="stat-label">Completed</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-value" id="stat-failed">0</span>
+                <span class="stat-label">Failed</span>
+              </div>
+            </div>
+            <div class="task-list" id="task-list">
+              <!-- Tasks will be rendered here -->
+            </div>
+          </div>
+        </section>
+
+        <!-- Analytics Section -->
+        <section id="analytics-section" class="content-section">
+          <div class="analytics-container">
+            <div class="section-header">
+              <h2>AI Usage Analytics</h2>
+              <div class="analytics-period">
+                <select id="analytics-period">
+                  <option value="day">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                  <option value="year">This Year</option>
+                </select>
+              </div>
+            </div>
+            <div class="analytics-summary">
+              <div class="analytics-card">
+                <h3>Token Usage</h3>
+                <div class="metric-value" id="total-tokens">0</div>
+                <div class="metric-detail">tokens consumed</div>
+              </div>
+              <div class="analytics-card">
+                <h3>Tasks Completed</h3>
+                <div class="metric-value" id="total-tasks">0</div>
+                <div class="metric-detail">successful tasks</div>
+              </div>
+              <div class="analytics-card">
+                <h3>Cost</h3>
+                <div class="metric-value" id="total-cost">$0.00</div>
+                <div class="metric-detail">estimated cost</div>
+              </div>
+              <div class="analytics-card">
+                <h3>Avg Response Time</h3>
+                <div class="metric-value" id="avg-response">0ms</div>
+                <div class="metric-detail">average</div>
+              </div>
+            </div>
+            <div class="analytics-charts">
+              <div class="chart-card">
+                <h3>Usage by Provider</h3>
+                <div class="provider-chart" id="provider-chart"></div>
+              </div>
+              <div class="chart-card">
+                <h3>Tasks Over Time</h3>
+                <div class="timeline-chart" id="timeline-chart"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Audit Log Section -->
+        <section id="audit-section" class="content-section">
+          <div class="audit-container">
+            <div class="section-header">
+              <h2>Audit Log</h2>
+              <div class="audit-filters">
+                <select id="audit-category-filter">
+                  <option value="all">All Categories</option>
+                  <option value="authentication">Authentication</option>
+                  <option value="authorization">Authorization</option>
+                  <option value="ai_tasks">AI Tasks</option>
+                  <option value="content">Content</option>
+                  <option value="security">Security</option>
+                </select>
+                <input type="date" id="audit-date-from" />
+                <input type="date" id="audit-date-to" />
+              </div>
+            </div>
+            <div class="audit-stats">
+              <div class="stat-card">
+                <span class="stat-value" id="audit-total">0</span>
+                <span class="stat-label">Total Events</span>
+              </div>
+              <div class="stat-card warning">
+                <span class="stat-value" id="audit-warnings">0</span>
+                <span class="stat-label">Warnings</span>
+              </div>
+              <div class="stat-card critical">
+                <span class="stat-value" id="audit-critical">0</span>
+                <span class="stat-label">Critical</span>
+              </div>
+            </div>
+            <div class="audit-table-wrapper">
+              <table class="audit-table" id="audit-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Category</th>
+                    <th>Event</th>
+                    <th>User</th>
+                    <th>Outcome</th>
+                    <th>Severity</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-tbody">
+                  <!-- Audit entries will be rendered here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Shards Section -->
+        <section id="shards-section" class="content-section">
+          <div class="shards-container">
+            <div class="section-header">
+              <h2>Shard Health Dashboard</h2>
+              <button id="refresh-shards-btn" class="refresh-btn">
+                Refresh
+              </button>
+            </div>
+            <div class="shards-summary">
+              <div class="stat-card">
+                <span class="stat-value" id="shards-total">0</span>
+                <span class="stat-label">Total Shards</span>
+              </div>
+              <div class="stat-card success">
+                <span class="stat-value" id="shards-healthy">0</span>
+                <span class="stat-label">Healthy</span>
+              </div>
+              <div class="stat-card warning">
+                <span class="stat-value" id="shards-degraded">0</span>
+                <span class="stat-label">Degraded</span>
+              </div>
+              <div class="stat-card critical">
+                <span class="stat-value" id="shards-offline">0</span>
+                <span class="stat-label">Offline</span>
+              </div>
+            </div>
+            <div class="shards-grid" id="shards-grid">
+              <!-- Shard cards will be rendered here -->
             </div>
           </div>
         </section>

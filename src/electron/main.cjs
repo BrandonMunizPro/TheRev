@@ -9,6 +9,43 @@ const {
 app.commandLine.appendSwitch('enable-webview');
 app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
 
+// Register custom protocol for deep links
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('therev', process.execPath, [
+      process.argv[1],
+    ]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('therev');
+}
+
+// Handle second instance (when opened with URL)
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine) => {
+    // Handle URL passed as argument
+    const url = commandLine.find((arg) => arg.startsWith('therev://'));
+    if (url) {
+      handleDeepLink(url);
+    }
+    // Focus the main window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
+function handleDeepLink(url) {
+  console.log('[DeepLink] Received:', url);
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('deep-link', url);
+  }
+}
+
 const path = require('path');
 const { exec, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
@@ -36,10 +73,24 @@ function createWindow() {
   // Load the frontend - connect to localhost backend
   mainWindow.loadFile(path.join(__dirname, 'frontend/index.html'));
 
+  // Auto-start Ollama in background
+  console.log('[App] Auto-starting Ollama...');
+  startOllama()
+    .then(() => {
+      console.log('[App] Ollama started, checking for models...');
+      return ensureOllamaModel();
+    })
+    .then((modelResult) => {
+      console.log('[App] Ollama ready:', modelResult);
+      mainWindow?.webContents.send('ollama-ready', modelResult);
+    })
+    .catch((err) => {
+      console.log('[App] Ollama auto-start failed:', err.message);
+      // Don't block app startup - just log it
+    });
+
   // Open DevTools in development
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.webContents.openDevTools();
-  }
+  mainWindow.webContents.openDevTools();
 
   // Create custom menu
   createMenu();
@@ -180,6 +231,14 @@ ipcMain.handle('save-avatar-customization', async (event, avatarData) => {
 ipcMain.handle('get-avatar-data', async () => {
   // Retrieve avatar data
   return {};
+});
+
+// Deep link handler - send to renderer
+ipcMain.handle('process-deep-link', async (event, url) => {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('deep-link', url);
+  }
+  return true;
 });
 
 // Ollama management functions
@@ -867,6 +926,7 @@ ipcMain.handle('ai-brain:execute', async (event, { task, userId }) => {
         executed: true,
         actions: [{ type: 'NAVIGATE', value: result.url }],
         response: `🚀 Navigated to ${result.url}`,
+        context: result.context || null,
       };
     }
 
@@ -910,6 +970,119 @@ ipcMain.handle('ai-brain:navigate', async (event, url) => {
 
 ipcMain.handle('ai-brain:get-task', async (event, taskId) => {
   return null;
+});
+
+// Tasks
+ipcMain.handle('get-tasks', async (event, filter) => {
+  // Return mock data for now - would connect to backend in production
+  return [
+    {
+      id: 'task-1',
+      type: 'generation',
+      status: 'completed',
+      provider: 'ChatGPT',
+      intent: 'Generate political analysis',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'task-2',
+      type: 'research',
+      status: 'processing',
+      provider: 'Claude',
+      intent: 'Research campaign finance',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'task-3',
+      type: 'analysis',
+      status: 'pending',
+      provider: 'Gemini',
+      intent: 'Analyze polling data',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'task-4',
+      type: 'automation',
+      status: 'failed',
+      provider: 'Browser',
+      intent: 'Scrape news',
+      createdAt: new Date().toISOString(),
+      error: 'Timeout',
+    },
+  ];
+});
+
+// Analytics
+ipcMain.handle('get-analytics', async (event, period = '24h') => {
+  try {
+    const response = await fetch(
+      `http://localhost:4000/api/analytics?period=${period}`
+    );
+    if (!response.ok) throw new Error('Failed to fetch analytics');
+    return await response.json();
+  } catch (error) {
+    console.error('[IPC] Analytics error:', error.message);
+    // Return fallback data on error
+    return {
+      totalTokens: 0,
+      totalTasks: 0,
+      totalCost: 0,
+      avgResponseTime: 0,
+      byProvider: {},
+      workers: [],
+      queues: [],
+      period,
+    };
+  }
+});
+
+// Audit Log
+ipcMain.handle('get-audit-log', async (event, filter = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (filter.category) params.append('category', filter.category);
+    if (filter.startDate) params.append('startDate', filter.startDate);
+    if (filter.endDate) params.append('endDate', filter.endDate);
+    if (filter.userId) params.append('userId', filter.userId);
+    if (filter.severity) params.append('severity', filter.severity);
+
+    const response = await fetch(
+      `http://localhost:4000/api/audit-log?${params}`
+    );
+    if (!response.ok) throw new Error('Failed to fetch audit log');
+    return await response.json();
+  } catch (error) {
+    console.error('[IPC] Audit log error:', error.message);
+    return [];
+  }
+});
+
+// Shard Health
+ipcMain.handle('get-shard-health', async (event) => {
+  try {
+    const response = await fetch('http://localhost:4000/api/shard-health');
+    if (!response.ok) throw new Error('Failed to fetch shard health');
+    const health = await response.json();
+
+    // Transform to match frontend expected format
+    return health.map((h) => ({
+      shardId: `${h.shardType}-shard-${h.shardId}`,
+      shardType: h.shardType,
+      isHealthy: h.isHealthy,
+      isQuarantined: !h.isHealthy,
+      currentLoad: h.errorRate || 0,
+      activeConnections: 0,
+      quarantineReason:
+        h.consecutiveFailures > 3 ? 'Health check failures' : undefined,
+    }));
+  } catch (error) {
+    console.error('[IPC] Shard health error:', error.message);
+    return [];
+  }
+});
+
+ipcMain.handle('refresh-shards', async (event) => {
+  return { success: true };
 });
 
 app.whenReady().then(createWindow);

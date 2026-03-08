@@ -58,9 +58,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onShowAbout: (callback) => {
     ipcRenderer.on('show-about', callback);
   },
+  onOllamaReady: (callback) => {
+    ipcRenderer.on('ollama-ready', (event, data) => callback(data));
+  },
   onAIApprovalRequest: (callback) => {
     ipcRenderer.on('ai-approval-request', (event, data) => callback(data));
   },
+
+  // Deep links
+  onDeepLink: (callback) => {
+    ipcRenderer.on('deep-link', (event, url) => callback(url));
+  },
+
+  // Tasks
+  getTasks: (filter) => ipcRenderer.invoke('get-tasks', filter),
+
+  // Analytics
+  getAnalytics: (period) => ipcRenderer.invoke('get-analytics', period),
+
+  // Audit Log
+  getAuditLog: (filter) => ipcRenderer.invoke('get-audit-log', filter),
+
+  // Shard Health
+  getShardHealth: () => ipcRenderer.invoke('get-shard-health'),
+  refreshShards: () => ipcRenderer.invoke('refresh-shards'),
 
   // Remove listeners
   removeAllListeners: (channel) => {
