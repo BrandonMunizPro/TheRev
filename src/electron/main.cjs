@@ -517,10 +517,131 @@ function getOrCreateAIBrowserWindow() {
   return aiBrowserWindow;
 }
 
-ipcMain.handle('open-ai-browser', async () => {
-  const win = getOrCreateAIBrowserWindow();
-  win.focus();
+ipcMain.handle('open-ai-browser', async (event, url, context) => {
+  console.log(
+    '[open-ai-browser] Called with url:',
+    url,
+    'context:',
+    context ? 'yes' : 'no'
+  );
+
+  // Create new AI Browser window with the chat interface (reuse existing if available)
+  if (aiBrowserWindow && !aiBrowserWindow.isDestroyed()) {
+    aiBrowserWindow.focus();
+  } else {
+    aiBrowserWindow = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.cjs'),
+        webSecurity: false,
+        webviewTag: true,
+        partition: 'persist:ai-browser',
+      },
+      title: 'Rev AI Browser',
+    });
+
+    aiBrowserWindow.on('closed', () => {
+      aiBrowserWindow = null;
+    });
+  }
+
+  // Store reference for later use
+  const currentWindow = aiBrowserWindow;
+
+  // Load the AI browser page (with chat panel)
+  currentWindow.loadFile(path.join(__dirname, 'frontend/ai-browser.html'));
+
+  currentWindow.focus();
+
+  // After the AI browser page loads, navigate the webview inside it
+  currentWindow.webContents.once('did-finish-load', () => {
+    console.log('[open-ai-browser] AI Browser page loaded');
+
+    if (url) {
+      const finalUrl = url.startsWith('http') ? url : 'https://' + url;
+
+      // Navigate the webview element INSIDE the page, not the window itself
+      currentWindow.webContents.executeJavaScript(`
+        (function() {
+          const webview = document.querySelector('webview');
+          if (webview) {
+            webview.src = '${finalUrl.replace(/'/g, "\\'")}';
+            console.log('[open-ai-browser] Navigating webview to:', '${finalUrl.replace(/'/g, "\\'")}');
+          } else {
+            console.log('[open-ai-browser] Webview not found!');
+          }
+        })();
+      `);
+    }
+
+    // Inject context/summary after a short delay to let the page settle
+    if (context) {
+      setTimeout(() => {
+        const escapedContext = context
+          .replace(/'/g, "\\'")
+          .replace(/"/g, '\\"');
+        currentWindow.webContents.executeJavaScript(`
+          (function() {
+            try {
+              const chatMessages = document.getElementById('chatMessages');
+              if (chatMessages) {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'message ai';
+                msgDiv.innerHTML = '<span class="avatar">🤖</span><strong>📰 Article Summary:</strong><br><br>' + '${escapedContext}';
+                chatMessages.appendChild(msgDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+              }
+            } catch(e) { console.log('Error adding context:', e); }
+          })();
+        `);
+      }, 3000);
+    }
+  });
+
   return { success: true };
+});
+
+// Update AI chat with summary after it's loaded
+ipcMain.handle('update-ai-chat-summary', async (event, summary) => {
+  console.log(
+    '[update-ai-chat-summary] Received summary:',
+    summary ? summary.substring(0, 50) + '...' : 'null'
+  );
+
+  // Use the stored aiBrowserWindow reference
+  if (aiBrowserWindow && !aiBrowserWindow.isDestroyed()) {
+    console.log('[update-ai-chat-summary] Using stored window reference');
+    const escapedSummary = (summary || '')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"');
+
+    aiBrowserWindow.webContents.executeJavaScript(`
+      (function() {
+        try {
+          console.log('[renderer] Trying to add summary to chat');
+          const chatMessages = document.getElementById('chatMessages');
+          console.log('[renderer] chatMessages found:', !!chatMessages);
+          if (chatMessages) {
+            // Add the AI summary
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message ai';
+            msgDiv.innerHTML = '<span class="avatar">🤖</span><strong>📰 AI Summary:</strong><br><br>' + '${escapedSummary}';
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            console.log('[renderer] Summary added to chat');
+          } else {
+            console.log('[renderer] chatMessages NOT found');
+          }
+        } catch(e) { console.log('[renderer] Error adding summary:', e); }
+      })();
+    `);
+    return { success: true };
+  }
+
+  return { success: false, error: 'No AI Browser window found' };
 });
 
 // ============================================

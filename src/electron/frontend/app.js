@@ -526,6 +526,10 @@ class TheRevApp {
       .getElementById('news-btn')
       ?.addEventListener('click', () => this.switchSection('news'));
     document
+      .getElementById('news-refresh-btn')
+      ?.addEventListener('click', () => this.refreshNewsFeed());
+
+    document
       .getElementById('ai-settings-btn')
       ?.addEventListener('click', () => this.switchSection('ai-settings'));
     document
@@ -894,6 +898,9 @@ class TheRevApp {
         break;
       case 'shards':
         this.loadShardHealth();
+        break;
+      case 'news':
+        this.loadNews();
         break;
     }
   }
@@ -1345,20 +1352,317 @@ class TheRevApp {
     }
   }
 
-  filterNewsBySource(source) {
-    document
-      .querySelectorAll('.source-btn')
-      .forEach((btn) => btn.classList.remove('active'));
-    document.querySelector(`[data-source="${source}"]`).classList.add('active');
-
-    // Filter news cards
-    console.log('Filtering news by source:', source);
-    // Would fetch filtered news from backend
+  async refreshNewsFeed() {
+    console.log('Refreshing news feed...');
+    try {
+      const syncResponse = await fetch('http://localhost:4000/api/news/sync', {
+        method: 'POST',
+      });
+      const syncResult = await syncResponse.json();
+      console.log('News sync result:', syncResult);
+      await this.loadNews();
+    } catch (error) {
+      console.error('Error refreshing news:', error);
+    }
   }
 
-  refreshNewsFeed() {
-    console.log('Refreshing news feed...');
-    // Would re-fetch news from backend
+  async loadNews() {
+    const container = document.querySelector('.news-container');
+    if (!container) return;
+
+    container.innerHTML = '<div class="loading">Loading news...</div>';
+
+    try {
+      // Check if we have any news, if not auto-sync
+      const checkUrl = new URL('http://localhost:4000/api/news');
+      const checkResponse = await fetch(checkUrl.toString());
+      const existingNews = await checkResponse.json();
+
+      // If no news, auto-sync feeds
+      if (!existingNews || existingNews.length === 0) {
+        console.log('No news found, auto-syncing feeds...');
+        try {
+          await fetch('http://localhost:4000/api/news/sync', {
+            method: 'POST',
+          });
+        } catch (e) {
+          console.log('Auto-sync failed:', e);
+        }
+      }
+
+      // Fetch all news
+      const response = await fetch('http://localhost:4000/api/news');
+      const news = await response.json();
+
+      if (!news || news.length === 0) {
+        container.innerHTML =
+          '<div class="empty-state">No news available. Click refresh to fetch latest news.</div>';
+        return;
+      }
+
+      this.renderNews(news);
+    } catch (error) {
+      console.error('Error loading news:', error);
+      container.innerHTML = '<div class="error">Failed to load news</div>';
+    }
+  }
+
+  renderNews(news) {
+    const container = document.querySelector('.news-container');
+    if (!container) {
+      console.error('News container not found');
+      return;
+    }
+
+    console.log('Rendering news, count:', news?.length || 0);
+
+    if (!news || !Array.isArray(news) || news.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">No news available. Click refresh to fetch latest news.</div>';
+      return;
+    }
+
+    const sourceColors = {
+      'The Grayzone': { bg: '#cc0000', letter: 'GZ' },
+      'The Intercept': { bg: '#1a1a1a', letter: 'INT' },
+      'Democracy Now': { bg: '#2e7d32', letter: 'DN' },
+      'Al Jazeera': { bg: '#c62828', letter: 'AJ' },
+      'Drop Site News': { bg: '#e65100', letter: 'DS' },
+    };
+
+    const getSourceColor = (name) => {
+      for (const key of Object.keys(sourceColors)) {
+        if (name.toLowerCase().includes(key.toLowerCase())) {
+          return sourceColors[key];
+        }
+      }
+      return { bg: '#555555', letter: name.substring(0, 2).toUpperCase() };
+    };
+
+    const renderCard = (item, index) => {
+      if (!item) {
+        return '<div class="news-card"><div class="news-content">Invalid item</div></div>';
+      }
+
+      const title = item.title || 'Untitled';
+      const url = item.url || '#';
+      const sourceName = item.sourceName || 'Unknown Source';
+      const newsType = item.newsType || 'article';
+      const publishedAt = item.publishedAt
+        ? this.formatTimestamp(item.publishedAt)
+        : '';
+      const summary = item.summary
+        ? item.summary.substring(0, 150) + '...'
+        : '';
+      const imageUrl = item.imageUrl || '';
+      const sourceColor = getSourceColor(sourceName);
+      const articleId = item.id || '';
+
+      return `
+        <div class="news-card" data-url="${url}" data-type="${newsType}" data-id="${articleId}" data-title="${encodeURIComponent(title)}">
+          ${
+            imageUrl
+              ? `<img src="${imageUrl}" alt="${title}" class="news-image" onerror="this.style.display='none'">`
+              : `<div class="news-image-placeholder" style="background: ${sourceColor.bg}; color: white; font-size: 28px; font-weight: bold;">${sourceColor.letter}</div>`
+          }
+          <div class="news-content">
+            <h3>${title}</h3>
+            <div class="news-meta">
+              <span class="source">${sourceName}</span>
+              <span class="timestamp">${publishedAt}</span>
+              ${newsType === 'video' ? '<span class="type-badge">VIDEO</span>' : ''}
+            </div>
+            ${summary ? `<p class="news-preview">${summary}</p>` : ''}
+          </div>
+        </div>
+      `;
+    };
+
+    container.innerHTML = news.map(renderCard).join('');
+
+    // Add click handlers
+    container.querySelectorAll('.news-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        const url = card.dataset.url;
+        const articleId = card.dataset.id;
+        const title = decodeURIComponent(card.dataset.title || '');
+        this.showOpenModeModal(url, articleId, title);
+      });
+    });
+  }
+
+  showOpenModeModal(url, articleId = '', title = '') {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h3>Open in...</h3>
+        <button class="modal-btn ai-mode">
+          <span class="icon">🤖</span>
+          <span>AI Browser (with Rev)</span>
+        </button>
+        <button class="modal-btn normal-mode">
+          <span class="icon">🌐</span>
+          <span>Normal Browser</span>
+        </button>
+        <button class="modal-btn cancel">Cancel</button>
+      </div>
+    `;
+
+    modal.querySelector('.ai-mode').addEventListener('click', () => {
+      modal.remove();
+      this.openInAIBrowser(url, articleId, title);
+    });
+
+    modal.querySelector('.normal-mode').addEventListener('click', () => {
+      modal.remove();
+      this.openInNormalBrowser(url);
+    });
+
+    modal.querySelector('.cancel').addEventListener('click', () => {
+      modal.remove();
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+
+    document.body.appendChild(modal);
+  }
+
+  async openInAIBrowser(url, articleId = '', title = '') {
+    console.log('Opening in AI Browser:', url, 'Article ID:', articleId);
+
+    let aiSummary = null;
+
+    // Try to get AI summary if we have an article ID
+    let context = null;
+    let fetchSummaryPromise = null;
+
+    if (articleId) {
+      try {
+        console.log('Fetching AI summary for article...');
+
+        // First, set initial context with title
+        context = `Article: ${title}`;
+
+        // Start fetching summary in background (don't await)
+        fetchSummaryPromise = fetch(
+          'http://localhost:4000/api/news/summarize',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ articleId, url, title }),
+          }
+        )
+          .then(async (response) => {
+            const result = await response.json();
+            console.log(
+              'Summary response:',
+              JSON.stringify(result).substring(0, 500)
+            );
+            if (result.success && result.summary) {
+              console.log('AI Summary fetched:', result.summary);
+              return result.summary;
+            }
+            return null;
+          })
+          .catch((err) => {
+            console.error('Error fetching summary:', err);
+            return null;
+          });
+      } catch (err) {
+        console.error('Error setting up summary fetch:', err);
+        context = `Article: ${title}`;
+      }
+    } else {
+      context = `Article: ${title}`;
+    }
+
+    // Open the AI browser window
+    console.log('openInAIBrowser - electronAPI exists:', !!window.electronAPI);
+    console.log(
+      'openInAIBrowser - openAIBrowser exists:',
+      !!(window.electronAPI && window.electronAPI.openAIBrowser)
+    );
+
+    if (window.electronAPI && window.electronAPI.openAIBrowser) {
+      console.log(
+        'Opening AI Browser via Electron API with URL:',
+        url,
+        'Context:',
+        context ? 'yes' : 'no'
+      );
+      // Use Electron API to open AI browser with context
+      window.electronAPI
+        .openAIBrowser(url, context)
+        .then((result) => {
+          console.log('openAIBrowser result:', result);
+
+          // After window opens, wait for summary to load and update chat
+          if (fetchSummaryPromise) {
+            fetchSummaryPromise.then((summary) => {
+              if (summary) {
+                console.log('Updating chat with AI summary...');
+                window.electronAPI.updateAIChatWithSummary(summary);
+              }
+            });
+          }
+        })
+        .catch((err) => {
+          console.error('openAIBrowser error:', err);
+          // Fallback
+          this.openAIBrowserFallback(url, aiSummary);
+        });
+    } else {
+      console.log('Using fallback - no Electron API');
+      // Fallback: open the standalone AI browser page
+      this.openAIBrowserFallback(url, context);
+    }
+  }
+
+  openAIBrowserFallback(url, context) {
+    console.log('openAIBrowserFallback - URL:', url, 'Context:', context);
+    this.switchSection('browser');
+    const urlInput = document.getElementById('browser-url');
+    if (urlInput) {
+      urlInput.value = url;
+    }
+    const frame = document.getElementById('browser-frame');
+    if (frame) {
+      let finalUrl = url;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        finalUrl = `https://${url}`;
+      }
+      frame.src = finalUrl;
+
+      // If we have a context/summary, display it
+      if (context) {
+        const responseArea = document.getElementById('ai-response-area');
+        const responseText = document.getElementById('ai-response-text');
+        if (responseArea && responseText) {
+          responseArea.style.display = 'flex';
+          responseText.innerHTML = `<strong>📰 Article Context:</strong><br><br>${context}`;
+        }
+      }
+    }
+  }
+
+  openInNormalBrowser(url) {
+    console.log('Opening in Normal Browser:', url);
+    window.open(url, '_blank');
+  }
+
+  formatTimestamp(dateStr) {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now - date;
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    return 'Just now';
   }
 
   showAboutDialog() {

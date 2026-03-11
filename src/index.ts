@@ -28,6 +28,8 @@ import {
 } from './ai/adapters';
 import { SmartFallbackService } from './ai/SmartFallbackService';
 import { browserAgent } from './ai/BrowserAgent';
+import { NewsIngestionService } from './services/news/NewsIngestionService';
+import { NewsArticle } from './entities/NewsArticle';
 
 const app = express();
 const PORT = 4000;
@@ -294,6 +296,207 @@ async function startServer() {
         console.error('[Shard Health] Error:', error);
         // Return empty array on error
         res.json([]);
+      }
+    });
+
+    // News Endpoints
+    const newsIngestionService = new NewsIngestionService();
+
+    // Get news articles
+    app.get('/api/news', async (req, res) => {
+      try {
+        const source = req.query.source as string;
+        const type = req.query.type as 'article' | 'video';
+        const limit = parseInt(req.query.limit as string) || 50;
+        const offset = parseInt(req.query.offset as string) || 0;
+
+        const news = await newsIngestionService.getNews({
+          source,
+          type: type as any,
+          limit,
+          offset,
+        });
+        res.json(news);
+      } catch (error) {
+        console.error('[News] Error fetching news:', error);
+        res.json([]);
+      }
+    });
+
+    // Get available news sources
+    app.get('/api/news/sources', async (req, res) => {
+      try {
+        const sources = await newsIngestionService.getSources();
+        res.json(sources);
+      } catch (error) {
+        console.error('[News] Error fetching sources:', error);
+        res.json([]);
+      }
+    });
+
+    // Sync news feeds (trigger RSS fetch)
+    app.post('/api/news/sync', async (req, res) => {
+      try {
+        const totalNew = await newsIngestionService.syncAllFeeds();
+        res.json({ success: true, newArticles: totalNew });
+      } catch (error) {
+        console.error('[News] Error syncing feeds:', error);
+        res.json({ success: false, error: 'Sync failed' });
+      }
+    });
+
+    // Summarize news article endpoint
+    app.post('/api/news/summarize', async (req, res) => {
+      try {
+        const { articleId, url, title } = req.body;
+
+        if (!articleId && !url) {
+          return res.json({
+            success: false,
+            error: 'articleId or url required',
+          });
+        }
+
+        let articleTitle = title || '';
+        let articleSummary = '';
+        let articleContent = '';
+
+        // Try to get article from database if we have an ID
+        if (articleId) {
+          const article = await newsIngestionService.getArticleById(articleId);
+          if (article) {
+            articleTitle = article.title;
+            articleSummary = article.summary || '';
+            articleContent = article.content || '';
+          }
+        }
+
+        // Build content to summarize
+        const contentToSummarize =
+          articleTitle + '\n\n' + (articleSummary || articleContent);
+
+        if (!contentToSummarize.trim()) {
+          return res.json({
+            success: false,
+            error: 'No content available to summarize',
+          });
+        }
+
+        // Get best available AI provider
+        const provider = adapterFactory.getBestAvailableProvider();
+
+        if (!provider) {
+          return res.json({
+            success: false,
+            error: 'No AI provider available',
+            summary:
+              articleSummary || 'Please browse to the article to read it.',
+          });
+        }
+
+        const adapter = adapterFactory.getAdapter(provider);
+
+        if (!adapter) {
+          return res.json({
+            success: false,
+            error: 'AI adapter not available',
+            summary:
+              articleSummary || 'Please browse to the article to read it.',
+          });
+        }
+
+        // Use AI to summarize
+        const summaryPrompt = `Please provide a brief summary of the following article (2-3 sentences max). Focus on the main points and key takeaways:\n\n${contentToSummarize.substring(0, 4000)}`;
+
+        const aiResponse = await adapter.complete({
+          provider,
+          prompt: summaryPrompt,
+          maxTokens: 300,
+        });
+
+        const aiSummary = aiResponse.content;
+
+        // Update article in database with AI summary if we have an ID
+        if (articleId) {
+          const article = await newsIngestionService.getArticleById(articleId);
+          if (article) {
+            article.aiSummary = aiSummary;
+            await AppDataSource.getRepository(NewsArticle).save(article);
+          }
+        }
+
+        console.log(
+          '[News] AI Summary generated:',
+          aiSummary.substring(0, 100) + '...'
+        );
+
+        res.json({
+          success: true,
+          summary: aiSummary,
+          title: articleTitle,
+          provider: provider,
+        });
+      } catch (error) {
+        console.error('[News] Error summarizing article:', error);
+        res.json({ success: false, error: error.message });
+      }
+    });
+
+    // Summarize any text endpoint
+    app.post('/api/summarize-text', async (req, res) => {
+      try {
+        const { text, url, title } = req.body;
+
+        if (!text || text.length < 50) {
+          return res.json({
+            success: false,
+            error: 'Text too short to summarize',
+          });
+        }
+
+        // Get best available AI provider
+        const provider = adapterFactory.getBestAvailableProvider();
+
+        if (!provider) {
+          return res.json({
+            success: false,
+            error: 'No AI provider available',
+          });
+        }
+
+        const adapter = adapterFactory.getAdapter(provider);
+
+        if (!adapter) {
+          return res.json({
+            success: false,
+            error: 'AI adapter not available',
+          });
+        }
+
+        // Use AI to summarize the text
+        const summaryPrompt = `You are summarizing a webpage. Provide a concise summary (2-3 sentences) of the main points:\n\n${text.substring(0, 8000)}`;
+
+        const aiResponse = await adapter.complete({
+          provider,
+          prompt: summaryPrompt,
+          maxTokens: 300,
+        });
+
+        const summary = aiResponse.content;
+
+        console.log(
+          '[Summarize] Generated summary:',
+          summary.substring(0, 100) + '...'
+        );
+
+        res.json({
+          success: true,
+          summary,
+          provider: provider,
+        });
+      } catch (error) {
+        console.error('[Summarize] Error:', error);
+        res.json({ success: false, error: error.message });
       }
     });
 

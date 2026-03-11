@@ -277,23 +277,52 @@ body {
   display: flex;
   flex-direction: column;
   gap: 15px;
-  max-height: calc(100vh - 200px);
   overflow-y: auto;
+  padding-bottom: 20px;
+  max-height: calc(100vh - 180px);
 }
 
 .news-card {
-  background-color: var(--surface-color);
-  border: 1px solid var(--border-color);
+  background-color: #2a2a2a;
+  border: 2px solid #555;
   border-radius: 8px;
   overflow: hidden;
   display: flex;
-  height: 120px;
+  min-height: 150px;
+  height: auto;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 15px;
+}
+
+.news-card:hover {
+  border-color: #4a9eff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .news-image {
-  width: 120px;
-  height: 120px;
+  width: 150px;
+  min-width: 150px;
+  height: 150px;
   object-fit: cover;
+}
+
+.news-image.source-logo {
+  object-fit: contain;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.news-image-placeholder {
+  width: 150px;
+  min-width: 150px;
+  height: 150px;
+  background-color: #3a3a3a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
 }
 
 .news-content {
@@ -301,27 +330,31 @@ body {
   padding: 15px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .news-content h3 {
-  color: var(--text-primary);
-  font-size: 14px;
-  margin-bottom: 8px;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: bold;
+  margin: 0 0 8px 0;
+  line-height: 1.3;
 }
 
 .news-meta {
   display: flex;
   gap: 10px;
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-size: 14px;
+  color: #888888;
   margin-bottom: 8px;
 }
 
 .news-preview {
-  color: var(--text-primary);
-  font-size: 12px;
-  line-height: 1.3;
-  flex: 1;
+  color: #cccccc;
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 0;
+  overflow: hidden;
 }
 
 /* Profile Section */
@@ -577,6 +610,121 @@ body {
 
 .modal.active {
   display: flex;
+}
+
+/* Modal Overlay (for news open mode) */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay .modal-content {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 300px;
+  text-align: center;
+}
+
+.modal-overlay .modal-content h3 {
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+.modal-overlay .modal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 20px;
+  margin: 8px 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.modal-overlay .modal-btn:hover {
+  background: var(--surface-color);
+  border-color: var(--accent-color);
+}
+
+.modal-overlay .modal-btn.cancel {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.modal-overlay .modal-btn .icon {
+  font-size: 18px;
+}
+
+/* News refresh button */
+.news-actions {
+  margin-left: auto;
+}
+
+.refresh-btn {
+  padding: 6px 12px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.refresh-btn:hover {
+  background: var(--accent-color);
+  color: white;
+}
+
+/* News type badge */
+.type-badge {
+  background: #e53935;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: bold;
+}
+
+/* News image placeholder */
+.news-image-placeholder {
+  width: 120px;
+  height: 120px;
+  background: var(--surface-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: var(--text-secondary);
+}
+
+/* Loading state */
+.news-container .loading,
+.news-container .empty-state,
+.news-container .error {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.news-container .error {
+  color: #e53935;
 }
 
 /* Full Screen Login Page */

@@ -68,6 +68,7 @@
     "puppeteer": "^22.8.0",
     "redis": "^4.7.1",
     "reflect-metadata": "^0.2.2",
+    "rss-parser": "^3.13.0",
     "type-graphql": "^2.0.0-rc.2",
     "typeorm": "^0.3.27",
     "uuid": "^9.0.1"

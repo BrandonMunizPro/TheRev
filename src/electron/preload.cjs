@@ -28,7 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fillForm: (formData) =>
     ipcRenderer.invoke('browser-automation:fill-form', formData),
   closeBrowserAutomation: () => ipcRenderer.invoke('browser-automation:close'),
-  openAIBrowser: () => ipcRenderer.invoke('open-ai-browser'),
+  openAIBrowser: (url, context) =>
+    ipcRenderer.invoke('open-ai-browser', url, context),
+  updateAIChatWithSummary: (summary) =>
+    ipcRenderer.invoke('update-ai-chat-summary', summary),
 
   // AI Brain
   'ai-brain:execute': (params) =>

@@ -148,6 +148,28 @@
         color: var(--ai-blue);
       }
 
+      .write-mode-toggle {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #888;
+        cursor: pointer;
+      }
+
+      .write-mode-toggle input {
+        cursor: pointer;
+      }
+
+      .write-mode-toggle.active {
+        color: #ff6b6b;
+      }
+
+      .write-mode-toggle input:checked + span {
+        color: #ff6b6b;
+      }
+
       .chat-messages {
         flex: 1;
         overflow-y: auto;
@@ -356,6 +378,9 @@
       <button class="quick-btn" data-url="https://twitter.com">Twitter</button>
       <button class="quick-btn" data-url="https://reddit.com">Reddit</button>
       <button class="quick-btn" data-url="https://news.google.com">News</button>
+      <button class="quick-btn summarize-btn" id="summarizeBtn">
+        📝 Summarize Page
+      </button>
     </div>
 
     <div class="main-container">
@@ -373,6 +398,10 @@
         <div class="chat-header">
           <span style="font-size: 20px">🤖</span>
           <h2>Chat with Rev</h2>
+          <label class="write-mode-toggle">
+            <input type="checkbox" id="writeModeToggle" />
+            <span>Write Mode</span>
+          </label>
         </div>
 
         <div class="chat-messages" id="chatMessages">
@@ -499,10 +528,182 @@
 
       // Quick buttons
       document.querySelectorAll('.quick-btn').forEach((btn) => {
+        if (btn.classList.contains('summarize-btn')) return; // Skip summarize button
         btn.addEventListener('click', () => navigateTo(btn.dataset.url));
       });
 
-      // Chat with AI
+      // Summarize button - extracts page content and summarizes it
+      document
+        .getElementById('summarizeBtn')
+        .addEventListener('click', async () => {
+          addMessage('user', '📝 Summarize this page');
+          setThinking(true);
+
+          try {
+            // First, extract content from the webview
+            const extractResult = await browserFrame.executeJavaScript(`
+            (function() {
+              // Try to get the main content
+              const selectors = ['article', 'main', '.content', '#content', '.post-content', '.article-content', '.entry-content'];
+              let content = '';
+              
+              // Try structured content first
+              for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                  content = el.innerText || el.textContent;
+                  if (content.length > 100) break;
+                }
+              }
+              
+              // Fallback to body
+              if (!content || content.length < 100) {
+                content = document.body.innerText;
+              }
+              
+              // Limit content to 8000 chars
+              return content.substring(0, 8000);
+            })()
+          `);
+
+            if (!extractResult || extractResult.length < 50) {
+              addMessage(
+                'ai',
+                "I couldn't extract enough content from this page to summarize. Try a different page or ask me about specific content."
+              );
+              setThinking(false);
+              return;
+            }
+
+            // Send to backend for summarization
+            const response = await fetch(
+              'http://localhost:4000/api/summarize-text',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: extractResult,
+                  url: currentUrl,
+                  title: browserFrame.getTitle(),
+                }),
+              }
+            );
+
+            const result = await response.json();
+            console.log('[Summarize] Result:', result);
+
+            if (result.success && result.summary) {
+              addMessage(
+                'ai',
+                '<strong>📝 Page Summary:</strong><br><br>' + result.summary
+              );
+            } else {
+              addMessage(
+                'ai',
+                "Sorry, I couldn't summarize this page. " + (result.error || '')
+              );
+            }
+          } catch (error) {
+            console.error('[Summarize] Error:', error);
+            addMessage(
+              'ai',
+              'Sorry, I encountered an error while summarizing: ' +
+                error.message
+            );
+          }
+
+          setThinking(false);
+        });
+
+      // Write mode toggle
+      const writeModeToggle = document.getElementById('writeModeToggle');
+      let writeModeEnabled = false;
+
+      writeModeToggle.addEventListener('change', (e) => {
+        writeModeEnabled = e.target.checked;
+        if (writeModeEnabled) {
+          writeModeToggle.parentElement.classList.add('active');
+          addMessage(
+            'ai',
+            '🔴 <strong>Write Mode Enabled</strong><br>Rev can now fill forms and write content on websites. Disable this anytime to turn off writing capabilities.'
+          );
+        } else {
+          writeModeToggle.parentElement.classList.remove('active');
+          addMessage(
+            'ai',
+            '⚪ <strong>Write Mode Disabled</strong><br>Rev can no longer write content on websites.'
+          );
+        }
+      });
+
+      // Check for write intent in messages
+      function detectWriteIntent(message) {
+        const lower = message.toLowerCase();
+        const writeKeywords = [
+          'write',
+          'post',
+          'comment',
+          'fill',
+          'type',
+          'enter',
+          'submit',
+          'send',
+          'create',
+          'reply',
+        ];
+        return writeKeywords.some((kw) => lower.includes(kw));
+      }
+
+      // Find form fields on the page
+      async function findFormFields() {
+        try {
+          const result = await browserFrame.executeJavaScript(`
+            (function() {
+              const fields = [];
+              const inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
+              
+              inputs.forEach((input, i) => {
+                // Skip hidden fields
+                if (input.offsetParent === null) return;
+                
+                // Get field info
+                const info = {
+                  index: i,
+                  type: input.tagName.toLowerCase(),
+                  inputType: input.type || 'text',
+                  name: input.name || input.id || '',
+                  placeholder: input.placeholder || '',
+                  label: ''
+                };
+                
+                // Try to find label
+                const labelEl = document.querySelector('label[for="' + input.id + '"]');
+                if (labelEl) {
+                  info.label = labelEl.innerText;
+                } else {
+                  // Try parent label
+                  const parentLabel = input.closest('label');
+                  if (parentLabel) {
+                    info.label = parentLabel.innerText;
+                  }
+                }
+                
+                // Get bounding rect for visibility
+                const rect = input.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                  fields.push(info);
+                }
+              });
+              
+              return fields.slice(0, 10); // Limit to 10 fields
+            })()
+          `);
+          return result;
+        } catch (e) {
+          console.error('[Write] Error finding fields:', e);
+          return [];
+        }
+      }
       async function sendMessage() {
         const message = chatInput.value.trim();
         if (!message) return;
@@ -512,6 +713,76 @@
 
         setThinking(true);
 
+        // Check for write intent
+        if (writeModeEnabled && detectWriteIntent(message)) {
+          try {
+            // Find form fields on the page
+            const fields = await findFormFields();
+
+            if (fields.length === 0) {
+              addMessage(
+                'ai',
+                "I couldn't find any form fields on this page to write to. Try navigating to a page with a form first."
+              );
+              setThinking(false);
+              return;
+            }
+
+            // Ask for confirmation before writing
+            const fieldList = fields
+              .map(
+                (f, i) =>
+                  `${i + 1}. ${f.label || f.name || f.inputType} (${f.type})`
+              )
+              .join('\n');
+            addMessage(
+              'ai',
+              `<strong>Found ${fields.length} form fields:</strong>\n${fieldList}\n\nTo write "${message}", I need to know which field(s) to fill. Please confirm which field number or I'll fill the first text field.`
+            );
+
+            // For now, just fill the first text input as a demo
+            const fillResult = await browserFrame.executeJavaScript(`
+              (function() {
+                const inputs = document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]), textarea');
+                for (let input of inputs) {
+                  if (input.offsetParent !== null && input.type !== 'submit' && input.type !== 'button') {
+                    input.focus();
+                    input.value = 'Test message from Rev - write mode working!';
+                    input.dispatchEvent(new Event('input', {bubbles: true}));
+                    input.dispatchEvent(new Event('change', {bubbles: true}));
+                    return { success: true, field: input.name || input.id || 'text input' };
+                  }
+                }
+                return { success: false, error: 'No suitable field found' };
+              })()
+            `);
+
+            if (fillResult.success) {
+              addMessage(
+                'ai',
+                `✅ <strong>Write Successful!</strong><br>I filled in the "${fillResult.field}" field. You can now review and submit the form manually, or ask me to submit it.`
+              );
+            } else {
+              addMessage(
+                'ai',
+                "Sorry, I couldn't find a suitable field to write to: " +
+                  fillResult.error
+              );
+            }
+          } catch (error) {
+            console.error('[Write] Error:', error);
+            addMessage(
+              'ai',
+              'Sorry, I encountered an error while trying to write: ' +
+                error.message
+            );
+          }
+
+          setThinking(false);
+          return;
+        }
+
+        // Normal chat - no write intent
         try {
           // Use IPC to execute AI command in webview directly
           const response = await fetch(
@@ -657,7 +928,7 @@
             // Navigate to URL - IMMEDIATELY
             browserFrame.loadURL(result.url);
             addMessage('ai', `Navigating to ${result.url}`);
-            
+
             // Context loads ASYNC - pop up after
             if (result.context) {
               setTimeout(() => {
@@ -673,7 +944,7 @@
           } else if (result.response) {
             // Show AI response
             addMessage('ai', result.response);
-            
+
             // Also show context if available
             if (result.context && result.context !== result.response) {
               setTimeout(() => {

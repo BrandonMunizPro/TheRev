@@ -6,6 +6,7 @@ import { Thread } from './entities/Thread';
 import { Post } from './entities/Post';
 import { ThreadAdmin } from './entities/ThreadAdmin';
 import { TaskEntity, TaskEvent, TaskMetrics, Worker } from './entities/Task';
+import { NewsArticle } from './entities/NewsArticle';
 import {
   MigrationState,
   UserStorageLocation,
@@ -41,6 +42,7 @@ export const AppDataSource = new DataSource({
     MigrationState,
     UserStorageLocation,
     MigrationBatchLog,
+    NewsArticle,
   ],
   migrations: isTest ? undefined : ['./src/migrations/*.ts'],
   subscribers: [],
