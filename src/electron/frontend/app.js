@@ -6,6 +6,7 @@ class TheRevApp {
     this.currentApprovalRequest = null;
     this.currentUser = null;
     this.jwtToken = null;
+    this.currentNewsType = 'article';
     this.protectedSections = [
       'tasks',
       'analytics',
@@ -528,6 +529,18 @@ class TheRevApp {
     document
       .getElementById('news-refresh-btn')
       ?.addEventListener('click', () => this.refreshNewsFeed());
+
+    // News tabs
+    document.querySelectorAll('.news-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        document
+          .querySelectorAll('.news-tab')
+          .forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.currentNewsType = tab.dataset.type;
+        this.loadNews();
+      });
+    });
 
     document
       .getElementById('ai-settings-btn')
@@ -1373,25 +1386,14 @@ class TheRevApp {
     container.innerHTML = '<div class="loading">Loading news...</div>';
 
     try {
-      // Check if we have any news, if not auto-sync
-      const checkUrl = new URL('http://localhost:4000/api/news');
-      const checkResponse = await fetch(checkUrl.toString());
-      const existingNews = await checkResponse.json();
+      const newsType = this.currentNewsType || 'article';
+      const typeParam = newsType === 'video' ? 'video' : 'article';
 
-      // If no news, auto-sync feeds
-      if (!existingNews || existingNews.length === 0) {
-        console.log('No news found, auto-syncing feeds...');
-        try {
-          await fetch('http://localhost:4000/api/news/sync', {
-            method: 'POST',
-          });
-        } catch (e) {
-          console.log('Auto-sync failed:', e);
-        }
-      }
+      // Fetch news filtered by type
+      const url = new URL('http://localhost:4000/api/news');
+      url.searchParams.set('type', typeParam);
 
-      // Fetch all news
-      const response = await fetch('http://localhost:4000/api/news');
+      const response = await fetch(url.toString());
       const news = await response.json();
 
       if (!news || news.length === 0) {
@@ -1428,6 +1430,14 @@ class TheRevApp {
       'Democracy Now': { bg: '#2e7d32', letter: 'DN' },
       'Al Jazeera': { bg: '#c62828', letter: 'AJ' },
       'Drop Site News': { bg: '#e65100', letter: 'DS' },
+      'Secular Talk': { bg: '#0066cc', letter: 'ST' },
+      'Breaking Points': { bg: '#ff6600', letter: 'BP' },
+      'The Young Turks': { bg: '#cc0000', letter: 'TYT' },
+      'Sabby Sabs': { bg: '#9933cc', letter: 'SS' },
+      'Bad Faith': { bg: '#333333', letter: 'BF' },
+      'The Majority Report': { bg: '#0066cc', letter: 'MR' },
+      'Marc Lamont Hill': { bg: '#cc9900', letter: 'MLH' },
+      'Thom Hartman': { bg: '#0066cc', letter: 'TH' },
     };
 
     const getSourceColor = (name) => {
@@ -1604,7 +1614,14 @@ class TheRevApp {
             fetchSummaryPromise.then((summary) => {
               if (summary) {
                 console.log('Updating chat with AI summary...');
-                window.electronAPI.updateAIChatWithSummary(summary);
+                window.electronAPI
+                  .updateAIChatWithSummary(summary)
+                  .then((result) => {
+                    console.log('updateAIChatWithSummary result:', result);
+                  })
+                  .catch((err) => {
+                    console.error('Error updating AI chat:', err);
+                  });
               }
             });
           }

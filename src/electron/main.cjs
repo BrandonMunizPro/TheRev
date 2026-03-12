@@ -608,37 +608,69 @@ ipcMain.handle('open-ai-browser', async (event, url, context) => {
 ipcMain.handle('update-ai-chat-summary', async (event, summary) => {
   console.log(
     '[update-ai-chat-summary] Received summary:',
-    summary ? summary.substring(0, 50) + '...' : 'null'
+    summary ? summary.substring(0, 100) + '...' : 'null'
   );
 
   // Use the stored aiBrowserWindow reference
   if (aiBrowserWindow && !aiBrowserWindow.isDestroyed()) {
-    console.log('[update-ai-chat-summary] Using stored window reference');
-    const escapedSummary = (summary || '')
-      .replace(/'/g, "\\'")
-      .replace(/"/g, '\\"');
+    console.log('[update-ai-chat-summary] Window exists, executing JS');
 
-    aiBrowserWindow.webContents.executeJavaScript(`
-      (function() {
-        try {
-          console.log('[renderer] Trying to add summary to chat');
-          const chatMessages = document.getElementById('chatMessages');
-          console.log('[renderer] chatMessages found:', !!chatMessages);
-          if (chatMessages) {
-            // Add the AI summary
+    const cleanSummary = (summary || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '');
+
+    try {
+      // Use a retry approach - wait for element to exist
+      const jsCode = `
+        (function() {
+          function addSummary() {
+            const chatMessages = document.getElementById('chatMessages');
+            if (!chatMessages) {
+              console.log('[renderer] chatMessages not found, retrying...');
+              return false;
+            }
+            
+            // Check if summary already added to avoid duplicates
+            if (chatMessages.innerHTML.includes('AI Summary:')) {
+              console.log('[renderer] Summary already added');
+              return true;
+            }
+            
             const msgDiv = document.createElement('div');
             msgDiv.className = 'message ai';
-            msgDiv.innerHTML = '<span class="avatar">🤖</span><strong>📰 AI Summary:</strong><br><br>' + '${escapedSummary}';
+            msgDiv.innerHTML = '<span class="avatar">🤖</span><strong>📰 AI Summary:</strong><br><br>' + '${cleanSummary}';
             chatMessages.appendChild(msgDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
-            console.log('[renderer] Summary added to chat');
-          } else {
-            console.log('[renderer] chatMessages NOT found');
+            console.log('[renderer] Summary added successfully');
+            return true;
           }
-        } catch(e) { console.log('[renderer] Error adding summary:', e); }
-      })();
-    `);
-    return { success: true };
+          
+          // Try immediately, then retry a few times
+          if (!addSummary()) {
+            setTimeout(addSummary, 500);
+            setTimeout(addSummary, 1000);
+            setTimeout(addSummary, 2000);
+          }
+          return 'executing';
+        })();
+      `;
+
+      const result =
+        await aiBrowserWindow.webContents.executeJavaScript(jsCode);
+      console.log('[update-ai-chat-summary] JS result:', result);
+      return { success: true, result };
+    } catch (execError) {
+      console.error(
+        '[update-ai-chat-summary] Execute JavaScript error:',
+        execError
+      );
+      return { success: false, error: execError.message };
+    }
+  } else {
+    console.log('[update-ai-chat-summary] No AI Browser window found');
   }
 
   return { success: false, error: 'No AI Browser window found' };

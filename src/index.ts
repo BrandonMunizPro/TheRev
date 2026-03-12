@@ -306,13 +306,21 @@ async function startServer() {
     app.get('/api/news', async (req, res) => {
       try {
         const source = req.query.source as string;
-        const type = req.query.type as 'article' | 'video';
+        const typeParam = req.query.type as string;
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = parseInt(req.query.offset as string) || 0;
 
+        // Convert string type to database value (lowercase for comparison)
+        let newsTypeValue: string | undefined;
+        if (typeParam === 'video') {
+          newsTypeValue = 'video';
+        } else if (typeParam === 'article') {
+          newsTypeValue = 'article';
+        }
+
         const news = await newsIngestionService.getNews({
           source,
-          type: type as any,
+          typeValue: newsTypeValue,
           limit,
           offset,
         });

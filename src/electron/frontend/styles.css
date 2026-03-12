@@ -677,6 +677,34 @@ body {
   margin-left: auto;
 }
 
+.news-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.news-tab {
+  padding: 6px 16px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.news-tab:hover {
+  background: var(--surface-color);
+  color: var(--text-primary);
+}
+
+.news-tab.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: white;
+}
+
 .refresh-btn {
   padding: 6px 12px;
   background: var(--surface-color);
