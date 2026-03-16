@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType } from "type-graphql";
+import { Field, ID, ObjectType } from 'type-graphql';
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -7,15 +7,15 @@ import {
   OneToMany,
   CreateDateColumn,
   UpdateDateColumn,
-} from "typeorm";
-import { User } from "./User";
-import { Post } from "./Post";
+} from 'typeorm';
+import { User } from './User';
+import { Post } from './Post';
 
 @ObjectType()
 @Entity()
 export class Thread {
   @Field(() => ID)
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Field()
@@ -27,7 +27,7 @@ export class Thread {
   content?: string;
 
   @Field(() => User)
-  @ManyToOne(() => User, { onDelete: "CASCADE" })
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
   author!: User;
 
   @Field(() => [Post], { nullable: true })

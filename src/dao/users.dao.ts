@@ -1,9 +1,11 @@
-import { AppDataSource } from "../data-source";
-import { User } from "../entities/User";
-import { DeepPartial } from "typeorm";
+import { AppDataSource } from '../data-source';
+import { User } from '../entities/User';
+import { DeepPartial, Repository } from 'typeorm';
 
 export class UsersDao {
-  private repo = AppDataSource.getRepository(User);
+  private get repo(): Repository<User> {
+    return AppDataSource.getRepository(User);
+  }
 
   async findAll(): Promise<User[]> {
     return this.repo.find();
@@ -17,7 +19,7 @@ export class UsersDao {
     return this.repo.findOne({ where: { id } });
   }
 
-   async findByUsername(userName: string): Promise<User | null> {
+  async findByUsername(userName: string): Promise<User | null> {
     return this.repo.findOne({ where: { userName } });
   }
 
@@ -35,7 +37,6 @@ export class UsersDao {
     }
     return updated;
   }
-
 
   async saveUserPasswordByName(
     userName: string,

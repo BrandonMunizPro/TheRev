@@ -100,8 +100,10 @@ export class ThreadResolver {
   async listThreads(
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThread[] | null> {
+    // Return empty array if not authenticated instead of throwing error
     if (!ctx.user) {
-      throw new Error('Not authenticated');
+      console.log('[listThreads] No user in context, returning empty array');
+      return [];
     }
     return this.model.listAllThreads(ctx.user.userId);
   }
@@ -115,6 +117,17 @@ export class ThreadResolver {
       throw new Error('Not authenticated');
     }
     return this.model.listThreadsByUser(data.authorId!, ctx.user.userId);
+  }
+
+  @Query(() => [Thread])
+  async myParticipatedThreads(
+    @Ctx() ctx: GraphQLContext
+  ): Promise<returnedThread[] | null> {
+    // Return empty array if not authenticated instead of throwing error
+    if (!ctx.user) {
+      return [];
+    }
+    return this.model.listThreadsUserParticipatedIn(ctx.user.userId);
   }
 
   @Mutation(() => Thread)

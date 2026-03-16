@@ -31,13 +31,35 @@ export class PostsModel {
       throw new Error('Thread Admin has locked anyone else from interacting');
 
     const newDate = new Date();
+
+    // Parse metadata if provided as string
+    let parsedMetadata:
+      | {
+          thumbnailUrl?: string;
+          duration?: number;
+          provider?: 'youtube' | 'vimeo';
+        }
+      | undefined;
+    if (data.metadata) {
+      try {
+        parsedMetadata =
+          typeof data.metadata === 'string'
+            ? JSON.parse(data.metadata)
+            : (data.metadata as any);
+      } catch (e) {
+        console.warn('Failed to parse metadata:', e);
+      }
+    }
+
     const createdPost = await this.dao.createPostRaw(
       data.content,
       userId,
       data.threadId,
       data.type,
       newDate,
-      data.metadata
+      parsedMetadata,
+      false,
+      data.parentId
     );
 
     return {
@@ -47,7 +69,8 @@ export class PostsModel {
       isPinned: createdPost.is_pinned,
       author: user,
       thread: thread,
-      createdAt: createdPost.created_at,
+      createdAt: createdPost.createdAt,
+      updatedAt: createdPost.updatedAt,
       metadata: createdPost.metadata
         ? JSON.parse(createdPost.metadata)
         : undefined,

@@ -3,10 +3,12 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
+  OneToMany,
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Field, ID, ObjectType } from 'type-graphql';
+import { GraphQLJSONObject } from 'graphql-scalars';
 import { User } from './User';
 import { Thread } from './Thread';
 import { PostType } from '../graphql/enums/PostType';
@@ -30,7 +32,7 @@ export class Post {
   @Column({ default: false })
   isPinned!: boolean;
 
-  @Field(() => String, { nullable: true })
+  @Field(() => GraphQLJSONObject, { nullable: true })
   @Column('jsonb', { nullable: true })
   metadata?: {
     thumbnailUrl?: string;
@@ -45,6 +47,17 @@ export class Post {
   @Field(() => Thread)
   @ManyToOne(() => Thread, (thread) => thread.posts, { onDelete: 'CASCADE' })
   thread!: Thread;
+
+  @Field(() => Post, { nullable: true })
+  @ManyToOne(() => Post, (post) => post.replies, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  parent?: Post;
+
+  @Field(() => [Post], { nullable: true })
+  @OneToMany(() => Post, (post) => post.parent, { eager: true })
+  replies?: Post[];
 
   @Field()
   @CreateDateColumn()

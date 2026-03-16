@@ -1,6 +1,7 @@
 // TheRev Desktop App - Frontend JavaScript
 class TheRevApp {
   constructor() {
+    console.log('[TheRevApp] Constructor called');
     this.currentSection = 'threads';
     this.avatarData = {};
     this.currentApprovalRequest = null;
@@ -14,11 +15,12 @@ class TheRevApp {
       'shards',
       'ai-settings',
     ];
-    this.adminSections = ['audit', 'shards'];
+    this.adminSections = ['tasks', 'analytics', 'audit', 'shards'];
     this.init();
   }
 
   async init() {
+    console.log('[TheRevApp] init() started');
     // Check for existing auth session
     this.loadAuthSession();
 
@@ -91,6 +93,23 @@ class TheRevApp {
       if (stored) {
         const auth = JSON.parse(stored);
         if (auth.jwt && auth.user) {
+          // Check if token is expired
+          try {
+            const payload = JSON.parse(atob(auth.jwt.split('.')[1]));
+            const isExpired = Date.now() >= payload.exp * 1000;
+
+            if (isExpired) {
+              console.log('[Auth] Token expired, clearing session');
+              this.clearAuthSession();
+              return;
+            }
+          } catch (e) {
+            // Invalid token format, clear session
+            console.log('[Auth] Invalid token, clearing session');
+            this.clearAuthSession();
+            return;
+          }
+
           this.jwtToken = auth.jwt;
           this.currentUser = auth.user;
           this.updateAuthUI();
@@ -342,6 +361,7 @@ class TheRevApp {
                   email
                   role
                   ideology
+                  profilePicUrl
                 }
                 jwt
               }
@@ -517,18 +537,26 @@ class TheRevApp {
   }
 
   setupEventListeners() {
+    console.log('[setupEventListeners] Setting up all event listeners');
     // Use event delegation - attach to document for dynamically created elements
 
     // Navigation
-    document
-      .getElementById('threads-btn')
-      ?.addEventListener('click', () => this.switchSection('threads'));
-    document
-      .getElementById('news-btn')
-      ?.addEventListener('click', () => this.switchSection('news'));
-    document
-      .getElementById('news-refresh-btn')
-      ?.addEventListener('click', () => this.refreshNewsFeed());
+    document.getElementById('threads-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Threads button clicked');
+      this.switchSection('threads');
+    });
+    document.getElementById('news-btn')?.addEventListener('click', () => {
+      console.log('[Nav] News button clicked');
+      this.switchSection('news');
+    });
+    document.getElementById('profile-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Profile button clicked');
+      this.switchSection('profile');
+    });
+    document.getElementById('browser-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Browser button clicked');
+      this.switchSection('browser');
+    });
 
     // News tabs
     document.querySelectorAll('.news-tab').forEach((tab) => {
@@ -541,6 +569,11 @@ class TheRevApp {
         this.loadNews();
       });
     });
+
+    // News refresh button
+    document
+      .getElementById('news-refresh-btn')
+      ?.addEventListener('click', () => this.refreshNewsFeed());
 
     document
       .getElementById('ai-settings-btn')
@@ -557,12 +590,14 @@ class TheRevApp {
     document
       .getElementById('shards-btn')
       ?.addEventListener('click', () => this.switchSection('shards'));
-    document
-      .getElementById('profile-btn')
-      ?.addEventListener('click', () => this.switchSection('profile'));
-    document
-      .getElementById('browser-btn')
-      ?.addEventListener('click', () => this.switchSection('browser'));
+    document.getElementById('profile-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Profile button clicked');
+      this.switchSection('profile');
+    });
+    document.getElementById('browser-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Browser button clicked');
+      this.switchSection('browser');
+    });
 
     // Use delegation for browser section elements (they may not exist yet)
     document.addEventListener('click', (e) => {
@@ -628,6 +663,16 @@ class TheRevApp {
       .querySelector('.close-btn')
       .addEventListener('click', () => this.closeAvatarCustomizer());
 
+    // Profile photo upload
+    document
+      .getElementById('upload-photo-btn')
+      ?.addEventListener('click', () => {
+        document.getElementById('profile-pic-input').click();
+      });
+    document
+      .getElementById('profile-pic-input')
+      ?.addEventListener('change', (e) => this.handleProfilePicUpload(e));
+
     // Browser controls
     document
       .getElementById('browser-navigate')
@@ -690,7 +735,7 @@ class TheRevApp {
       console.log('[setupEventListeners] login-form not found');
     }
 
-    // Register form
+    // Register form - also handle via button click
     document
       .getElementById('register-form')
       ?.addEventListener('submit', async (e) => {
@@ -779,6 +824,16 @@ class TheRevApp {
           errorEl.style.display = 'block';
         }
       });
+
+    // Create thread form
+    document
+      .getElementById('create-thread-form')
+      ?.addEventListener('submit', (e) => this.submitCreateThread(e));
+
+    // Create post form
+    document
+      .getElementById('create-post-form')
+      ?.addEventListener('submit', (e) => this.submitCreatePost(e));
 
     // Close reset password modal on background click
     document
@@ -884,17 +939,31 @@ class TheRevApp {
   }
 
   switchSection(section) {
+    console.log('[switchSection] Switching to:', section);
+
     // Update navigation
     document
       .querySelectorAll('.nav-btn')
       .forEach((btn) => btn.classList.remove('active'));
-    document.getElementById(`${section}-btn`).classList.add('active');
+
+    const btn = document.getElementById(`${section}-btn`);
+    console.log('[switchSection] Button element:', btn);
+    if (btn) btn.classList.add('active');
 
     // Update content sections
     document
       .querySelectorAll('.content-section')
       .forEach((sec) => sec.classList.remove('active'));
-    document.getElementById(`${section}-section`).classList.add('active');
+
+    const sectionEl = document.getElementById(`${section}-section`);
+    console.log(
+      '[switchSection] Section element:',
+      sectionEl,
+      'id:',
+      `${section}-section`
+    );
+    if (sectionEl) sectionEl.classList.add('active');
+    else console.log('[switchSection] Section not found!');
 
     this.currentSection = section;
 
@@ -915,6 +984,442 @@ class TheRevApp {
       case 'news':
         this.loadNews();
         break;
+      case 'profile':
+        this.loadProfile();
+        break;
+      case 'threads':
+        this.loadThreads();
+        break;
+      case 'browser':
+        break;
+      case 'ai-settings':
+        break;
+    }
+  }
+
+  async loadThreads() {
+    console.log('[Threads] loadThreads called');
+    console.log(
+      '[Threads] jwtToken:',
+      this.jwtToken ? 'present' : 'missing',
+      'currentUser:',
+      this.currentUser?.userName
+    );
+
+    if (!this.jwtToken || !this.currentUser) {
+      console.log('[Threads] Not logged in, skipping load');
+      // Show login prompt
+      alert('Please log in to view threads');
+      return;
+    }
+
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // Only add auth if we have a token
+      if (this.jwtToken) {
+        headers['Authorization'] = `Bearer ${this.jwtToken}`;
+      }
+
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: `
+            query {
+              listThreads {
+                id
+                title
+                content
+                createdAt
+                author {
+                  id
+                  userName
+                }
+                posts {
+                  id
+                  content
+                  type
+                  createdAt
+                  metadata
+                  author {
+                    id
+                    userName
+                  }
+                  replies {
+                    id
+                    content
+                    type
+                    createdAt
+                    metadata
+                    author {
+                      id
+                      userName
+                    }
+                  }
+                }
+              }
+            }
+          `,
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[Threads] GraphQL result:', result);
+
+      if (result.errors) {
+        console.error('[Threads] GraphQL errors:', result.errors);
+      }
+
+      const threads = result.data?.listThreads || [];
+
+      // Render threads with posts
+      const container = document.querySelector('.threads-container');
+      if (container) {
+        if (threads.length === 0) {
+          container.innerHTML =
+            '<div class="empty-state">No threads yet. Create the first one!</div>';
+        } else {
+          container.innerHTML = threads
+            .map((thread) => {
+              // Check for URLs in thread content AND first post content
+              let urlLink = '';
+              const contentToSearch =
+                thread.content + ' ' + (thread.posts?.[0]?.content || '');
+              const urlMatch = contentToSearch.match(/(https?:\/\/[^\s]+)/);
+              if (urlMatch && urlMatch[1]) {
+                urlLink = `<span class="url-link clickable" data-url="${urlMatch[1]}">🔗 Open Link</span>`;
+              }
+
+              return `
+            <div class="thread-card" onclick="theRevApp.openThread('${thread.id}')">
+              <div class="thread-header">
+                <h3>${thread.title}</h3>
+                ${thread.isPinned ? '<span class="pinned-indicator">📌 Pinned</span>' : ''}
+              </div>
+              <div class="thread-meta">
+                <span class="author">by @${thread.author?.userName || 'Unknown'}</span>
+                <span class="timestamp">${new Date(thread.createdAt).toLocaleDateString()}</span>
+                ${urlLink}
+              </div>
+              <p class="thread-preview">${thread.content || ''}</p>
+              <div class="thread-posts">
+                ${
+                  thread.posts
+                    ? thread.posts
+                        .map((post) => {
+                          const postType = post.type || 'TEXT';
+                          const isVideo = postType === 'VIDEO';
+                          const isImage = postType === 'IMAGE';
+                          const replyCount = post.replies
+                            ? post.replies.length
+                            : 0;
+                          let mediaContent = '';
+                          // Check for YouTube URL in post content
+                          const postContentToSearch = post.content || '';
+                          const ytMatch = postContentToSearch.match(
+                            /(https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[^\s]+)/
+                          );
+                          const ytShortMatch = postContentToSearch.match(
+                            /(https?:\/\/youtu\.be\/[^\s]+)/
+                          );
+                          const videoUrl = ytMatch
+                            ? ytMatch[1]
+                            : ytShortMatch
+                              ? ytShortMatch[1]
+                              : null;
+
+                          if (isVideo && post.metadata?.thumbnailUrl) {
+                            const openUrl =
+                              videoUrl || post.metadata.thumbnailUrl;
+                            mediaContent = `<div class="post-media video clickable" data-url="${openUrl}" style="cursor:pointer"><img src="${post.metadata.thumbnailUrl}" alt="Video thumbnail" style="max-width:200px;border-radius:8px;margin:8px 0;" /><span class="media-badge">🎬 Video - Click to Open</span></div>`;
+                          } else if (isImage && post.metadata?.thumbnailUrl) {
+                            mediaContent = `<div class="post-media image"><img src="${post.metadata.thumbnailUrl}" alt="Post image" style="max-width:200px;border-radius:8px;margin:8px 0;" /></div>`;
+                          }
+
+                          // Render nested replies
+                          let repliesHtml = '';
+                          if (post.replies && post.replies.length > 0) {
+                            repliesHtml =
+                              '<div class="nested-replies" style="margin-top:10px;padding-left:15px;border-left:2px solid #00a8ff;">';
+                            post.replies.forEach((reply) => {
+                              repliesHtml += `
+                                <div class="nested-reply" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.1);">
+                                  <div class="post-author" style="font-size:11px;">@${reply.author?.userName || 'Unknown'} <span class="post-date">${new Date(reply.createdAt).toLocaleString()}</span></div>
+                                  <div class="post-text" style="font-size:12px;margin-top:4px;">${reply.content || ''}</div>
+                                </div>
+                              `;
+                            });
+                            repliesHtml += '</div>';
+                          }
+
+                          return `
+                  <div class="post-item">
+                    <div class="post-author">@${post.author?.userName || 'Unknown'}</div>
+                    <div class="post-text">${post.content || ''}</div>
+                    ${mediaContent}
+                    <div class="post-footer">
+                      <span class="post-date">${new Date(post.createdAt).toLocaleString()}</span>
+                      ${replyCount > 0 ? `<span class="reply-count">💬 ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}</span>` : ''}
+                    </div>
+                    ${repliesHtml}
+                  </div>
+                `;
+                        })
+                        .join('')
+                    : ''
+                }
+              </div>
+            </div>
+          `;
+            })
+            .join('');
+
+          // Add click handlers for URL links and videos in threads
+          container
+            .querySelectorAll(
+              '.url-link.clickable, .post-media.video.clickable'
+            )
+            .forEach((el) => {
+              el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const url = el.dataset.url;
+                if (url) theRevApp.showOpenModeModal(url, '', 'Link');
+              });
+            });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading threads:', error);
+    }
+  }
+
+  async loadProfile() {
+    // Don't try to load if not logged in
+    if (!this.currentUser) {
+      console.log('[Profile] No current user, cannot load profile');
+      return;
+    }
+
+    // Update profile info from currentUser
+    const usernameEl = document.getElementById('username');
+    const profileAvatarEl = document.getElementById('profile-avatar-img');
+    const profileBioEl = document.getElementById('profile-bio');
+    const profileIdeologyEl = document.getElementById('profile-ideology');
+    const profileJoinedEl = document.getElementById('profile-joined');
+
+    if (this.currentUser && usernameEl) {
+      usernameEl.textContent = this.currentUser.userName;
+    }
+
+    // Update bio
+    if (profileBioEl && this.currentUser?.bio) {
+      profileBioEl.textContent = this.currentUser.bio;
+    } else if (profileBioEl) {
+      profileBioEl.textContent =
+        'Revolutionary thinker and political enthusiast';
+    }
+
+    // Update ideology
+    if (profileIdeologyEl && this.currentUser?.ideology) {
+      profileIdeologyEl.textContent = this.currentUser.ideology;
+    } else if (profileIdeologyEl) {
+      profileIdeologyEl.textContent = 'Independent';
+    }
+
+    // Update join date
+    if (profileJoinedEl && this.currentUser?.createdAt) {
+      const joinDate = new Date(
+        this.currentUser.createdAt
+      ).toLocaleDateString();
+      profileJoinedEl.textContent = `Joined: ${joinDate}`;
+    }
+
+    // Update profile pic if user has one
+    if (this.currentUser?.profilePicUrl && profileAvatarEl) {
+      profileAvatarEl.src =
+        'http://localhost:4000' + this.currentUser.profilePicUrl;
+    }
+
+    // Load participated threads and stats
+    await this.loadParticipatedThreads();
+    await this.loadProfileStats();
+  }
+
+  async loadProfileStats() {
+    // Don't try to load if not logged in
+    if (!this.jwtToken || !this.currentUser) {
+      console.log('[Profile] Not logged in, skipping stats load');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query {
+              myParticipatedThreads {
+                id
+                posts {
+                  id
+                }
+              }
+            }
+          `,
+        }),
+      });
+
+      const result = await response.json();
+      const threads = result.data?.myParticipatedThreads || [];
+
+      // Calculate stats
+      const threadCount = threads.length;
+      const postCount = threads.reduce(
+        (acc, t) => acc + (t.posts?.length || 0),
+        0
+      );
+
+      // Update stats display with IDs
+      const threadsEl = document.getElementById('stat-threads');
+      const postsEl = document.getElementById('stat-posts');
+      if (threadsEl) threadsEl.textContent = threadCount;
+      if (postsEl) postsEl.textContent = postCount;
+    } catch (error) {
+      console.error('Error loading profile stats:', error);
+    }
+  }
+
+  async loadParticipatedThreads() {
+    // Don't try to load if not logged in
+    if (!this.jwtToken || !this.currentUser) {
+      console.log('[Profile] Not logged in, skipping threads load');
+      const container = document.querySelector('.recent-threads');
+      if (container) {
+        container.innerHTML =
+          '<p class="no-threads">Please log in to see your threads.</p>';
+      }
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query {
+              myParticipatedThreads {
+                id
+                title
+                content
+                createdAt
+                isPinned
+                author {
+                  id
+                  userName
+                }
+                posts {
+                  id
+                  type
+                  content
+                  metadata
+                }
+              }
+            }
+          `,
+        }),
+      });
+
+      const result = await response.json();
+      const threads = result.data?.myParticipatedThreads || [];
+
+      // Render threads in profile
+      const container = document.getElementById('user-threads');
+      if (container) {
+        if (threads.length === 0) {
+          container.innerHTML =
+            '<p class="no-threads">You haven\'t created any threads yet.</p>';
+        } else {
+          container.innerHTML = threads
+            .map((thread) => {
+              // Check for video/image in first post
+              let thumbnailHtml = '';
+              const firstPost = thread.posts?.[0];
+
+              // Check for YouTube URL in thread content OR first post content
+              const contentToSearch =
+                thread.content + ' ' + (firstPost?.content || '');
+              const ytMatch = contentToSearch.match(
+                /(https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[^\s]+)/
+              );
+              const ytShortMatch = contentToSearch.match(
+                /(https?:\/\/youtu\.be\/[^\s]+)/
+              );
+              const videoUrl = ytMatch
+                ? ytMatch[1]
+                : ytShortMatch
+                  ? ytShortMatch[1]
+                  : null;
+
+              if (firstPost?.metadata?.thumbnailUrl) {
+                if (firstPost.type === 'VIDEO') {
+                  // Use actual YouTube URL if found, otherwise use thumbnail as last resort
+                  const openUrl = videoUrl || firstPost.metadata.thumbnailUrl;
+                  thumbnailHtml = `<div class="thread-thumb clickable" data-url="${openUrl}" style="cursor:pointer"><img src="${firstPost.metadata.thumbnailUrl}" alt="" /><span class="video-badge">🎬 Click to Open</span></div>`;
+                } else if (firstPost.type === 'IMAGE') {
+                  thumbnailHtml = `<div class="thread-thumb"><img src="${firstPost.metadata.thumbnailUrl}" alt="" /></div>`;
+                }
+              }
+
+              // Check for URLs in content
+              let urlLink = '';
+              const urlMatch = (thread.content || '').match(
+                /(https?:\/\/[^\s]+)/g
+              );
+              if (urlMatch && urlMatch[0]) {
+                urlLink = `<span class="url-indicator clickable" data-url="${urlMatch[0]}">🔗 Open Link</span>`;
+              }
+
+              return `
+              <div class="thread-item" onclick="theRevApp.openThread('${thread.id}')">
+                ${thumbnailHtml}
+                <span class="thread-title">${thread.title}</span>
+                <div class="thread-meta">
+                  <span class="thread-author">by @${thread.author?.userName || 'Unknown'}</span>
+                  <span class="thread-date">${new Date(thread.createdAt).toLocaleDateString()}</span>
+                  ${urlLink}
+                </div>
+              </div>
+            `;
+            })
+            .join('');
+
+          // Add click handlers for video thumbnails and URLs
+          container
+            .querySelectorAll(
+              '.thread-thumb.clickable, .url-indicator.clickable'
+            )
+            .forEach((el) => {
+              el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const url = el.dataset.url;
+                if (url) theRevApp.showOpenModeModal(url, '', 'Video');
+              });
+            });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading participated threads:', error);
     }
   }
 
@@ -1170,6 +1675,72 @@ class TheRevApp {
     this.closeAvatarCustomizer();
   }
 
+  async handleProfilePicUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be less than 5MB');
+      return;
+    }
+
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result;
+
+        // Upload to server
+        const response = await fetch(
+          'http://localhost:4000/api/profile/upload',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: base64,
+              userId: this.currentUser?.id,
+              fileName: file.name,
+            }),
+          }
+        );
+
+        const result = await response.json();
+
+        if (result.success) {
+          // Update profile pic display
+          const profileImg = document.getElementById('profile-avatar-img');
+          if (profileImg) {
+            profileImg.src = 'http://localhost:4000' + result.imageUrl;
+          }
+
+          // Update header avatar too
+          const headerAvatar = document.getElementById('user-avatar');
+          if (headerAvatar) {
+            headerAvatar.src = 'http://localhost:4000' + result.imageUrl;
+          }
+
+          alert('Profile photo updated!');
+        } else {
+          alert(result.error || 'Failed to upload image');
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Profile pic upload error:', error);
+      alert('Failed to upload image');
+    }
+
+    // Reset input so same file can be selected again
+    event.target.value = '';
+  }
+
   async navigateBrowser() {
     const urlInput = document.getElementById('browser-url');
     const url = urlInput.value.trim();
@@ -1357,16 +1928,413 @@ class TheRevApp {
   }
 
   createNewThread() {
-    // Implementation for creating new thread
-    const title = prompt('Enter thread title:');
-    if (title) {
-      console.log('Creating thread:', title);
-      // Would connect to backend GraphQL API
+    if (!this.jwtToken || !this.currentUser) {
+      alert('Please log in to create a thread');
+      return;
     }
+    document.getElementById('create-thread-modal').classList.add('active');
+    document.getElementById('create-thread-error').style.display = 'none';
+  }
+
+  closeCreateThreadModal() {
+    document.getElementById('create-thread-modal').classList.remove('active');
+    document.getElementById('create-thread-form').reset();
+    document.getElementById('create-thread-error').style.display = 'none';
+  }
+
+  async submitCreateThread(e) {
+    e.preventDefault();
+
+    if (!this.jwtToken || !this.currentUser) {
+      alert('Please log in to create a thread');
+      return;
+    }
+
+    const title = document.getElementById('thread-title').value;
+    const content = document.getElementById('thread-content').value;
+    const type = document.getElementById('thread-type').value;
+    const errorEl = document.getElementById('create-thread-error');
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation CreateThread($input: CreateThreadInput!) {
+              createThread(input: $input) {
+                id
+                title
+                content
+                createdAt
+              }
+            }
+          `,
+          variables: {
+            input: { title, content, type },
+          },
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[CreateThread] Result:', result);
+
+      if (result.errors) {
+        console.error(
+          '[CreateThread] GraphQL errors:',
+          JSON.stringify(result.errors, null, 2)
+        );
+        errorEl.textContent =
+          result.errors[0].message || 'Failed to create thread';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      if (result.data?.createThread) {
+        this.closeCreateThreadModal();
+        this.loadThreads();
+      }
+    } catch (error) {
+      errorEl.textContent = error.message || 'Failed to create thread';
+      errorEl.style.display = 'block';
+    }
+  }
+
+  openCreatePostModal(threadId, parentId = null, parentAuthorName = null) {
+    if (!this.jwtToken || !this.currentUser) {
+      alert('Please log in to reply');
+      return;
+    }
+    document.getElementById('post-thread-id').value = threadId;
+    document.getElementById('post-parent-id').value = parentId || '';
+
+    const replyIndicator = document.getElementById('reply-to-indicator');
+    if (parentId && parentAuthorName) {
+      document.getElementById('reply-to-author').textContent =
+        '@' + parentAuthorName;
+      replyIndicator.style.display = 'block';
+    } else {
+      replyIndicator.style.display = 'none';
+    }
+
+    document.getElementById('create-post-modal').classList.add('active');
+    document.getElementById('create-post-error').style.display = 'none';
+  }
+
+  clearReplyTo() {
+    document.getElementById('post-parent-id').value = '';
+    document.getElementById('reply-to-indicator').style.display = 'none';
+  }
+
+  closeCreatePostModal() {
+    document.getElementById('create-post-modal').classList.remove('active');
+    document.getElementById('create-post-form').reset();
+    document.getElementById('create-post-error').style.display = 'none';
+    this.clearReplyTo();
+  }
+
+  async submitCreatePost(e) {
+    e.preventDefault();
+
+    if (!this.jwtToken || !this.currentUser) {
+      alert('Please log in to reply');
+      return;
+    }
+
+    const threadId = document.getElementById('post-thread-id').value;
+    const parentId = document.getElementById('post-parent-id').value;
+    const content = document.getElementById('post-content').value;
+    const type = document.getElementById('post-type').value;
+    const errorEl = document.getElementById('create-post-error');
+
+    const input = { threadId, content, type };
+    if (parentId) {
+      input.parentId = parentId;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation CreatePost($input: CreatePostInput!) {
+              createPost(input: $input) {
+                id
+                content
+                createdAt
+              }
+            }
+          `,
+          variables: {
+            input,
+          },
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.errors) {
+        throw new Error(result.errors[0].message);
+      }
+
+      if (result.data?.createPost) {
+        this.closeCreatePostModal();
+        this.loadThreadDetail(threadId);
+        this.loadThreads();
+      }
+    } catch (error) {
+      errorEl.textContent = error.message || 'Failed to create post';
+      errorEl.style.display = 'block';
+    }
+  }
+
+  async togglePin(postId, shouldPin) {
+    if (!this.jwtToken || !this.currentUser) {
+      alert('Please log in to pin posts');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation TogglePin($input: UpdatePostPinnedInput!) {
+              updatePostPin(input: $input) {
+                id
+                isPinned
+              }
+            }
+          `,
+          variables: {
+            input: {
+              id: postId,
+              isPinned: shouldPin,
+            },
+          },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        throw new Error(result.errors[0].message);
+      }
+
+      // Refresh the thread to show updated pin status
+      const threadId = document.getElementById('post-thread-id')?.value;
+      if (threadId) {
+        this.loadThreadDetail(threadId);
+      }
+    } catch (error) {
+      console.error('Error toggling pin:', error);
+      alert('Failed to toggle pin: ' + error.message);
+    }
+  }
+
+  openThread(threadId) {
+    console.log('[Thread] Opening thread:', threadId);
+    this.loadThreadDetail(threadId);
+  }
+
+  async loadThreadDetail(threadId) {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (this.jwtToken) {
+        headers['Authorization'] = `Bearer ${this.jwtToken}`;
+      }
+
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: `
+            query GetThread($id: ID!) {
+              getThread(data: { id: $id }) {
+                id
+                title
+                content
+                createdAt
+                author {
+                  id
+                  userName
+                }
+                posts {
+                  id
+                  content
+                  type
+                  createdAt
+                  author {
+                    id
+                    userName
+                  }
+                  metadata
+                }
+              }
+            }
+          `,
+          variables: { id: threadId },
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[Thread] getThread result:', result);
+      const thread = result.data?.getThread;
+
+      if (thread) {
+        console.log(
+          '[Thread] Thread found:',
+          thread.title,
+          'posts:',
+          thread.posts?.length
+        );
+        this.showThreadModal(thread);
+      } else {
+        console.log('[Thread] No thread found for id:', threadId);
+      }
+    } catch (error) {
+      console.error('Error loading thread:', error);
+    }
+  }
+
+  showThreadModal(thread) {
+    console.log('[ThreadModal] Showing modal for thread:', thread.title);
+    const modal = document.getElementById('thread-detail-modal');
+    const titleEl = document.getElementById('thread-detail-title');
+    const postsEl = document.getElementById('thread-posts');
+
+    // Close modal first if already open to reset state
+    if (modal) {
+      modal.classList.remove('active');
+      // Small delay to allow DOM to reset
+      setTimeout(() => {
+        this._showThreadModalContent(thread);
+      }, 50);
+    } else {
+      this._showThreadModalContent(thread);
+    }
+  }
+
+  _showThreadModalContent(thread) {
+    const modal = document.getElementById('thread-detail-modal');
+    const titleEl = document.getElementById('thread-detail-title');
+    const postsEl = document.getElementById('thread-posts');
+
+    console.log('[ThreadModal] Modal element:', modal);
+    console.log('[ThreadModal] Posts:', thread.posts?.length);
+    console.log(
+      '[ThreadModal] First post has replies:',
+      thread.posts?.[0]?.replies?.length
+    );
+    if (thread.posts?.[0]?.replies?.length > 0) {
+      console.log('[ThreadModal] First reply:', thread.posts[0].replies[0]);
+    }
+    console.log(
+      '[ThreadModal] First post replies:',
+      thread.posts?.[0]?.replies
+    );
+
+    if (titleEl) titleEl.textContent = thread.title;
+
+    // Add reply button
+    let replyButton = document.getElementById('thread-reply-btn');
+    if (!replyButton) {
+      replyButton = document.createElement('button');
+      replyButton.id = 'thread-reply-btn';
+      replyButton.className = 'primary-btn';
+      replyButton.textContent = 'Add Reply';
+      replyButton.style.marginTop = '15px';
+      titleEl?.parentElement?.appendChild(replyButton);
+    }
+    replyButton.onclick = () => this.openCreatePostModal(thread.id);
+
+    if (postsEl && thread.posts) {
+      const renderPost = (post, depth = 0) => {
+        const postType = post.type || 'TEXT';
+        const isVideo = postType === 'VIDEO';
+        const isImage = postType === 'IMAGE';
+        const indent = depth * 30;
+
+        let mediaContent = '';
+        if (isVideo && post.metadata?.thumbnailUrl) {
+          mediaContent = `<div class="post-media video"><img src="${post.metadata.thumbnailUrl}" alt="Video thumbnail" /><span class="media-badge">🎬 Video</span></div>`;
+        } else if (isImage && post.metadata?.thumbnailUrl) {
+          mediaContent = `<div class="post-media image"><img src="${post.metadata.thumbnailUrl}" alt="Post image" /></div>`;
+        }
+
+        let repliesHtml = '';
+        if (post.replies && post.replies.length > 0) {
+          repliesHtml = post.replies
+            .map((reply) => renderPost(reply, depth + 1))
+            .join('');
+        }
+
+        const isPinned = post.isPinned || false;
+
+        return `
+          <div class="post-card" style="margin-left: ${indent}px; border-left: ${depth > 0 ? '2px solid var(--border-color)' : 'none'};">
+            <div class="post-header">
+              <span class="post-author">@${post.author?.userName || 'Unknown'}</span>
+              <span class="post-date">${new Date(post.createdAt).toLocaleString()}</span>
+              <span class="post-type">${postType}</span>
+              ${post.isPinned ? '<span class="pinned-badge">📌 Pinned</span>' : ''}
+              <button class="reply-btn" onclick="theRevApp.openCreatePostModal('${thread.id}', '${post.id}', '${post.author?.userName || ''}')">Reply</button>
+              ${this.currentUser && post.author?.id === this.currentUser.id ? `<button class="pin-btn" onclick="theRevApp.togglePin('${post.id}', ${!isPinned})">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>` : ''}
+            </div>
+            <div class="post-content">
+              ${post.content}
+              ${mediaContent}
+            </div>
+            ${repliesHtml}
+          </div>
+        `;
+      };
+
+      postsEl.innerHTML = thread.posts
+        .map((post) => renderPost(post, 0))
+        .join('');
+
+      // Add click handlers for video thumbnails
+      postsEl.querySelectorAll('.post-media.video.clickable').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const url = el.dataset.url;
+          if (url) this.showOpenModeModal(url, '', 'Video');
+        });
+      });
+    }
+
+    if (modal) modal.classList.add('active');
+  }
+
+  closeThreadModal() {
+    const modal = document.getElementById('thread-detail-modal');
+    if (modal) modal.classList.remove('active');
   }
 
   async refreshNewsFeed() {
     console.log('Refreshing news feed...');
+    const btn = document.getElementById('news-refresh-btn');
+    const container = document.querySelector('.news-container');
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '↻ Syncing...';
+    }
+    if (container) {
+      container.innerHTML = '<div class="loading">Syncing feeds...</div>';
+    }
+
     try {
       const syncResponse = await fetch('http://localhost:4000/api/news/sync', {
         method: 'POST',
@@ -1376,6 +2344,14 @@ class TheRevApp {
       await this.loadNews();
     } catch (error) {
       console.error('Error refreshing news:', error);
+      if (container) {
+        container.innerHTML = '<div class="error">Failed to sync news</div>';
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '↻ Refresh';
+      }
     }
   }
 
@@ -1691,7 +2667,10 @@ class TheRevApp {
   loadInitialContent() {
     // Connect to localhost GraphQL backend
     console.log('Loading initial content from localhost:4000...');
-    this.fetchGraphQLData();
+    // Load threads on startup if logged in
+    if (this.jwtToken) {
+      this.loadThreads();
+    }
   }
 
   async fetchGraphQLData() {
@@ -1700,21 +2679,22 @@ class TheRevApp {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: this.jwtToken ? `Bearer ${this.jwtToken}` : '',
         },
         body: JSON.stringify({
           query: `
-                        query {
-                            threads {
-                                id
-                                title
-                                content
-                                author {
-                                    username
-                                }
-                                createdAt
-                            }
-                        }
-                    `,
+            query {
+              listThreads {
+                id
+                title
+                content
+                author {
+                  userName
+                }
+                createdAt
+              }
+            }
+          `,
         }),
       });
 
@@ -2240,12 +3220,25 @@ class TheRevApp {
   }
 }
 
-// Initialize the app when DOM is loaded
+// Initialize the app - handle both cases: DOM already loaded or still loading
 let theRevApp;
-document.addEventListener('DOMContentLoaded', () => {
-  theRevApp = new TheRevApp();
-  window.theRevApp = theRevApp;
-});
+function initApp() {
+  console.log('[TheRev] Starting app initialization...');
+  try {
+    theRevApp = new TheRevApp();
+    window.theRevApp = theRevApp;
+    console.log('[TheRev] App initialized successfully');
+  } catch (e) {
+    console.error('[TheRev] Error initializing app:', e);
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  // DOM already loaded, init immediately
+  initApp();
+}
 
 // Global functions for onclick handlers
 function closeLoginModal() {

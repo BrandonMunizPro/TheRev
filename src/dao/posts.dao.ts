@@ -1,9 +1,11 @@
 import { AppDataSource } from '../data-source';
 import { Post } from '../entities/Post';
-import { DeepPartial } from 'typeorm';
+import { DeepPartial, Repository } from 'typeorm';
 
 export class PostsDao {
-  private repo = AppDataSource.getRepository(Post);
+  private get repo(): Repository<Post> {
+    return AppDataSource.getRepository(Post);
+  }
 
   async create(data: Partial<Post>): Promise<Post> {
     const post = this.repo.create(data);
@@ -14,29 +16,31 @@ export class PostsDao {
     content: string,
     authorId: string,
     threadId: string,
-    type: string,
+    postType: string,
     createdAt?: Date,
     metadata?: {
       thumbnailUrl?: string;
       duration?: number;
       provider?: 'youtube' | 'vimeo';
     },
-    isPinned: boolean = false
+    isPinned: boolean = false,
+    parentId?: string
   ) {
     const result = await AppDataSource.query(
       `
-      INSERT INTO post (content, author_id, thread_id, type, created_at, updated_at, metadata, is_pinned)
-      VALUES ($1, $2, $3, $4, $5, $5, $6, $7)
-      RETURNING id, content, type, author_id, thread_id, created_at, updated_at, metadata, is_pinned
+      INSERT INTO post (content, "authorId", "threadId", type, "createdAt", "updatedAt", metadata, "isPinned", "parentId")
+      VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8)
+      RETURNING id, content, type, "authorId", "threadId", "createdAt", "updatedAt", metadata, "isPinned", "parentId"
       `,
       [
         content,
         authorId,
         threadId,
-        type,
+        postType,
         createdAt || new Date(),
         metadata ? JSON.stringify(metadata) : null,
         isPinned,
+        parentId || null,
       ]
     );
 

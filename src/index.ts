@@ -6,12 +6,14 @@ import { getUserFromRequest } from './auth/getUserFromRequest';
 import { createYoga } from 'graphql-yoga';
 import { AppDataSource } from './data-source';
 import { buildSchema } from 'type-graphql';
+import { GraphQLJSON } from 'graphql-scalars';
 import { UserResolver } from './resolvers/User';
 import { ThreadResolver } from './resolvers/Thread';
 import { AuthResolver } from './resolvers/Auth';
 import { PostResolver } from './resolvers/Post';
 import { ThreadAdminResolver } from './resolvers/ThreadPermissions';
 import { GraphQLContext } from './graphql/context';
+import { User } from './entities/User';
 import { AIIntentClassifier } from './ai/AIIntentClassifier';
 import {
   AIIntentType,
@@ -164,23 +166,92 @@ async function startServer() {
         PostResolver,
       ],
       validate: false,
+      scalarsMap: [{ type: Object, scalar: GraphQLJSON }],
     });
 
     const yoga = createYoga<GraphQLContext>({
       schema,
       graphqlEndpoint: '/graphql',
-      context: ({ request }) => ({
-        user: getUserFromRequest(request),
-      }),
+      context: ({ request }) => {
+        console.log('[Yoga] Request headers:', JSON.stringify(request.headers));
+        return {
+          user: getUserFromRequest(request),
+        };
+      },
     });
 
-    app.use(express.json());
+    // JSON parser with higher limit for base64 images (must be BEFORE upload endpoint)
+    app.use(express.json({ limit: '10mb' }));
 
     // Serve static files for password reset
     app.get('/reset-password.html', (req, res) => {
       res.sendFile(
         path.join(__dirname, 'electron/frontend/reset-password.html')
       );
+    });
+
+    // Serve uploaded profile pictures
+    app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+    // Profile picture upload endpoint
+    app.post('/api/profile/upload', async (req, res) => {
+      try {
+        const { imageBase64, userId, fileName } = req.body;
+
+        if (!imageBase64 || !userId) {
+          return res
+            .status(400)
+            .json({ error: 'Missing imageBase64 or userId' });
+        }
+
+        // Validate it's an image
+        const matches = imageBase64.match(/^data:image\/(\w+);base64,(.+)$/);
+        if (!matches) {
+          return res.status(400).json({ error: 'Invalid image format' });
+        }
+
+        const extension = matches[1];
+        const base64Data = matches[2];
+
+        // Validate extension
+        if (
+          !['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(
+            extension.toLowerCase()
+          )
+        ) {
+          return res
+            .status(400)
+            .json({ error: 'Invalid file type. Use jpg, png, webp, or gif' });
+        }
+
+        // Create uploads directory if it doesn't exist
+        const uploadsDir = path.join(__dirname, '../uploads/profiles');
+        const fs = await import('fs');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        // Generate unique filename
+        const safeFileName = `${userId}-${Date.now()}.${extension}`;
+        const filePath = path.join(uploadsDir, safeFileName);
+
+        // Write file
+        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+
+        // Return the URL
+        const imageUrl = `/uploads/profiles/${safeFileName}`;
+
+        // Update user's profilePicUrl in database
+        if (AppDataSource.isInitialized) {
+          const userRepo = AppDataSource.getRepository(User);
+          await userRepo.update(userId, { profilePicUrl: imageUrl });
+        }
+
+        res.json({ success: true, imageUrl });
+      } catch (error) {
+        console.error('[Profile Upload] Error:', error);
+        res.status(500).json({ error: 'Failed to upload image' });
+      }
     });
 
     app.use('/graphql', yoga as any);

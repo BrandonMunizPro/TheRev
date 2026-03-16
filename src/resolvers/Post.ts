@@ -13,11 +13,26 @@ export class CreatePostInput {
   @Field(() => ID)
   threadId!: string;
 
-  @Field(() => PostType)
+  @Field(() => PostType, { defaultValue: PostType.TEXT })
   type!: PostType;
 
   @Field(() => String, { nullable: true })
-  metadata?: Record<string, any>;
+  metadata?: string;
+
+  @Field(() => ID, { nullable: true })
+  parentId?: string;
+}
+
+@InputType()
+export class CreatePostMetadataInput {
+  @Field(() => String, { nullable: true })
+  thumbnailUrl?: string;
+
+  @Field(() => Number, { nullable: true })
+  duration?: number;
+
+  @Field(() => String, { nullable: true })
+  provider?: string;
 }
 
 @InputType()
@@ -66,6 +81,8 @@ export type returnedPost = {
   isPinned?: boolean;
   author?: any; // User type
   thread?: any; // Thread type
+  parent?: any; // Parent post
+  replies?: any[]; // Child posts
   createdAt?: Date;
   updatedAt?: Date;
   metadata?: JSON;

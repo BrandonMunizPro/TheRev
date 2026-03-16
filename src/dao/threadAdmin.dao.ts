@@ -1,8 +1,11 @@
 import { AppDataSource } from '../data-source';
 import { ThreadAdmin } from '../entities/ThreadAdmin';
+import { Repository } from 'typeorm';
 
 export class ThreadAdminDao {
-  private repo = AppDataSource.getRepository(ThreadAdmin);
+  private get repo(): Repository<ThreadAdmin> {
+    return AppDataSource.getRepository(ThreadAdmin);
+  }
 
   async isThreadAdmin(userId: string, threadId: string): Promise<ThreadAdmin> {
     const result = await AppDataSource.query(
