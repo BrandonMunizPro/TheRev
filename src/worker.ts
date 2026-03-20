@@ -138,11 +138,16 @@ class AITaskWorker {
       const adapter = new OllamaAdapter();
       await adapter.initialize({
         baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
-        model: process.env.OLLAMA_MODEL || 'llama3',
+        model: process.env.OLLAMA_MODEL || 'phi3:latest',
+        autoPullModel: true,
       });
       adapterFactory.registerAdapter(AIProvider.OPEN_SOURCE, adapter);
+      console.log('[Worker] Ollama adapter initialized');
     } catch (e) {
-      console.log('[Worker] Ollama not available');
+      console.log(
+        '[Worker] Ollama initialization failed:',
+        e instanceof Error ? e.message : e
+      );
     }
   }
 

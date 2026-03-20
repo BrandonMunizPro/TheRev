@@ -9,8 +9,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Avatar customization
   saveAvatarCustomization: (avatarData) =>
-    ipcRenderer.invoke('save-avatar-customization', avatarData),
+    ipcRenderer.invoke('save-avatar-data', avatarData),
   getAvatarData: () => ipcRenderer.invoke('get-avatar-data'),
+  saveVrmFile: (fileName, dataUrl) =>
+    ipcRenderer.invoke('save-vrm-file', { fileName, dataUrl }),
+  loadVrmFile: (fileName) => ipcRenderer.invoke('load-vrm-file', fileName),
+
+  // VRoid Studio
+  checkVroidStudio: () => ipcRenderer.invoke('check-vroid-studio'),
+  launchVroidStudio: () => ipcRenderer.invoke('launch-vroid-studio'),
+  openVroidExportFolder: () => ipcRenderer.invoke('open-vroid-export-folder'),
 
   // Ollama management
   checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),
@@ -41,6 +49,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   'ai-brain:navigate': (url) => ipcRenderer.invoke('ai-brain:navigate', url),
   'ai-brain:get-task': (taskId) =>
     ipcRenderer.invoke('ai-brain:get-task', taskId),
+
+  // Avatar reactions (main -> renderer)
+  'avatar:react': (type, message) =>
+    ipcRenderer.invoke('avatar:react', type, message),
+  'avatar:show-bubble': (message, duration) =>
+    ipcRenderer.invoke('avatar:show-bubble', message, duration),
+  'avatar:show-emotion': (emotion) =>
+    ipcRenderer.invoke('avatar:show-emotion', emotion),
+  'avatar:typing-start': () => ipcRenderer.invoke('avatar:typing-start'),
+  'avatar:typing-stop': () => ipcRenderer.invoke('avatar:typing-stop'),
+  setAvatarEmotion: (emotion) =>
+    ipcRenderer.invoke('avatar:set-emotion', emotion),
+
+  // Listen for avatar reactions from main
+  onAvatarReact: (callback) => {
+    ipcRenderer.on('avatar:react', (event, type, message) =>
+      callback(type, message)
+    );
+  },
+  onAvatarShowBubble: (callback) => {
+    ipcRenderer.on('avatar:show-bubble', (event, message, duration) =>
+      callback(message, duration)
+    );
+  },
+  onAvatarShowEmotion: (callback) => {
+    ipcRenderer.on('avatar:show-emotion', (event, emotion) =>
+      callback(emotion)
+    );
+  },
 
   // Event listeners
   onAvatarUpdated: (callback) => {

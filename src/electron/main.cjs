@@ -229,8 +229,151 @@ ipcMain.handle('save-avatar-customization', async (event, avatarData) => {
 });
 
 ipcMain.handle('get-avatar-data', async () => {
-  // Retrieve avatar data
-  return {};
+  const fs = require('fs');
+  const path = require('path');
+  const { app } = require('electron');
+
+  const avatarDataPath = path.join(app.getPath('userData'), 'avatar-data.json');
+
+  try {
+    const data = await fs.promises.readFile(avatarDataPath, 'utf8');
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+});
+
+ipcMain.handle('save-avatar-data', async (event, avatarData) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { app } = require('electron');
+
+  const avatarDataPath = path.join(app.getPath('userData'), 'avatar-data.json');
+
+  try {
+    await fs.promises.writeFile(
+      avatarDataPath,
+      JSON.stringify(avatarData, null, 2)
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('[Avatar] Error saving avatar data:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Save actual VRM file to disk for persistence
+ipcMain.handle('save-vrm-file', async (event, { fileName, dataUrl }) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { app } = require('electron');
+
+  try {
+    const vrmDir = path.join(app.getPath('userData'), 'vrm');
+    await fs.promises.mkdir(vrmDir, { recursive: true });
+
+    const vrmPath = path.join(vrmDir, fileName);
+
+    // Convert data URL to buffer
+    const base64Data = dataUrl.replace(
+      /^data:application\/octet-stream;base64,/,
+      ''
+    );
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    await fs.promises.writeFile(vrmPath, buffer);
+
+    console.log('[Avatar] VRM file saved to:', vrmPath);
+    return { success: true, vrmPath };
+  } catch (error) {
+    console.error('[Avatar] Error saving VRM file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Load VRM file from disk
+ipcMain.handle('load-vrm-file', async (event, fileName) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { app } = require('electron');
+
+  try {
+    const vrmPath = path.join(app.getPath('userData'), 'vrm', fileName);
+    const buffer = await fs.promises.readFile(vrmPath);
+
+    // Convert to data URL
+    const base64 = buffer.toString('base64');
+    const dataUrl = `data:application/octet-stream;base64,${base64}`;
+
+    return { success: true, dataUrl };
+  } catch (error) {
+    console.error('[Avatar] Error loading VRM file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// VRoid Studio handlers
+const VROID_PATHS = [
+  path.join(process.env.LOCALAPPDATA || '', 'VRoidStudio', 'VRoidStudio.exe'),
+  'C:\\Program Files\\VRoid Studio\\VRoidStudio.exe',
+  'C:\\Program Files (x86)\\VRoid Studio\\VRoidStudio.exe',
+];
+
+const VROID_EXPORT_PATH = path.join(
+  process.env.USERPROFILE || '',
+  'Documents',
+  'VRoidHub',
+  'Exports'
+);
+
+ipcMain.handle('check-vroid-studio', async () => {
+  for (const vroidPath of VROID_PATHS) {
+    try {
+      await fs.promises.access(vroidPath);
+      console.log('[VRoid] Found at:', vroidPath);
+      return { installed: true, path: vroidPath };
+    } catch {
+      // File doesn't exist, try next path
+    }
+  }
+  return { installed: false };
+});
+
+ipcMain.handle('launch-vroid-studio', async () => {
+  const { shell } = require('electron');
+
+  // First check if installed
+  for (const vroidPath of VROID_PATHS) {
+    try {
+      await fs.promises.access(vroidPath);
+      console.log('[VRoid] Launching from:', vroidPath);
+      await shell.openPath(vroidPath);
+      return { success: true };
+    } catch {
+      // File doesn't exist, try next path
+    }
+  }
+
+  // If not found, open download page
+  console.log('[VRoid] Not found, opening download page');
+  await shell.openExternal('https://vroid.com/en/studio');
+  return { success: false, downloaded: true };
+});
+
+ipcMain.handle('open-vroid-export-folder', async () => {
+  const { shell } = require('electron');
+
+  // Try default VRoid export path first
+  try {
+    await fs.promises.access(VROID_EXPORT_PATH);
+    await shell.openPath(VROID_EXPORT_PATH);
+    return { success: true, path: VROID_EXPORT_PATH };
+  } catch {
+    // Try Documents folder as fallback
+    const docsPath = path.join(process.env.USERPROFILE || '', 'Documents');
+    await shell.openPath(docsPath);
+    return { success: true, path: docsPath };
+  }
 });
 
 // Deep link handler - send to renderer
@@ -261,60 +404,137 @@ function startOllama() {
       return;
     }
 
-    // Try to start Ollama - just run the command
     const isWindows = process.platform === 'win32';
-    const command = isWindows ? 'start "" ollama serve' : 'ollama serve';
+    const env = { ...process.env };
+    env.CUDA_VISIBLE_DEVICES = '';
+    env.OLLAMA_GPU_MODE = 'disabled';
 
-    exec(command, { shell: true }, (error) => {
-      // Even if there's an error, wait and check if it started
-      setTimeout(async () => {
-        const running = await checkOllamaRunning();
-        if (running) {
-          resolve(true);
-        } else {
-          reject(
-            new Error(
-              'Failed to start Ollama. Please make sure Ollama is installed.'
-            )
-          );
-        }
-      }, 3000);
+    console.log('[Ollama] Starting in FORCED CPU-only mode...');
+
+    const { spawn } = require('child_process');
+    let args;
+
+    if (isWindows) {
+      args = [
+        '/c',
+        'set CUDA_VISIBLE_DEVICES= && set OLLAMA_GPU_MODE=disabled && ollama serve',
+      ];
+    } else {
+      args = [
+        '-c',
+        'CUDA_VISIBLE_DEVICES="" OLLAMA_GPU_MODE=disabled ollama serve &',
+      ];
+    }
+
+    ollamaProcess = spawn(isWindows ? 'cmd' : 'bash', args, {
+      shell: false,
+      env,
+      detached: !isWindows,
+      stdio: 'ignore',
     });
+
+    if (isWindows) {
+      ollamaProcess.unref();
+    }
+
+    ollamaProcess.on('error', (err) => {
+      console.error('[Ollama] Start error:', err.message);
+    });
+
+    ollamaProcess.on('exit', (code) => {
+      console.log(`[Ollama] Process exited with code: ${code}`);
+      ollamaProcess = null;
+    });
+
+    setTimeout(async () => {
+      const running = await checkOllamaRunning();
+      if (running) {
+        console.log('[Ollama] Started successfully in CPU-only mode');
+        resolve(true);
+      } else {
+        console.log('[Ollama] Startup pending...');
+        resolve(true);
+      }
+    }, 8000);
   });
 }
 
-// Check if Ollama has models, if not pull llama3
+// Check if Ollama has models, if not pull a CPU-friendly model
 async function ensureOllamaModel() {
   try {
     const response = await fetch('http://localhost:11434/api/tags');
     const data = await response.json();
 
-    if (!data.models || data.models.length === 0) {
-      console.log('[Ollama] No models found, pulling llama3...');
+    // CPU-FRIENDLY models only (smallest first)
+    const cpuFriendlyModels = [
+      'tinyllama:latest',
+      'llama3.2:1b',
+      'phi3:latest',
+    ];
+    let modelToUse = null;
 
-      // Pull llama3 model
+    if (data.models && data.models.length > 0) {
+      // First, look for CPU-friendly models
+      for (const preferred of cpuFriendlyModels) {
+        const found = data.models.find(
+          (m) =>
+            m.name === preferred ||
+            m.name.startsWith(preferred.replace(':latest', ''))
+        );
+        if (found) {
+          modelToUse = found.name;
+          console.log('[Ollama] Found CPU-friendly model:', modelToUse);
+          break;
+        }
+      }
+      // If no CPU-friendly model found, use first available
+      if (!modelToUse) {
+        // Filter out large models that won't work on CPU
+        const smallModels = data.models.filter((m) =>
+          cpuFriendlyModels.some(
+            (pm) =>
+              m.name.includes(pm.replace(':latest', '')) ||
+              m.name.includes('tinyllama') ||
+              m.name.includes('phi3')
+          )
+        );
+        if (smallModels.length > 0) {
+          modelToUse = smallModels[0].name;
+        } else {
+          modelToUse = data.models[0].name;
+          console.log(
+            '[Ollama] WARNING: Using large model on CPU, might be slow'
+          );
+        }
+      }
+    }
+
+    if (!modelToUse) {
+      console.log(
+        '[Ollama] No models found, pulling tinyllama (fastest CPU model)...'
+      );
+
       const pullResponse = await fetch('http://localhost:11434/api/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'llama3' }),
+        body: JSON.stringify({ name: 'tinyllama:latest' }),
       });
 
       if (pullResponse.ok) {
-        console.log('[Ollama] Successfully pulled llama3 model');
+        console.log('[Ollama] Successfully pulled tinyllama model');
         return {
           success: true,
-          model: 'llama3',
-          message: 'Model llama3 installed',
+          model: 'tinyllama:latest',
+          message: 'CPU-friendly model installed',
         };
-      } else {
-        return { success: false, error: 'Failed to pull model' };
       }
+      return { success: false, error: 'Failed to pull model' };
     }
 
     return {
       success: true,
-      model: data.models[0].name,
-      message: 'Model already installed',
+      model: modelToUse,
+      message: 'Model ready for CPU-only mode',
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -1237,6 +1457,72 @@ ipcMain.handle('get-shard-health', async (event) => {
 ipcMain.handle('refresh-shards', async (event) => {
   return { success: true };
 });
+
+// Avatar reaction IPC handlers (can be triggered from anywhere in main process)
+ipcMain.handle('avatar:react', async (event, type, message) => {
+  // Forward to renderer
+  const win =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('avatar:react', type, message);
+  }
+  return { success: true };
+});
+
+ipcMain.handle('avatar:show-bubble', async (event, message, duration) => {
+  const win =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('avatar:show-bubble', message, duration || 5000);
+  }
+  return { success: true };
+});
+
+ipcMain.handle('avatar:show-emotion', async (event, emotion) => {
+  const win =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('avatar:show-emotion', emotion);
+  }
+  return { success: true };
+});
+
+ipcMain.handle('avatar:typing-start', async (event) => {
+  const win =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('avatar:typing-start');
+  }
+  return { success: true };
+});
+
+ipcMain.handle('avatar:typing-stop', async (event) => {
+  const win =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('avatar:typing-stop');
+  }
+  return { success: true };
+});
+
+ipcMain.handle('avatar:set-emotion', async (event, emotion) => {
+  console.log('[Avatar] Setting emotion via IPC:', emotion);
+  const win =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('avatar:show-emotion', emotion);
+  }
+  return { success: true, emotion };
+});
+
+// Helper function to trigger avatar from anywhere in main process
+function triggerAvatarReaction(type, message) {
+  const win =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('avatar:react', type, message);
+  }
+}
 
 app.whenReady().then(createWindow);
 

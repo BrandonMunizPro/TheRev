@@ -3,6 +3,7 @@ import { Resolver, Query, Mutation, Arg } from 'type-graphql';
 import { User } from '../entities/User';
 import { UsersModel } from '../models/users.model';
 import { IsOptional, IsString, IsEmail } from 'class-validator';
+import { AppDataSource } from '../data-source';
 
 //WE NEED TO ADD ROLES TO USER AS WELL
 @InputType()
@@ -132,5 +133,37 @@ export class UserResolver {
   @Mutation(() => Boolean)
   async deleteUser(@Arg('id', () => ID) id: string): Promise<boolean> {
     return this.model.deleteUser(id);
+  }
+
+  @Mutation(() => User)
+  async updateUserAvatar(
+    @Arg('userId', () => ID) userId: string,
+    @Arg('avatarUrl', { nullable: true }) avatarUrl?: string,
+    @Arg('avatarConfig', { nullable: true }) avatarConfig?: string
+  ): Promise<User> {
+    const userRepo = AppDataSource.getRepository(User);
+    const user = await userRepo.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (avatarUrl !== undefined) {
+      user.avatarUrl = avatarUrl;
+    }
+    if (avatarConfig !== undefined) {
+      user.avatarConfig = avatarConfig;
+    }
+
+    await userRepo.save(user);
+    return user;
+  }
+
+  @Query(() => User, { nullable: true })
+  async getUserAvatar(
+    @Arg('userId', () => ID) userId: string
+  ): Promise<User | null> {
+    const userRepo = AppDataSource.getRepository(User);
+    return userRepo.findOne({ where: { id: userId } });
   }
 }

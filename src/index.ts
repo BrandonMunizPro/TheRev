@@ -1,19 +1,17 @@
 import 'dotenv/config';
 import 'reflect-metadata';
 import express from 'express';
-import path from 'path';
 import { getUserFromRequest } from './auth/getUserFromRequest';
 import { createYoga } from 'graphql-yoga';
 import { AppDataSource } from './data-source';
 import { buildSchema } from 'type-graphql';
-import { GraphQLJSON } from 'graphql-scalars';
+import { NewsArticle } from './entities/NewsArticle';
 import { UserResolver } from './resolvers/User';
 import { ThreadResolver } from './resolvers/Thread';
 import { AuthResolver } from './resolvers/Auth';
 import { PostResolver } from './resolvers/Post';
 import { ThreadAdminResolver } from './resolvers/ThreadPermissions';
 import { GraphQLContext } from './graphql/context';
-import { User } from './entities/User';
 import { AIIntentClassifier } from './ai/AIIntentClassifier';
 import {
   AIIntentType,
@@ -31,7 +29,6 @@ import {
 import { SmartFallbackService } from './ai/SmartFallbackService';
 import { browserAgent } from './ai/BrowserAgent';
 import { NewsIngestionService } from './services/news/NewsIngestionService';
-import { NewsArticle } from './entities/NewsArticle';
 
 const app = express();
 const PORT = 4000;
@@ -105,16 +102,24 @@ async function initializeAIProviders() {
 
     if (availableModels.length === 0) {
       console.log(
-        '⚠️ Ollama has no models. Run "ollama pull llama3" to download a model.'
+        '⚠️ Ollama has no models. Run "ollama pull tinyllama" to download a model.'
       );
       return;
     }
 
-    // Use the first available model or the configured one
-    const configuredModel = process.env.OLLAMA_MODEL || 'llama3';
-    const model =
-      availableModels.find((m) => m.startsWith(configuredModel)) ||
-      availableModels[0];
+    // Use configured model or default to tinyllama, preferring CPU variants
+    const configuredModel = process.env.OLLAMA_MODEL || 'tinyllama';
+
+    // First try to find CPU variant, then fallback to configured model name
+    let model = availableModels.find(
+      (m) => m.includes('cpu') && m.includes('tinyllama')
+    );
+    if (!model) {
+      model = availableModels.find((m) => m.startsWith(configuredModel));
+    }
+    if (!model) {
+      model = availableModels[0]; // Fallback to first available
+    }
 
     await ollama.initialize({ baseUrl, model });
     if (await ollama.isHealthy()) {
@@ -138,25 +143,15 @@ async function initializeAIProviders() {
 }
 
 async function startServer() {
-  console.log('[DB] Attempting to connect to:', process.env.DB_DATABASE);
   try {
     await AppDataSource.initialize();
     if (process.env.NODE_ENV !== 'production') {
       console.log('📡 NEXUS database connected');
     }
-  } catch (dbError) {
-    console.log('[DB] Connection error:', dbError);
-    console.log('📡 Database not connected (running without DB)');
-  }
 
-  // Initialize AI providers
-  try {
+    // Initialize AI providers
     await initializeAIProviders();
-  } catch (aiError) {
-    console.log('📡 AI providers not initialized:', aiError);
-  }
 
-  try {
     const schema = await buildSchema({
       resolvers: [
         AuthResolver,
@@ -166,418 +161,18 @@ async function startServer() {
         PostResolver,
       ],
       validate: false,
-      scalarsMap: [{ type: Object, scalar: GraphQLJSON }],
     });
 
     const yoga = createYoga<GraphQLContext>({
       schema,
       graphqlEndpoint: '/graphql',
-      context: ({ request }) => {
-        console.log('[Yoga] Request headers:', JSON.stringify(request.headers));
-        return {
-          user: getUserFromRequest(request),
-        };
-      },
+      context: ({ request }) => ({
+        user: getUserFromRequest(request),
+      }),
     });
 
-    // JSON parser with higher limit for base64 images (must be BEFORE upload endpoint)
-    app.use(express.json({ limit: '10mb' }));
-
-    // Serve static files for password reset
-    app.get('/reset-password.html', (req, res) => {
-      res.sendFile(
-        path.join(__dirname, 'electron/frontend/reset-password.html')
-      );
-    });
-
-    // Serve uploaded profile pictures
-    app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-    // Profile picture upload endpoint
-    app.post('/api/profile/upload', async (req, res) => {
-      try {
-        const { imageBase64, userId, fileName } = req.body;
-
-        if (!imageBase64 || !userId) {
-          return res
-            .status(400)
-            .json({ error: 'Missing imageBase64 or userId' });
-        }
-
-        // Validate it's an image
-        const matches = imageBase64.match(/^data:image\/(\w+);base64,(.+)$/);
-        if (!matches) {
-          return res.status(400).json({ error: 'Invalid image format' });
-        }
-
-        const extension = matches[1];
-        const base64Data = matches[2];
-
-        // Validate extension
-        if (
-          !['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(
-            extension.toLowerCase()
-          )
-        ) {
-          return res
-            .status(400)
-            .json({ error: 'Invalid file type. Use jpg, png, webp, or gif' });
-        }
-
-        // Create uploads directory if it doesn't exist
-        const uploadsDir = path.join(__dirname, '../uploads/profiles');
-        const fs = await import('fs');
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-
-        // Generate unique filename
-        const safeFileName = `${userId}-${Date.now()}.${extension}`;
-        const filePath = path.join(uploadsDir, safeFileName);
-
-        // Write file
-        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-
-        // Return the URL
-        const imageUrl = `/uploads/profiles/${safeFileName}`;
-
-        // Update user's profilePicUrl in database
-        if (AppDataSource.isInitialized) {
-          const userRepo = AppDataSource.getRepository(User);
-          await userRepo.update(userId, { profilePicUrl: imageUrl });
-        }
-
-        res.json({ success: true, imageUrl });
-      } catch (error) {
-        console.error('[Profile Upload] Error:', error);
-        res.status(500).json({ error: 'Failed to upload image' });
-      }
-    });
-
+    app.use(express.json());
     app.use('/graphql', yoga as any);
-
-    // Import services for REST endpoints
-    const { TaskAnalyticsService } =
-      await import('./services/TaskAnalyticsService');
-    const { EnterpriseAuditService, TypeORMEnterpriseAuditRepository } =
-      await import('./audit');
-    const { ShardHealthMonitor } =
-      await import('./database/sharding/ShardHealthMonitor');
-
-    // Services will use existing DB connection if available
-    const analyticsService = AppDataSource.isInitialized
-      ? new TaskAnalyticsService(AppDataSource.manager)
-      : null;
-    const auditRepository = AppDataSource.isInitialized
-      ? new TypeORMEnterpriseAuditRepository(AppDataSource.manager)
-      : null;
-    const auditService = auditRepository
-      ? new EnterpriseAuditService(auditRepository)
-      : null;
-    const shardHealthMonitor = new ShardHealthMonitor();
-
-    // Analytics Endpoint
-    app.get('/api/analytics', async (req, res) => {
-      try {
-        if (!analyticsService) {
-          return res.json({
-            totalTokens: 0,
-            totalTasks: 0,
-            totalCost: 0,
-            avgResponseTime: 0,
-            byProvider: {},
-            workers: [],
-            queues: [],
-            period: '24h',
-            message: 'Database not connected',
-          });
-        }
-
-        const period = (req.query.period as string) || '24h';
-        const systemHealth = await analyticsService.getSystemHealth();
-        const workers = await analyticsService.getAllWorkerMetrics();
-
-        const totals = {
-          totalTokens: systemHealth.totalTasksCompleted * 500,
-          totalTasks: systemHealth.totalTasksCompleted,
-          totalCost: systemHealth.totalTasksCompleted * 0.01,
-          avgResponseTime: Math.round(systemHealth.averageProcessingTime),
-        };
-
-        const byProvider: Record<string, number> = {};
-        workers.forEach((w) => {
-          byProvider['Ollama'] = (byProvider['Ollama'] || 0) + w.tasksProcessed;
-        });
-
-        res.json({
-          ...totals,
-          byProvider,
-          workers,
-          queues: systemHealth.queues,
-          period,
-        });
-      } catch (error) {
-        console.error('[Analytics] Error:', error);
-        res.json({
-          totalTokens: 0,
-          totalTasks: 0,
-          totalCost: 0,
-          avgResponseTime: 0,
-          byProvider: {},
-          workers: [],
-          queues: [],
-          period: '24h',
-        });
-      }
-    });
-
-    // Audit Log Endpoint
-    app.get('/api/audit-log', async (req, res) => {
-      try {
-        if (!auditService) {
-          return res.json([]);
-        }
-
-        const filter = {
-          category: (req.query.category as string) || undefined,
-          startDate: req.query.startDate
-            ? new Date(req.query.startDate as string)
-            : undefined,
-          endDate: req.query.endDate
-            ? new Date(req.query.endDate as string)
-            : undefined,
-          userId: (req.query.userId as string) || undefined,
-          severity: (req.query.severity as string) || undefined,
-        };
-
-        const logs = await auditService.query({ ...filter, limit: 100 });
-        res.json(logs);
-      } catch (error) {
-        console.error('[Audit] Error:', error);
-        res.json([]);
-      }
-    });
-
-    // Shard Health Endpoint
-    app.get('/api/shard-health', async (req, res) => {
-      try {
-        const health = await shardHealthMonitor.getHealthMetrics();
-        res.json(health);
-      } catch (error) {
-        console.error('[Shard Health] Error:', error);
-        // Return empty array on error
-        res.json([]);
-      }
-    });
-
-    // News Endpoints
-    const newsIngestionService = new NewsIngestionService();
-
-    // Get news articles
-    app.get('/api/news', async (req, res) => {
-      try {
-        const source = req.query.source as string;
-        const typeParam = req.query.type as string;
-        const limit = parseInt(req.query.limit as string) || 50;
-        const offset = parseInt(req.query.offset as string) || 0;
-
-        // Convert string type to database value (lowercase for comparison)
-        let newsTypeValue: string | undefined;
-        if (typeParam === 'video') {
-          newsTypeValue = 'video';
-        } else if (typeParam === 'article') {
-          newsTypeValue = 'article';
-        }
-
-        const news = await newsIngestionService.getNews({
-          source,
-          typeValue: newsTypeValue,
-          limit,
-          offset,
-        });
-        res.json(news);
-      } catch (error) {
-        console.error('[News] Error fetching news:', error);
-        res.json([]);
-      }
-    });
-
-    // Get available news sources
-    app.get('/api/news/sources', async (req, res) => {
-      try {
-        const sources = await newsIngestionService.getSources();
-        res.json(sources);
-      } catch (error) {
-        console.error('[News] Error fetching sources:', error);
-        res.json([]);
-      }
-    });
-
-    // Sync news feeds (trigger RSS fetch)
-    app.post('/api/news/sync', async (req, res) => {
-      try {
-        const totalNew = await newsIngestionService.syncAllFeeds();
-        res.json({ success: true, newArticles: totalNew });
-      } catch (error) {
-        console.error('[News] Error syncing feeds:', error);
-        res.json({ success: false, error: 'Sync failed' });
-      }
-    });
-
-    // Summarize news article endpoint
-    app.post('/api/news/summarize', async (req, res) => {
-      try {
-        const { articleId, url, title } = req.body;
-
-        if (!articleId && !url) {
-          return res.json({
-            success: false,
-            error: 'articleId or url required',
-          });
-        }
-
-        let articleTitle = title || '';
-        let articleSummary = '';
-        let articleContent = '';
-
-        // Try to get article from database if we have an ID
-        if (articleId) {
-          const article = await newsIngestionService.getArticleById(articleId);
-          if (article) {
-            articleTitle = article.title;
-            articleSummary = article.summary || '';
-            articleContent = article.content || '';
-          }
-        }
-
-        // Build content to summarize
-        const contentToSummarize =
-          articleTitle + '\n\n' + (articleSummary || articleContent);
-
-        if (!contentToSummarize.trim()) {
-          return res.json({
-            success: false,
-            error: 'No content available to summarize',
-          });
-        }
-
-        // Get best available AI provider
-        const provider = adapterFactory.getBestAvailableProvider();
-
-        if (!provider) {
-          return res.json({
-            success: false,
-            error: 'No AI provider available',
-            summary:
-              articleSummary || 'Please browse to the article to read it.',
-          });
-        }
-
-        const adapter = adapterFactory.getAdapter(provider);
-
-        if (!adapter) {
-          return res.json({
-            success: false,
-            error: 'AI adapter not available',
-            summary:
-              articleSummary || 'Please browse to the article to read it.',
-          });
-        }
-
-        // Use AI to summarize
-        const summaryPrompt = `Please provide a brief summary of the following article (2-3 sentences max). Focus on the main points and key takeaways:\n\n${contentToSummarize.substring(0, 4000)}`;
-
-        const aiResponse = await adapter.complete({
-          provider,
-          prompt: summaryPrompt,
-          maxTokens: 300,
-        });
-
-        const aiSummary = aiResponse.content;
-
-        // Update article in database with AI summary if we have an ID
-        if (articleId) {
-          const article = await newsIngestionService.getArticleById(articleId);
-          if (article) {
-            article.aiSummary = aiSummary;
-            await AppDataSource.getRepository(NewsArticle).save(article);
-          }
-        }
-
-        console.log(
-          '[News] AI Summary generated:',
-          aiSummary.substring(0, 100) + '...'
-        );
-
-        res.json({
-          success: true,
-          summary: aiSummary,
-          title: articleTitle,
-          provider: provider,
-        });
-      } catch (error) {
-        console.error('[News] Error summarizing article:', error);
-        res.json({ success: false, error: error.message });
-      }
-    });
-
-    // Summarize any text endpoint
-    app.post('/api/summarize-text', async (req, res) => {
-      try {
-        const { text, url, title } = req.body;
-
-        if (!text || text.length < 50) {
-          return res.json({
-            success: false,
-            error: 'Text too short to summarize',
-          });
-        }
-
-        // Get best available AI provider
-        const provider = adapterFactory.getBestAvailableProvider();
-
-        if (!provider) {
-          return res.json({
-            success: false,
-            error: 'No AI provider available',
-          });
-        }
-
-        const adapter = adapterFactory.getAdapter(provider);
-
-        if (!adapter) {
-          return res.json({
-            success: false,
-            error: 'AI adapter not available',
-          });
-        }
-
-        // Use AI to summarize the text
-        const summaryPrompt = `You are summarizing a webpage. Provide a concise summary (2-3 sentences) of the main points:\n\n${text.substring(0, 8000)}`;
-
-        const aiResponse = await adapter.complete({
-          provider,
-          prompt: summaryPrompt,
-          maxTokens: 300,
-        });
-
-        const summary = aiResponse.content;
-
-        console.log(
-          '[Summarize] Generated summary:',
-          summary.substring(0, 100) + '...'
-        );
-
-        res.json({
-          success: true,
-          summary,
-          provider: provider,
-        });
-      } catch (error) {
-        console.error('[Summarize] Error:', error);
-        res.json({ success: false, error: error.message });
-      }
-    });
 
     // AI Browser Command Endpoint
     app.post('/api/ai-browser-command', async (req, res) => {
@@ -599,66 +194,45 @@ async function startServer() {
           intentResult.confidence
         );
 
-        // For simple navigation commands (google x, youtube x, tell me about x), return URL immediately
-        const lower = command.toLowerCase();
-        const isSimpleNavigation =
+        // For automation/deterministic tasks, use Browser Agent to execute in browser
+        if (
           intentResult.intent === AIIntentType.NAVIGATE_URL ||
-          intentResult.intent === AIIntentType.UNKNOWN ||
-          lower.includes('google') ||
-          lower.includes('youtube') ||
-          lower.includes('search') ||
-          lower.startsWith('tell me about') ||
-          lower.startsWith('what is') ||
-          lower.startsWith('who is') ||
-          lower.startsWith('look up');
-
-        if (isSimpleNavigation) {
-          // FAST PATH - just extract URL and return immediately
-          const url = extractNavigationUrl(command, intentResult);
-          console.log('[Ask Rev] Fast navigation to:', url);
-
-          // Generate context async (don't wait)
-          const contextPromise = browserAgent
-            .generateContextInfo(command, [])
-            .catch(() => null);
-
-          // Start generating context in background but return immediately
-          contextPromise.then((context) => {
-            console.log('[Ask Rev] Context ready:', context?.substring(0, 50));
-          });
-
-          return res.json({
-            success: true,
-            url,
-            command,
-            intent: intentResult.intent,
-            // Don't wait for context - it loads async on frontend
-            context: null,
-            fast: true,
-          });
-        } else {
-          // For complex automation tasks, use Browser Agent
+          intentResult.intent === AIIntentType.DETERMINISTIC_AUTOMATION ||
+          intentResult.intent === AIIntentType.FORM_FILLING ||
+          intentResult.intent === AIIntentType.SCREEN_SCRAPE ||
+          intentResult.classification === IntentClassification.DETERMINISTIC
+        ) {
           console.log('[Ask Rev] Using Browser Agent for automation...');
 
           try {
             const agentResult = await browserAgent.executeTask(command);
 
             if (agentResult.success && agentResult.results) {
+              // Get screenshot of final state
+              let screenshot = null;
+              try {
+                const ssRes = await fetch(
+                  'http://localhost:9222/api/screenshot',
+                  { method: 'POST' }
+                );
+                const ssData = await ssRes.json();
+                screenshot = ssData.screenshot;
+              } catch {}
+
               return res.json({
                 success: true,
                 executed: true,
                 actions: agentResult.actions.map((a) => a.description),
                 steps: agentResult.results,
+                screenshot,
                 intent: intentResult.intent,
                 message: `Executed ${agentResult.actions.length} browser actions`,
                 url: agentResult.results[0]?.result?.url || null,
-                // Context will load async on frontend
-                context: null,
+                context: agentResult.context || null,
               });
             } else {
-              // Fallback to URL navigation - FAST
+              // Fallback to URL navigation
               const url = extractNavigationUrl(command, intentResult);
-
               return res.json({
                 success: true,
                 url,
@@ -666,23 +240,18 @@ async function startServer() {
                 intent: intentResult.intent,
                 confidence: intentResult.confidence,
                 fallback: true,
-                // Context will load async on frontend
-                context: null,
               });
             }
           } catch (agentError) {
             console.error('[Ask Rev] Browser agent error:', agentError);
-            // Fallback to simple navigation - FAST
+            // Fallback to simple navigation
             const url = extractNavigationUrl(command, intentResult);
-
             return res.json({
               success: true,
               url,
               command,
               intent: intentResult.intent,
               confidence: intentResult.confidence,
-              // Context will load async on frontend
-              context: null,
             });
           }
         }
@@ -740,7 +309,6 @@ async function startServer() {
           intent: intentResult.intent,
           confidence: intentResult.confidence,
           isAIResponse: true,
-          context: aiResponse.content, // Include response as context too
         });
       } catch (error: unknown) {
         const errorMessage =
@@ -778,26 +346,6 @@ async function startServer() {
           url: `https://www.google.com/search?q=${query}`,
           error: errorMessage,
         });
-      }
-    });
-
-    // Context endpoint - returns context for a search query
-    app.post('/api/ai-context', async (req, res) => {
-      try {
-        const { command } = req.body;
-        if (!command) {
-          return res.json({ success: false, error: 'No command provided' });
-        }
-
-        // Generate context using BrowserAgent
-        const contextInfo = await browserAgent.generateContextInfo(command, []);
-
-        res.json({
-          success: true,
-          context: contextInfo,
-        });
-      } catch (error) {
-        res.json({ success: false, context: null });
       }
     });
 
@@ -972,6 +520,145 @@ async function startServer() {
       return res.json({ ready: false, error: 'Ollama not available' });
     });
 
+    const newsIngestionService = new NewsIngestionService();
+
+    // Get news articles
+    app.get('/api/news', async (req, res) => {
+      try {
+        const source = req.query.source as string;
+        const typeParam = req.query.type as string;
+        const limit = parseInt(req.query.limit as string) || 50;
+        const offset = parseInt(req.query.offset as string) || 0;
+
+        let newsTypeValue: string | undefined;
+        if (typeParam === 'video') {
+          newsTypeValue = 'video';
+        } else if (typeParam === 'article') {
+          newsTypeValue = 'article';
+        }
+
+        const news = await newsIngestionService.getNews({
+          source,
+          typeValue: newsTypeValue,
+          limit,
+          offset,
+        });
+        res.json(news);
+      } catch (error) {
+        console.error('[News] Error fetching news:', error);
+        res.json([]);
+      }
+    });
+
+    // Get available news sources
+    app.get('/api/news/sources', async (req, res) => {
+      try {
+        const sources = await newsIngestionService.getSources();
+        res.json(sources);
+      } catch (error) {
+        console.error('[News] Error fetching sources:', error);
+        res.json([]);
+      }
+    });
+
+    // Sync news feeds (trigger RSS fetch)
+    app.post('/api/news/sync', async (req, res) => {
+      try {
+        const totalNew = await newsIngestionService.syncAllFeeds();
+        res.json({ success: true, newArticles: totalNew });
+      } catch (error) {
+        console.error('[News] Error syncing feeds:', error);
+        res.json({ success: false, error: 'Sync failed' });
+      }
+    });
+
+    // Summarize news article endpoint
+    app.post('/api/news/summarize', async (req, res) => {
+      try {
+        const { articleId, url, title } = req.body;
+
+        if (!articleId && !url) {
+          return res.json({
+            success: false,
+            error: 'articleId or url required',
+          });
+        }
+
+        let articleTitle = title || '';
+        let articleSummary = '';
+        let articleContent = '';
+
+        if (articleId) {
+          const article = await newsIngestionService.getArticleById(articleId);
+          if (article) {
+            articleTitle = article.title;
+            articleSummary = article.summary || '';
+            articleContent = article.content || '';
+          }
+        }
+
+        const contentToSummarize =
+          articleTitle + '\n\n' + (articleSummary || articleContent);
+
+        if (!contentToSummarize.trim()) {
+          return res.json({
+            success: false,
+            error: 'No content available to summarize',
+          });
+        }
+
+        const provider = adapterFactory.getBestAvailableProvider();
+
+        if (!provider) {
+          return res.json({
+            success: false,
+            error: 'No AI provider available',
+            summary:
+              articleSummary || 'Please browse to the article to read it.',
+          });
+        }
+
+        const adapter = adapterFactory.getAdapter(provider);
+
+        if (!adapter) {
+          return res.json({
+            success: false,
+            error: 'AI adapter not available',
+            summary:
+              articleSummary || 'Please browse to the article to read it.',
+          });
+        }
+
+        const summaryPrompt = `Please provide a brief summary of the following article (2-3 sentences max). Focus on the main points and key takeaways:\n\n${contentToSummarize.substring(0, 4000)}`;
+
+        const aiResponse = await adapter.complete({
+          provider,
+          prompt: summaryPrompt,
+          maxTokens: 300,
+        });
+
+        const aiSummary = aiResponse.content;
+
+        if (articleId) {
+          const article = await newsIngestionService.getArticleById(articleId);
+          if (article) {
+            article.aiSummary = aiSummary;
+            await AppDataSource.getRepository(NewsArticle).save(article);
+          }
+        }
+
+        res.json({
+          success: true,
+          summary: aiSummary,
+          title: articleTitle,
+          provider: provider,
+        });
+      } catch (error) {
+        console.error('[News] Error summarizing article:', error);
+        res.json({ success: false, error: 'Failed to summarize' });
+      }
+    });
+
     app.listen(PORT, () => {
       if (process.env.NODE_ENV !== 'production') {
         console.log(`🧠 NEXUS core listening on http://localhost:${PORT}`);
@@ -979,11 +666,7 @@ async function startServer() {
       }
     });
   } catch (error) {
-    console.error('Server init error:', error);
-    // Start basic server without GraphQL
-    app.listen(PORT, () => {
-      console.log(`🧠 NEXUS core listening on http://localhost:${PORT}`);
-    });
+    console.error('DB init error:', error);
   }
 }
 

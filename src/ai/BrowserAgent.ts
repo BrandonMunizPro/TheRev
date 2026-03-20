@@ -50,21 +50,19 @@ export class BrowserAgent {
       // Get AI adapter
       const adapter = adapterFactory.getAdapter(this.provider);
       if (!adapter) {
-        return {
-          success: false,
-          actions: [],
-          error: 'No AI adapter available',
-        };
+        // Return simple navigation without AI planning
+        return this.fallbackNavigation(userTask);
       }
 
       // Create planning prompt
       const planningPrompt = this.createPlanningPrompt(userTask);
 
-      // Get AI to plan the actions
-      const response = await adapter.complete({
-        provider: this.provider,
-        prompt: planningPrompt,
-        systemPrompt: `You are a browser automation agent. Analyze the user's request and create a step-by-step plan to accomplish it using browser actions.
+      let response;
+      try {
+        response = await adapter.complete({
+          provider: this.provider,
+          prompt: planningPrompt,
+          systemPrompt: `You are a browser automation agent. Analyze the user's request and create a step-by-step plan to accomplish it using browser actions.
 
 Available actions:
 - navigate(url): Go to a URL
@@ -85,9 +83,13 @@ Common selectors:
 - Generic search: input[type="search"], input[type="text"], input[placeholder*="Search"], button[aria-label*="Search"]
 
 Always use the most specific selector available. For YouTube, use aria-label selectors first.`,
-        maxTokens: 1024,
-        temperature: 0.3,
-      });
+          maxTokens: 1024,
+          temperature: 0.3,
+        });
+      } catch (aiError) {
+        console.log('[BrowserAgent] AI call failed, using fallback:', aiError);
+        return this.fallbackNavigation(userTask);
+      }
 
       console.log(
         '[BrowserAgent] AI response:',
@@ -147,10 +149,7 @@ Always use the most specific selector available. For YouTube, use aria-label sel
     }
   }
 
-  async generateContextInfo(
-    userTask: string,
-    results: any[]
-  ): Promise<string> {
+  async generateContextInfo(userTask: string, results: any[]): Promise<string> {
     const adapter = adapterFactory.getAdapter(this.provider);
     if (!adapter) return '';
 
@@ -393,6 +392,49 @@ Return ONLY a JSON array, no other text.`;
         error: error instanceof Error ? error.message : 'Connection error',
       };
     }
+  }
+
+  private fallbackNavigation(userTask: string): {
+    success: boolean;
+    actions: BrowserAction[];
+    results?: any[];
+    error?: string;
+    context?: string;
+  } {
+    const task = userTask.toLowerCase();
+
+    // Simple navigation based on keywords
+    let url = 'https://www.google.com/search?q=' + encodeURIComponent(userTask);
+
+    if (task.includes('youtube')) {
+      const match = userTask.match(/(?:youtube|yt)[:\s]*(.+)/i);
+      if (match) {
+        url = `https://www.youtube.com/results?search_query=${encodeURIComponent(match[1])}`;
+      } else {
+        url = 'https://www.youtube.com';
+      }
+    } else if (task.includes('gmail') || task.includes('email')) {
+      url = 'https://mail.google.com';
+    } else if (task.includes('reddit')) {
+      const match = userTask.match(/reddit[:\s]*(.+)/i);
+      if (match) {
+        url = `https://www.reddit.com/search/?q=${encodeURIComponent(match[1])}`;
+      } else {
+        url = 'https://reddit.com';
+      }
+    }
+
+    return {
+      success: true,
+      actions: [
+        {
+          action: 'navigate',
+          params: { url },
+          description: `Navigate to ${url}`,
+        },
+      ],
+      context: 'AI not available, using simple navigation',
+    };
   }
 }
 

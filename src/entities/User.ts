@@ -46,6 +46,14 @@ export class User {
   @Column({ nullable: true })
   profilePicUrl?: string;
 
+  @Field({ nullable: true })
+  @Column({ nullable: true })
+  avatarUrl?: string;
+
+  @Field({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
+  avatarConfig?: string;
+
   @Field(() => UserRole)
   @Column({
     type: 'enum',

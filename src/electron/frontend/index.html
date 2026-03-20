@@ -295,6 +295,7 @@
             <button id="shards-btn" class="nav-btn">Shards</button>
             <button id="profile-btn" class="nav-btn">Profile</button>
             <button id="browser-btn" class="nav-btn">Browser</button>
+            <button id="avatar-btn" class="nav-btn">Avatar</button>
           </nav>
           <div class="user-rev" id="user-rev-container">
             <!-- Default: show Sign In button -->
@@ -870,8 +871,8 @@
                 />
                 <input
                   type="file"
-                  id="profile-pic-input"
-                  accept="image/*"
+                  id="vrm-upload"
+                  accept=".vrm,.xroid"
                   style="display: none"
                 />
                 <button id="upload-photo-btn" class="customize-btn">
@@ -917,6 +918,30 @@
                 </div>
               </div>
               <div class="profile-section">
+                <h3>Your Avatar</h3>
+                <div class="profile-avatar-3d" id="profile-avatar-3d-container">
+                  <div
+                    class="avatar-placeholder-small"
+                    id="profile-avatar-placeholder"
+                  >
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                    >
+                      <path
+                        d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
+                      ></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                  </div>
+                </div>
+                <p class="avatar-hint-small">Your 3D avatar will appear here</p>
+              </div>
+              <div class="profile-section">
                 <h3>Recent Activity</h3>
                 <div class="recent-threads" id="profile-activity">
                   <!-- Will be populated dynamically -->
@@ -931,7 +956,42 @@
           <div class="browser-container">
             <!-- AI Command Bar -->
             <div class="ai-command-bar" style="width: 100%">
-              <div class="rev-mini-avatar">R</div>
+              <!-- AI Avatar with speech bubble -->
+              <div
+                id="ai-avatar-display"
+                class="ai-avatar-display"
+                style="
+                  position: relative;
+                  width: 50px;
+                  height: 50px;
+                  margin-right: 10px;
+                "
+              >
+                <!-- Rev Logo (avatar lives in the AI Browser popup window) -->
+                <div
+                  id="browser-avatar-fallback"
+                  class="rev-avatar-icon"
+                  style="
+                    width: 50px;
+                    height: 50px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: bold;
+                    font-size: 22px;
+                    background: linear-gradient(
+                      135deg,
+                      var(--primary-color),
+                      #ff6600
+                    );
+                    border: 2px solid white;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+                  "
+                >
+                  R
+                </div>
+              </div>
               <select
                 id="browser-input-mode"
                 style="
@@ -1202,6 +1262,231 @@
             </div>
           </div>
         </section>
+
+        <!-- Avatar Section -->
+        <section id="avatar-section" class="content-section">
+          <div class="avatar-container">
+            <div class="section-header">
+              <h2>Your Avatar</h2>
+              <p class="section-desc">Create and customize your 3D avatar</p>
+            </div>
+
+            <div class="avatar-main">
+              <div class="avatar-display">
+                <div id="avatar-3d-container" class="avatar-3d-container">
+                  <div class="avatar-placeholder-large" id="avatar-placeholder">
+                    <svg
+                      width="120"
+                      height="120"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                    >
+                      <path
+                        d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
+                      ></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span>No Avatar Yet</span>
+                  </div>
+                  <!-- Speech bubble overlay for avatar expressions -->
+                  <div
+                    id="avatar-speech-bubble"
+                    class="avatar-speech-bubble"
+                    style="display: none"
+                  >
+                    <div class="speech-content" id="speech-content"></div>
+                    <div class="speech-tail"></div>
+                  </div>
+                  <!-- Typing indicator -->
+                  <div
+                    id="avatar-typing"
+                    class="avatar-typing"
+                    style="display: none"
+                  >
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                  </div>
+                </div>
+                <!-- Avatar Controls -->
+                <div class="avatar-controls">
+                  <button
+                    id="rotate-left-btn"
+                    class="icon-btn"
+                    title="Rotate Left"
+                  >
+                    ↺
+                  </button>
+                  <button
+                    id="rotate-right-btn"
+                    class="icon-btn"
+                    title="Rotate Right"
+                  >
+                    ↻
+                  </button>
+                  <button id="zoom-in-btn" class="icon-btn" title="Zoom In">
+                    +
+                  </button>
+                  <button id="zoom-out-btn" class="icon-btn" title="Zoom Out">
+                    −
+                  </button>
+                </div>
+                <p class="avatar-hint">
+                  Upload a VRM avatar created in VRoid Studio
+                </p>
+              </div>
+
+              <div class="avatar-options">
+                <div class="option-card">
+                  <h3>Animations</h3>
+                  <p class="hint-text">
+                    Click to preview, check to enable in modes
+                  </p>
+                  <div class="animation-buttons" id="animation-list">
+                    <!-- Animations will be dynamically added here -->
+                  </div>
+                  <div class="current-emotion" id="current-emotion-display">
+                    Current: <span id="emotion-name">idle</span>
+                  </div>
+                </div>
+
+                <div class="option-card">
+                  <h3>Avatar Modes</h3>
+                  <p class="hint-text">
+                    Configure avatar behavior in different contexts
+                  </p>
+                  <div class="avatar-modes">
+                    <div class="mode-section">
+                      <h4>Profile Mode</h4>
+                      <label class="mode-toggle">
+                        <input
+                          type="checkbox"
+                          id="profile-animations-enabled"
+                          checked
+                        />
+                        <span>Enable animation loop</span>
+                      </label>
+                      <div class="mode-setting">
+                        <label>Cycle interval:</label>
+                        <input
+                          type="range"
+                          id="profile-cycle-interval"
+                          min="10"
+                          max="120"
+                          value="30"
+                        />
+                        <span id="cycle-interval-value">30s</span>
+                      </div>
+                      <div class="mode-setting">
+                        <label>Animations to cycle:</label>
+                        <div
+                          id="profile-animation-select"
+                          class="animation-select-list"
+                        >
+                          <!-- Will be populated dynamically -->
+                        </div>
+                      </div>
+                    </div>
+                    <div class="mode-section">
+                      <h4>Chat Mode</h4>
+                      <label class="mode-toggle">
+                        <input
+                          type="checkbox"
+                          id="chat-animations-enabled"
+                          checked
+                        />
+                        <span>Enable chat animations</span>
+                      </label>
+                      <div class="mode-setting">
+                        <label>Random animations on send:</label>
+                        <div
+                          id="chat-animation-select"
+                          class="animation-select-list"
+                        >
+                          <!-- Will be populated dynamically -->
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="option-card">
+                  <h3>Upload VRM</h3>
+                  <p>Upload your own VRM avatar from VRoid Studio</p>
+                  <input
+                    type="file"
+                    id="vrm-upload"
+                    accept=".vrm,.xroid"
+                    style="display: none"
+                  />
+                  <button id="upload-vrm-btn" class="primary-btn">
+                    Choose File
+                  </button>
+                </div>
+
+                <div class="option-card vroid-launch-section">
+                  <h3>Create Your Avatar</h3>
+                  <p>
+                    Launch <strong>VRoid Studio</strong> to create your 3D
+                    avatar
+                  </p>
+                  <div class="vroid-status" id="vroid-status">
+                    <span class="status-checking">Checking...</span>
+                  </div>
+                  <button id="launch-vroid-btn" class="secondary-btn">
+                    Launch VRoid Studio
+                  </button>
+                  <button id="open-export-folder-btn" class="tertiary-btn">
+                    Open Export Folder
+                  </button>
+                </div>
+
+                <div class="option-card">
+                  <h3>Quick Styles</h3>
+                  <p>Pre-made 3D avatars (no upload needed)</p>
+                  <div class="style-options">
+                    <button class="style-btn active" data-style="default">
+                      Default
+                    </button>
+                    <button class="style-btn" data-style="revolutionary">
+                      Revolutionary
+                    </button>
+                    <button class="style-btn" data-style="journalist">
+                      Journalist
+                    </button>
+                    <button class="style-btn" data-style="activist">
+                      Activist
+                    </button>
+                    <button class="style-btn" data-style="robot">Robot</button>
+                    <button class="style-btn" data-style="minimal">
+                      Minimal
+                    </button>
+                  </div>
+                </div>
+
+                <div class="option-card">
+                  <h3>Colors</h3>
+                  <div class="color-options">
+                    <label
+                      ><span>Primary</span
+                      ><input type="color" id="avatar-primary" value="#4a5568"
+                    /></label>
+                    <label
+                      ><span>Accent</span
+                      ><input type="color" id="avatar-accent" value="#00d4ff"
+                    /></label>
+                  </div>
+                </div>
+
+                <button id="save-avatar-settings-btn" class="save-btn">
+                  Save Avatar
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
       <!-- Avatar Customizer Modal -->
@@ -1248,6 +1533,16 @@
       </div>
     </div>
 
-    <script src="app.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+          "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js",
+          "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3/lib/three-vrm-animation.module.min.js"
+        }
+      }
+    </script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>

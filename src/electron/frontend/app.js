@@ -1,4 +1,12 @@
-// TheRev Desktop App - Frontend JavaScript
+// TheRev Desktop App - Frontend JavaScript (ES Module)
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+import {
+  VRMAnimationLoaderPlugin,
+  createVRMAnimationClip,
+} from '@pixiv/three-vrm-animation';
+
 class TheRevApp {
   constructor() {
     console.log('[TheRevApp] Constructor called');
@@ -16,6 +24,25 @@ class TheRevApp {
       'ai-settings',
     ];
     this.adminSections = ['tasks', 'analytics', 'audit', 'shards'];
+    this._avatarMixer = null;
+    this._avatarActions = {};
+    this._currentAvatarAction = null;
+
+    // Avatar animation mode settings
+    this._avatarSettings = {
+      profile: {
+        enabled: true,
+        cycleInterval: 30,
+        selectedAnimations: [],
+      },
+      chat: {
+        enabled: true,
+        selectedAnimations: [],
+      },
+    };
+    this._profileCycleTimer = null;
+    this._profileCurrentIndex = 0;
+
     this.init();
   }
 
@@ -557,6 +584,10 @@ class TheRevApp {
       console.log('[Nav] Browser button clicked');
       this.switchSection('browser');
     });
+    document.getElementById('avatar-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Avatar button clicked');
+      this.switchSection('avatar');
+    });
 
     // News tabs
     document.querySelectorAll('.news-tab').forEach((tab) => {
@@ -935,6 +966,23 @@ class TheRevApp {
       window.electronAPI.onShowAbout(() => {
         this.showAboutDialog();
       });
+
+      // Avatar reaction listeners (from main process)
+      if (window.electronAPI.onAvatarReact) {
+        window.electronAPI.onAvatarReact((type, message) => {
+          this.avatarReact(type, message);
+        });
+      }
+      if (window.electronAPI.onAvatarShowBubble) {
+        window.electronAPI.onAvatarShowBubble((message, duration) => {
+          this.showSpeechBubble(message, duration);
+        });
+      }
+      if (window.electronAPI.onAvatarShowEmotion) {
+        window.electronAPI.onAvatarShowEmotion((emotion) => {
+          this.setAvatarEmotion(emotion);
+        });
+      }
     }
   }
 
@@ -991,8 +1039,16 @@ class TheRevApp {
         this.loadThreads();
         break;
       case 'browser':
+        // Try to render browser avatar if we have avatar data
+        if (this.avatarData?.vrmPath && this._savedVrmDataUrl) {
+          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
+          // this.renderBrowserAvatar(this._savedVrmDataUrl);
+        }
         break;
       case 'ai-settings':
+        break;
+      case 'avatar':
+        this.loadAvatar();
         break;
     }
   }
@@ -1243,6 +1299,44 @@ class TheRevApp {
         'http://localhost:4000' + this.currentUser.profilePicUrl;
     }
 
+    // Load avatar if user has one saved locally
+    if (window.electronAPI) {
+      const savedAvatar = await window.electronAPI.getAvatarData();
+      if (savedAvatar && savedAvatar.fileName) {
+        // Update avatar in header
+        const avatarContainer = document.getElementById('avatar-container');
+        if (avatarContainer) {
+          avatarContainer.innerHTML = `
+            <div class="avatar-mini" style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center;">
+              <span style="color: white; font-weight: bold;">${this.currentUser?.userName?.charAt(0).toUpperCase() || 'U'}</span>
+            </div>
+          `;
+        }
+
+        // Load VRM from disk and render in profile section
+        const vrmResult = await window.electronAPI.loadVrmFile(
+          savedAvatar.fileName
+        );
+        if (vrmResult.success && vrmResult.dataUrl) {
+          // Store VRM data URL for browser avatar
+          this._savedVrmDataUrl = vrmResult.dataUrl;
+
+          this.renderAvatar3D(vrmResult.dataUrl, 'profile-avatar-3d-container');
+
+          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
+          // this.renderBrowserAvatar(vrmResult.dataUrl);
+
+          // Update placeholder text
+          const profilePlaceholder = document.getElementById(
+            'profile-avatar-placeholder'
+          );
+          if (profilePlaceholder) {
+            profilePlaceholder.innerHTML = '';
+          }
+        }
+      }
+    }
+
     // Load participated threads and stats
     await this.loadParticipatedThreads();
     await this.loadProfileStats();
@@ -1293,6 +1387,2799 @@ class TheRevApp {
       if (postsEl) postsEl.textContent = postCount;
     } catch (error) {
       console.error('Error loading profile stats:', error);
+    }
+  }
+
+  // Store 3D viewer instance
+  _avatarViewer = null;
+
+  async loadAvatar() {
+    console.log('[Avatar] Loading avatar section');
+
+    // Load saved avatar data and render in 3D
+    if (window.electronAPI) {
+      const savedAvatar = await window.electronAPI.getAvatarData();
+      console.log('[Avatar] Loaded saved avatar:', savedAvatar);
+
+      if (savedAvatar && savedAvatar.fileName) {
+        // Load VRM from disk
+        const vrmResult = await window.electronAPI.loadVrmFile(
+          savedAvatar.fileName
+        );
+
+        if (vrmResult.success && vrmResult.dataUrl) {
+          console.log('[Avatar] VRM loaded from disk');
+
+          // Store VRM data URL for browser avatar
+          this._savedVrmDataUrl = vrmResult.dataUrl;
+
+          // Render saved avatar in 3D
+          this.renderAvatar3D(vrmResult.dataUrl);
+
+          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
+          // this.renderBrowserAvatar(vrmResult.dataUrl);
+
+          // Update placeholder to show filename
+          const placeholder = document.getElementById('avatar-placeholder');
+          if (placeholder) {
+            placeholder.innerHTML = `
+              <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 16px; border-radius: 20px; color: #22c55e; font-size: 12px;">
+                ${savedAvatar.fileName}
+              </div>
+            `;
+          }
+        }
+      }
+    }
+
+    // Check if VRoid Studio is installed
+    const vroidStatus = document.getElementById('vroid-status');
+    if (window.electronAPI) {
+      const vroidInfo = await window.electronAPI.checkVroidStudio();
+      console.log('[Avatar] VRoid Studio status:', vroidInfo);
+
+      if (vroidStatus) {
+        if (vroidInfo.installed) {
+          vroidStatus.innerHTML =
+            '<span class="status-installed">✓ VRoid Studio is installed and ready</span>';
+        } else {
+          vroidStatus.innerHTML =
+            '<span class="status-not-installed">VRoid Studio not found - click below to download</span>';
+        }
+      }
+    }
+
+    // Setup VRoid Studio launch button
+    const launchVroidBtn = document.getElementById('launch-vroid-btn');
+    if (launchVroidBtn && window.electronAPI) {
+      launchVroidBtn.onclick = async () => {
+        console.log('[Avatar] Launching VRoid Studio');
+        await window.electronAPI.launchVroidStudio();
+      };
+    }
+
+    // Setup VRM upload
+    const uploadVrmBtn = document.getElementById('upload-vrm-btn');
+    const vrmUpload = document.getElementById('vrm-upload');
+
+    if (uploadVrmBtn && vrmUpload) {
+      uploadVrmBtn.onclick = () => vrmUpload.click();
+
+      vrmUpload.onchange = async (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          console.log('[Avatar] VRM file selected:', file.name);
+          await this.handleVRMUpload(file);
+        }
+      };
+    }
+
+    // Setup open export folder button
+    const openExportBtn = document.getElementById('open-export-folder-btn');
+    if (openExportBtn && window.electronAPI) {
+      openExportBtn.onclick = async () => {
+        console.log('[Avatar] Opening VRoid export folder');
+        await window.electronAPI.openVroidExportFolder();
+      };
+    }
+
+    // Setup animation buttons
+    this.setupAnimationButtons();
+    this.setupAvatarModeControls();
+    this.startProfileAnimationCycle();
+
+    console.log('[Avatar] Avatar section loaded');
+  }
+
+  setupAnimationButtons() {
+    console.log('[Avatar] Setting up animation buttons');
+    const container = document.getElementById('animation-list');
+    if (!container) {
+      console.log('[Avatar] Animation list container not found');
+      return;
+    }
+
+    // Animation names will be populated after animations are loaded
+    this._animationNames = [];
+    this._currentAnimationIndex = -1;
+
+    // Initial render (will be updated after animations load)
+    this.renderAnimationButtons();
+  }
+
+  renderAnimationButtons() {
+    const container = document.getElementById('animation-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    // Always add Idle button first
+    const idleBtn = document.createElement('button');
+    idleBtn.id = 'anim-idle';
+    idleBtn.className =
+      'anim-btn' + (this._currentAnimationIndex === -1 ? ' active' : '');
+    idleBtn.innerHTML = '<span class="anim-icon">🧍</span><span>Idle</span>';
+    idleBtn.onclick = () => {
+      this.setAvatarEmotion('idle');
+    };
+    container.appendChild(idleBtn);
+
+    // Add loaded animations
+    this._animationNames.forEach((name, index) => {
+      const btn = document.createElement('button');
+      btn.id = `anim-${index}`;
+      btn.className =
+        'anim-btn' + (this._currentAnimationIndex === index ? ' active' : '');
+
+      // Check if animation is selected for profile or chat
+      const inProfile =
+        this._avatarSettings.profile.selectedAnimations.includes(name);
+      const inChat =
+        this._avatarSettings.chat.selectedAnimations.includes(name);
+      const checkmarks = (inProfile ? '📷' : '') + (inChat ? '💬' : '');
+
+      btn.innerHTML = `
+        <span class="anim-icon">🎬</span>
+        <span>${name.substring(0, 12)}${name.length > 12 ? '...' : ''}</span>
+        ${checkmarks ? `<span style="font-size:10px">${checkmarks}</span>` : ''}
+      `;
+      btn.title = name;
+      btn.onclick = () => {
+        this.playAnimationByIndex(index);
+      };
+      container.appendChild(btn);
+    });
+
+    // Also update the mode selection lists
+    this.updateModeSelectLists();
+  }
+
+  updateModeSelectLists() {
+    // Update profile animation selection
+    const profileSelect = document.getElementById('profile-animation-select');
+    if (profileSelect) {
+      profileSelect.innerHTML = '';
+      this._animationNames.forEach((name) => {
+        const checked =
+          this._avatarSettings.profile.selectedAnimations.includes(name);
+        profileSelect.innerHTML += `
+          <label class="animation-select-item">
+            <input type="checkbox" data-animation="${name}" data-mode="profile" ${checked ? 'checked' : ''}>
+            <span>${name}</span>
+          </label>
+        `;
+      });
+    }
+
+    // Update chat animation selection
+    const chatSelect = document.getElementById('chat-animation-select');
+    if (chatSelect) {
+      chatSelect.innerHTML = '';
+      this._animationNames.forEach((name) => {
+        const checked =
+          this._avatarSettings.chat.selectedAnimations.includes(name);
+        chatSelect.innerHTML += `
+          <label class="animation-select-item">
+            <input type="checkbox" data-animation="${name}" data-mode="chat" ${checked ? 'checked' : ''}>
+            <span>${name}</span>
+          </label>
+        `;
+      });
+    }
+  }
+
+  setupAvatarModeControls() {
+    // Profile mode checkbox
+    const profileEnabled = document.getElementById(
+      'profile-animations-enabled'
+    );
+    if (profileEnabled) {
+      profileEnabled.checked = this._avatarSettings.profile.enabled;
+      profileEnabled.onchange = () => {
+        this._avatarSettings.profile.enabled = profileEnabled.checked;
+        this.saveAvatarSettings();
+        if (this._avatarSettings.profile.enabled) {
+          this.startProfileAnimationCycle();
+        } else {
+          this.stopProfileAnimationCycle();
+        }
+      };
+    }
+
+    // Cycle interval slider
+    const cycleSlider = document.getElementById('profile-cycle-interval');
+    const cycleValue = document.getElementById('cycle-interval-value');
+    if (cycleSlider && cycleValue) {
+      cycleSlider.value = this._avatarSettings.profile.cycleInterval;
+      cycleValue.textContent = this._avatarSettings.profile.cycleInterval + 's';
+
+      cycleSlider.oninput = () => {
+        cycleValue.textContent = cycleSlider.value + 's';
+      };
+      cycleSlider.onchange = () => {
+        this._avatarSettings.profile.cycleInterval = parseInt(
+          cycleSlider.value
+        );
+        this.saveAvatarSettings();
+        // Restart cycle with new interval
+        if (this._avatarSettings.profile.enabled) {
+          this.startProfileAnimationCycle();
+        }
+      };
+    }
+
+    // Chat mode checkbox
+    const chatEnabled = document.getElementById('chat-animations-enabled');
+    if (chatEnabled) {
+      chatEnabled.checked = this._avatarSettings.chat.enabled;
+      chatEnabled.onchange = () => {
+        this._avatarSettings.chat.enabled = chatEnabled.checked;
+        this.saveAvatarSettings();
+      };
+    }
+
+    // Animation selection checkboxes (event delegation)
+    document.addEventListener('change', (e) => {
+      if (e.target.dataset.animation && e.target.dataset.mode) {
+        const animation = e.target.dataset.animation;
+        const mode = e.target.dataset.mode;
+
+        if (e.target.checked) {
+          if (
+            !this._avatarSettings[mode].selectedAnimations.includes(animation)
+          ) {
+            this._avatarSettings[mode].selectedAnimations.push(animation);
+          }
+        } else {
+          this._avatarSettings[mode].selectedAnimations = this._avatarSettings[
+            mode
+          ].selectedAnimations.filter((a) => a !== animation);
+        }
+
+        this.saveAvatarSettings();
+        this.renderAnimationButtons(); // Update checkmarks
+      }
+    });
+
+    // Initialize with all animations selected for both modes
+    if (this._avatarSettings.profile.selectedAnimations.length === 0) {
+      this._avatarSettings.profile.selectedAnimations = [
+        ...this._animationNames,
+      ];
+    }
+    if (this._avatarSettings.chat.selectedAnimations.length === 0) {
+      this._avatarSettings.chat.selectedAnimations = [...this._animationNames];
+    }
+
+    this.loadAvatarSettings();
+    this.updateModeSelectLists();
+  }
+
+  loadAvatarSettings() {
+    try {
+      const saved = localStorage.getItem('avatarSettings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        this._avatarSettings = { ...this._avatarSettings, ...settings };
+      }
+    } catch (e) {
+      console.log('[Avatar] Could not load settings');
+    }
+  }
+
+  saveAvatarSettings() {
+    try {
+      localStorage.setItem(
+        'avatarSettings',
+        JSON.stringify(this._avatarSettings)
+      );
+    } catch (e) {
+      console.log('[Avatar] Could not save settings');
+    }
+  }
+
+  startProfileAnimationCycle() {
+    this.stopProfileAnimationCycle();
+
+    if (
+      !this._avatarSettings.profile.enabled ||
+      this._avatarSettings.profile.selectedAnimations.length === 0
+    ) {
+      return;
+    }
+
+    const animations = this._avatarSettings.profile.selectedAnimations;
+
+    const playNext = () => {
+      if (!this._avatarSettings.profile.enabled) return;
+
+      const animation =
+        animations[this._profileCurrentIndex % animations.length];
+      console.log('[Profile Avatar] Cycling to:', animation);
+
+      if (this._avatarActions[animation]) {
+        if (this._currentAvatarAction) {
+          this._currentAvatarAction.fadeOut(0.5);
+        }
+        this._avatarActions[animation].reset().fadeIn(0.5).play();
+        this._currentAvatarAction = this._avatarActions[animation];
+      }
+
+      this._profileCurrentIndex++;
+
+      // Schedule next animation
+      this._profileCycleTimer = setTimeout(
+        playNext,
+        this._avatarSettings.profile.cycleInterval * 1000
+      );
+    };
+
+    // Start cycling
+    this._profileCycleTimer = setTimeout(
+      playNext,
+      this._avatarSettings.profile.cycleInterval * 1000
+    );
+
+    console.log('[Profile Avatar] Started animation cycle');
+  }
+
+  stopProfileAnimationCycle() {
+    if (this._profileCycleTimer) {
+      clearTimeout(this._profileCycleTimer);
+      this._profileCycleTimer = null;
+    }
+  }
+
+  playRandomChatAnimation() {
+    if (
+      !this._avatarSettings.chat.enabled ||
+      this._avatarSettings.chat.selectedAnimations.length === 0
+    ) {
+      return;
+    }
+
+    const animations = this._avatarSettings.chat.selectedAnimations;
+    const randomIndex = Math.floor(Math.random() * animations.length);
+    const animation = animations[randomIndex];
+
+    console.log('[Chat Avatar] Playing random animation:', animation);
+
+    if (this._avatarActions[animation]) {
+      if (this._currentAvatarAction) {
+        this._currentAvatarAction.fadeOut(0.3);
+      }
+      this._avatarActions[animation].reset().fadeIn(0.3).play();
+      this._currentAvatarAction = this._avatarActions[animation];
+    }
+  }
+
+  playAnimationByIndex(index) {
+    if (index < 0 || index >= this._animationNames.length) return;
+
+    console.log(
+      '[Avatar] Playing animation',
+      index + 1,
+      ':',
+      this._animationNames[index]
+    );
+
+    // Update UI
+    document
+      .querySelectorAll('.anim-btn')
+      .forEach((b) => b.classList.remove('active'));
+    const btn = document.getElementById(`anim-${index}`);
+    if (btn) btn.classList.add('active');
+
+    const idleBtn = document.getElementById('anim-idle');
+    if (idleBtn) idleBtn.classList.remove('active');
+
+    this._currentAnimationIndex = index;
+    const emotionName = this._animationNames[index];
+
+    // Update display
+    const emotionDisplay = document.getElementById('emotion-name');
+    if (emotionDisplay) {
+      emotionDisplay.textContent = `Animation ${index + 1}`;
+    }
+
+    // Play the animation
+    if (this._avatarMixer && this._avatarActions[emotionName]) {
+      if (this._currentAvatarAction) {
+        this._currentAvatarAction.fadeOut(0.3);
+      }
+      const action = this._avatarActions[emotionName];
+      action.reset().fadeIn(0.3).play();
+      this._currentAvatarAction = action;
+    }
+  }
+
+  async renderAvatar3D(vrmUrl, targetContainer = 'avatar-3d-container') {
+    const container = document.getElementById(targetContainer);
+    if (!container) {
+      console.log('[Avatar 3D] Container not found:', targetContainer);
+      return;
+    }
+
+    // Store references for zoom controls
+    this._avatarScene = null;
+    this._avatarCamera = null;
+    this._avatarRenderer = null;
+    this._avatarMixer = null;
+    this._avatarModel = null;
+    this._avatarZoom = 3.5; // Start zoomed out to see full body
+    this._avatarClock = new THREE.Clock();
+
+    container.innerHTML =
+      '<div class="avatar-placeholder-large"><span>Loading avatar...</span></div>';
+    console.log('[Avatar 3D] Starting render, URL:', vrmUrl);
+
+    if (typeof THREE === 'undefined') {
+      container.innerHTML =
+        '<div class="avatar-placeholder-large"><span>Three.js not loaded</span></div>';
+      return;
+    }
+
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    this._avatarScene = scene;
+
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      container.clientWidth / container.clientHeight,
+      0.1,
+      1000
+    );
+    // Position camera to show full body (adjust Y for center of body, Z for distance)
+    camera.position.set(0, 1.0, this._avatarZoom);
+    camera.lookAt(0, 0.8, 0); // Look at torso area
+    this._avatarCamera = camera;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+    this._avatarRenderer = renderer;
+
+    // Better lighting setup
+    const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+    scene.add(ambientLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    keyLight.position.set(3, 5, 4);
+    keyLight.castShadow = true;
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.4);
+    fillLight.position.set(-3, 2, -4);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(0xff8844, 0.3);
+    rimLight.position.set(0, 3, -5);
+    scene.add(rimLight);
+
+    // Floor with grid
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(1.5, 64),
+      new THREE.MeshStandardMaterial({
+        color: 0x2a2a3a,
+        metalness: 0.3,
+        roughness: 0.7,
+        transparent: true,
+        opacity: 0.8,
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Grid helper
+    const gridHelper = new THREE.GridHelper(4, 20, 0x444466, 0x333344);
+    gridHelper.position.y = 0.001;
+    scene.add(gridHelper);
+
+    // Setup zoom controls
+    this._setupAvatarZoomControls(container, camera, scene, renderer);
+
+    // Use GLTFLoader with VRMLoaderPlugin for proper VRM humanoid pose handling
+    console.log('[Avatar 3D] Using GLTFLoader with VRMLoaderPlugin');
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+    this._loadWithVRM(loader, vrmUrl, scene, container, camera, renderer);
+  }
+
+  // Render a smaller version of the avatar for the browser section
+  async renderBrowserAvatar(vrmUrl) {
+    const browserCanvas = document.getElementById('browser-avatar-canvas');
+    const fallback = document.getElementById('browser-avatar-fallback');
+
+    console.log('[Browser Avatar] Starting render');
+
+    // If no vrmUrl, show fallback "R" logo
+    if (!vrmUrl) {
+      console.log('[Browser Avatar] No VRM URL, showing fallback');
+      if (fallback) fallback.style.display = 'flex';
+      if (browserCanvas) browserCanvas.style.display = 'none';
+      return;
+    }
+
+    if (!browserCanvas) {
+      console.log('[Browser Avatar] Canvas not found!');
+      return;
+    }
+
+    // Show fallback while loading
+    if (fallback) fallback.style.display = 'none';
+    if (browserCanvas) browserCanvas.style.display = 'block';
+
+    try {
+      // Check if Three.js is loaded
+      if (typeof THREE === 'undefined') {
+        console.log('[Browser Avatar] Three.js not loaded');
+        if (fallback) fallback.style.display = 'flex';
+        if (browserCanvas) browserCanvas.style.display = 'none';
+        return;
+      }
+
+      // Create scene
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a1a2e);
+
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+      camera.position.set(0, 1.0, 3.5);
+      camera.lookAt(0, 0.8, 0);
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas: browserCanvas,
+        antialias: true,
+        alpha: true,
+      });
+
+      renderer.setSize(50, 50);
+      renderer.setPixelRatio(1);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+      scene.add(ambientLight);
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      keyLight.position.set(3, 5, 4);
+      scene.add(keyLight);
+
+      // Store for animation
+      this._browserAvatarScene = scene;
+      this._browserAvatarCamera = camera;
+      this._browserAvatarRenderer = renderer;
+
+      console.log('[Browser Avatar] Loading VRM...');
+
+      // Load VRM with promise
+      await new Promise((resolve) => {
+        if (typeof THREE.VRMLoader !== 'undefined') {
+          const loader = new THREE.VRMLoader();
+          loader.load(
+            vrmUrl,
+            (vrm) => {
+              console.log('[Browser Avatar] VRM loaded with VRMLoader');
+              scene.add(vrm.scene);
+              vrm.scene.rotation.y = 0.3;
+              this._browserAvatarAnimate();
+              resolve();
+            },
+            undefined,
+            () => {
+              // Fallback to GLTFLoader
+              const gltfLoader = new THREE.GLTFLoader();
+              gltfLoader.load(
+                vrmUrl,
+                (result) => {
+                  const model = result.scene || result;
+                  scene.add(model);
+                  model.rotation.y = 0.3;
+                  this._browserAvatarAnimate();
+                  resolve();
+                },
+                undefined,
+                () => {
+                  console.log('[Browser Avatar] GLTFLoader failed');
+                  if (fallback) fallback.style.display = 'flex';
+                  if (browserCanvas) browserCanvas.style.display = 'none';
+                  resolve();
+                }
+              );
+            }
+          );
+        } else if (typeof THREE.GLTFLoader !== 'undefined') {
+          const loader = new THREE.GLTFLoader();
+          loader.load(
+            vrmUrl,
+            (result) => {
+              const model = result.scene || result;
+              scene.add(model);
+              model.rotation.y = 0.3;
+              this._browserAvatarAnimate();
+              resolve();
+            },
+            undefined,
+            () => {
+              if (fallback) fallback.style.display = 'flex';
+              if (browserCanvas) browserCanvas.style.display = 'none';
+              resolve();
+            }
+          );
+        } else {
+          if (fallback) fallback.style.display = 'flex';
+          if (browserCanvas) browserCanvas.style.display = 'none';
+          resolve();
+        }
+      });
+    } catch (error) {
+      console.error('[Browser Avatar] Error:', error);
+      if (fallback) fallback.style.display = 'flex';
+      if (browserCanvas) browserCanvas.style.display = 'none';
+    }
+  }
+
+  // Animation loop for browser avatar
+  _browserAvatarAnimate() {
+    if (!this._browserAvatarRenderer) return;
+
+    const animate = () => {
+      if (!document.getElementById('browser-avatar-canvas')) return;
+
+      const delta = this._browserAvatarClock.getDelta();
+
+      // Update mixer if exists
+      if (this._browserAvatarMixer) {
+        this._browserAvatarMixer.update(delta);
+      }
+
+      // Subtle rotation
+      if (this._browserAvatarScene) {
+        this._browserAvatarCurrentRotY +=
+          (this._browserAvatarTargetRotY - this._browserAvatarCurrentRotY) *
+          0.02;
+        this._browserAvatarScene.rotation.y =
+          this._browserAvatarCurrentRotY + 0.3;
+      }
+
+      this._browserAvatarRenderer.render(
+        this._browserAvatarScene,
+        this._browserAvatarCamera
+      );
+      requestAnimationFrame(animate);
+    };
+    animate();
+  }
+
+  async _loadAvatarAnimations(vrm, mixer) {
+    const basePath =
+      window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
+
+    // Categorize animations - loopable ones vs one-shot
+    const loopableAnimations = {
+      'Standard Idle': 'StandardIdle.vrma',
+      'Offensive Idle': 'OffensiveIdle.vrma',
+      Bored: 'Bored.vrma',
+      'Idle Dance': 'idle.vrma',
+      Walk: 'Walk.vrma',
+      Jogging: 'Jogging.vrma',
+    };
+
+    const oneShotAnimations = {
+      Stretch: 'stretch.vrma',
+      'V Sign': 'v_sign.vrma',
+      Spin: 'spin.vrma',
+      Shoot: 'shoot.vrma',
+      'Model Pose': 'model_pose.vrma',
+      Wave: 'wave.vrma',
+      'Bling Dance': 'bling_dance.vrma',
+      'Cat Dance': 'cat_dance.vrma',
+      'Devil Dance': 'devil_dance.vrma',
+      'Heaven/Hell': 'heaven_hell.vrma',
+      Capoeira: 'Capoeira.vrma',
+      Rumba: 'Rumba.vrma',
+      Death: 'Death.vrma',
+      Taunt: 'Taunt.vrma',
+      Slam: 'Slam.vrma',
+      'Baseball Hit': 'BaseballHit.vrma',
+      'Sit Yell': 'SitYell.vrma',
+      'Change Dir': 'ChangeDir.vrma',
+      Rummaging: 'Rummaging.vrma',
+    };
+
+    console.log('[Avatar] Loading animations from:', basePath + 'animations/');
+
+    const loader = new GLTFLoader();
+    loader.crossOrigin = 'anonymous';
+
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+    loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+
+    // Initialize animation names array
+    this._animationNames = [];
+
+    // Load loopable animations first
+    for (const [name, filename] of Object.entries(loopableAnimations)) {
+      const url = basePath + 'animations/' + filename;
+      try {
+        console.log(`[Avatar] Loading (loop): ${name}`);
+
+        const gltf = await loader.loadAsync(url);
+        const vrmAnimations = gltf.userData.vrmAnimations;
+
+        if (!vrmAnimations || vrmAnimations.length === 0) {
+          console.log(`[Avatar] ✗ Not found: ${filename}`);
+          continue;
+        }
+
+        const vrmAnim = vrmAnimations[0];
+        const clip = createVRMAnimationClip(vrmAnim, vrm);
+        const action = mixer.clipAction(clip);
+        action.setLoop(THREE.LoopRepeat);
+
+        this._avatarActions[name] = action;
+        this._animationNames.push(name);
+        console.log(`[Avatar] ✓ ${name}`);
+      } catch (e) {
+        console.log(`[Avatar] ✗ ${name}: ${e.message}`);
+      }
+    }
+
+    // Load one-shot animations
+    for (const [name, filename] of Object.entries(oneShotAnimations)) {
+      const url = basePath + 'animations/' + filename;
+      try {
+        console.log(`[Avatar] Loading (once): ${name}`);
+
+        const gltf = await loader.loadAsync(url);
+        const vrmAnimations = gltf.userData.vrmAnimations;
+
+        if (!vrmAnimations || vrmAnimations.length === 0) {
+          console.log(`[Avatar] ✗ Not found: ${filename}`);
+          continue;
+        }
+
+        const vrmAnim = vrmAnimations[0];
+        const clip = createVRMAnimationClip(vrmAnim, vrm);
+        const action = mixer.clipAction(clip);
+        action.setLoop(THREE.LoopOnce);
+        action.clampWhenFinished = true;
+
+        this._avatarActions[name] = action;
+        this._animationNames.push(name);
+        console.log(`[Avatar] ✓ ${name}`);
+      } catch (e) {
+        console.log(`[Avatar] ✗ ${name}: ${e.message}`);
+      }
+    }
+
+    console.log('[Avatar] Total loaded:', this._animationNames.length);
+
+    // Update the animation buttons UI
+    this.renderAnimationButtons();
+  }
+
+  _playEmotionAnimation(emotion, fadeTime = 0.3) {
+    if (!this._avatarMixer || !this._avatarActions) return;
+
+    const newAction = this._avatarActions[emotion];
+    if (!newAction) return;
+
+    if (this._currentAvatarAction) {
+      this._currentAvatarAction.fadeOut(fadeTime);
+    }
+
+    newAction.reset().fadeIn(fadeTime).play();
+    this._currentAvatarAction = newAction;
+
+    console.log(`[Avatar] Playing animation: ${emotion}`);
+  }
+
+  _loadWithGLTF(loader, vrmUrl, scene, container, camera, renderer) {
+    let targetRotationY = 0;
+    let currentRotationY = 0;
+    const clock = new THREE.Clock();
+
+    // Find humanoid bones for animation
+    let hipsBone = null;
+    let chestBone = null;
+    let headBone = null;
+    let leftArmBone = null;
+    let rightArmBone = null;
+    let leftForearmBone = null;
+    let rightForearmBone = null;
+    let leftShoulder = null;
+    let rightShoulder = null;
+
+    loader.load(
+      vrmUrl,
+      (result) => {
+        let model;
+        if (result.scene) {
+          model = result.scene;
+        } else {
+          model = result;
+        }
+
+        // Find bones for animation - VRM uses "JN" prefix typically
+        model.traverse((obj) => {
+          if (obj.isBone) {
+            const name = obj.name.toLowerCase();
+            console.log('[Avatar 3D] Found bone:', obj.name);
+
+            // Hips/root
+            if (
+              !hipsBone &&
+              (name.includes('hips') ||
+                name.includes('root') ||
+                name.includes('jnh'))
+            ) {
+              hipsBone = obj;
+            }
+            // Chest/spine
+            if (
+              !chestBone &&
+              (name.includes('chest') ||
+                name.includes('spine') ||
+                name.includes('jnch') ||
+                name.includes('jnsp'))
+            ) {
+              chestBone = obj;
+            }
+            // Head
+            if (
+              !headBone &&
+              (name.includes('head') || name.includes('jnhead'))
+            ) {
+              headBone = obj;
+            }
+            // Left arm - VRoid naming: J_Bip_L_UpperArm, J_Bip_L_LowerArm
+            if (
+              !leftArmBone &&
+              (name.includes('_l_') ||
+                name.includes('j_bip_l_') ||
+                name.includes('_l_') ||
+                name.includes('left')) &&
+              (name.includes('upperarm') || name.includes('upper_arm'))
+            ) {
+              console.log('[Avatar 3D] Found LEFT arm bone:', obj.name);
+              leftArmBone = obj;
+            }
+            // Right arm
+            if (
+              !rightArmBone &&
+              (name.includes('_r_') ||
+                name.includes('j_bip_r_') ||
+                name.includes('right')) &&
+              (name.includes('upperarm') || name.includes('upper_arm'))
+            ) {
+              console.log('[Avatar 3D] Found RIGHT arm bone:', obj.name);
+              rightArmBone = obj;
+            }
+            // Left forearm (lower arm)
+            if (
+              !leftForearmBone &&
+              (name.includes('_l_') || name.includes('left')) &&
+              (name.includes('lowerarm') ||
+                name.includes('lower_arm') ||
+                name.includes('forearm'))
+            ) {
+              console.log('[Avatar 3D] Found LEFT forearm bone:', obj.name);
+              leftForearmBone = obj;
+            }
+            // Right forearm
+            if (
+              !rightForearmBone &&
+              (name.includes('_r_') || name.includes('right')) &&
+              (name.includes('lowerarm') ||
+                name.includes('lower_arm') ||
+                name.includes('forearm'))
+            ) {
+              console.log('[Avatar 3D] Found RIGHT forearm bone:', obj.name);
+              rightForearmBone = obj;
+            }
+            // Left shoulder
+            if (
+              !leftShoulder &&
+              (name.includes('_l_') || name.includes('left')) &&
+              name.includes('shoulder')
+            ) {
+              leftShoulder = obj;
+            }
+            // Right shoulder
+            if (
+              !rightShoulder &&
+              (name.includes('_r_') || name.includes('right')) &&
+              name.includes('shoulder')
+            ) {
+              rightShoulder = obj;
+            }
+          }
+        });
+
+        console.log(
+          '[Avatar 3D] Bones - hips:',
+          hipsBone?.name,
+          'chest:',
+          chestBone?.name,
+          'head:',
+          headBone?.name,
+          'leftArm:',
+          leftArmBone?.name,
+          'rightArm:',
+          rightArmBone?.name,
+          'leftForearm:',
+          leftForearmBone?.name,
+          'rightForearm:',
+          rightForearmBone?.name
+        );
+
+        // Center and scale
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        model.position.x = -center.x;
+        model.position.z = -center.z;
+        model.position.y = -box.min.y;
+
+        const scale = 1.6 / size.y;
+        model.scale.set(scale, scale, scale);
+
+        scene.add(model);
+
+        // Try to play animations from the VRM file
+        let animations = [];
+        if (result.animations && result.animations.length > 0) {
+          animations = result.animations;
+          console.log(
+            '[Avatar 3D] Found',
+            animations.length,
+            'animations in VRM'
+          );
+        } else if (
+          result.gltf?.animations &&
+          result.gltf.animations.length > 0
+        ) {
+          animations = result.gltf.animations;
+          console.log(
+            '[Avatar 3D] Found',
+            animations.length,
+            'animations in gltf'
+          );
+        }
+
+        let mixer = null;
+        if (animations.length > 0) {
+          console.log(
+            '[Avatar 3D] Animation names:',
+            animations.map((a) => a.name)
+          );
+
+          // Find idle/stand/wait animation, otherwise use first
+          let idleClip =
+            animations.find(
+              (clip) =>
+                clip.name.toLowerCase().includes('idle') ||
+                clip.name.toLowerCase().includes('stand') ||
+                clip.name.toLowerCase().includes('wait') ||
+                clip.name.toLowerCase().includes('walk') ||
+                clip.name.toLowerCase().includes('run')
+            ) || animations[0];
+
+          console.log('[Avatar 3D] Playing animation:', idleClip?.name);
+
+          // Try playing multiple animations to see which looks best
+          mixer = new THREE.AnimationMixer(model);
+
+          // Play the best animation found
+          const action = mixer.clipAction(idleClip);
+          action.setLoop(THREE.LoopRepeat);
+          action.play();
+
+          // Also try to find and play a secondary animation for arms
+          const armClip = animations.find(
+            (clip) =>
+              clip.name.toLowerCase().includes('arm') ||
+              clip.name.toLowerCase().includes('hand')
+          );
+          if (armClip && armClip !== idleClip) {
+            const armAction = mixer.clipAction(armClip);
+            armAction.play();
+          }
+        }
+
+        // Procedural idle animation - also applies to override VRM arm pose
+        console.log(
+          '[Avatar 3D] Shoulder bones - left:',
+          leftShoulder?.name,
+          'right:',
+          rightShoulder?.name
+        );
+
+        // Store initial rotations
+        const initialLeftArmRot = leftArmBone
+          ? leftArmBone.rotation.clone()
+          : null;
+        const initialRightArmRot = rightArmBone
+          ? rightArmBone.rotation.clone()
+          : null;
+
+        // Fix T-pose: Apply A-pose (arms at sides, not out)
+        // VRoid exports in T-pose (arms out 90 degrees), rotate down
+        // -1.57 = 90 degrees down (full A-pose)
+        if (leftArmBone) {
+          console.log('[Avatar 3D] Fixing left arm T-pose');
+          leftArmBone.rotation.z = -1.2; // Rotate arm down toward body
+          leftArmBone.rotation.x = 0.3; // Slight forward angle
+        }
+        if (rightArmBone) {
+          console.log('[Avatar 3D] Fixing right arm T-pose');
+          rightArmBone.rotation.z = 1.2; // Rotate arm down toward body
+          rightArmBone.rotation.x = 0.3; // Slight forward angle
+        }
+        if (leftForearmBone) {
+          leftForearmBone.rotation.x = 0.5; // Let forearm hang naturally
+        }
+        if (rightForearmBone) {
+          rightForearmBone.rotation.x = 0.5;
+        }
+
+        // Setup emotion animation state
+        let currentEmotion = 'idle';
+        let emotionTransition = 0;
+        let targetEmotion = 'idle';
+
+        this._avatarEmotionState = {
+          get emotion() {
+            return currentEmotion;
+          },
+          set emotion(val) {
+            targetEmotion = val;
+          },
+        };
+
+        const animate = () => {
+          if (!container.parentElement) return;
+
+          const delta = clock.getDelta();
+          const time = clock.getElapsedTime();
+
+          // Smooth emotion transition
+          if (currentEmotion !== targetEmotion) {
+            emotionTransition += delta * 5;
+            if (emotionTransition >= 1) {
+              currentEmotion = targetEmotion;
+              emotionTransition = 1;
+              console.log('[Avatar GLTF] Emotion changed to:', currentEmotion);
+            }
+          } else {
+            emotionTransition = 1;
+          }
+          const t = emotionTransition;
+
+          // Update animation mixer if available
+          if (mixer) {
+            mixer.update(delta);
+          }
+
+          // Calculate emotion-based animation values
+          let breathe = 0;
+          let armSway = 0;
+          let bodyScale = 1;
+          let headTilt = 0;
+          let armRaise = 0;
+
+          switch (currentEmotion) {
+            case 'idle':
+              breathe = Math.sin(time * 1.5) * 0.02;
+              armSway = Math.sin(time * 0.8) * 0.05;
+              break;
+            case 'thinking':
+              breathe = Math.sin(time * 0.5) * 0.01;
+              armSway = Math.sin(time * 0.3) * 0.03;
+              headTilt = 0.3;
+              break;
+            case 'excited':
+              breathe = Math.sin(time * 4) * 0.15;
+              armSway = Math.sin(time * 3) * 0.3;
+              bodyScale = 1 + Math.sin(time * 4) * 0.1;
+              armRaise = 0.8;
+              break;
+            case 'angry':
+              breathe = Math.sin(time * 2) * 0.05;
+              armSway = Math.sin(time * 1.5) * 0.05;
+              headTilt = -0.2;
+              armRaise = 0.6;
+              break;
+            case 'walking':
+              breathe = Math.sin(time * 3) * 0.08;
+              armSway = Math.sin(time * 3) * 0.2;
+              bodyScale = 1 + Math.abs(Math.sin(time * 3)) * 0.05;
+              break;
+            case 'happy':
+              breathe = Math.sin(time * 2.5) * 0.08;
+              armSway = Math.sin(time * 2) * 0.15;
+              bodyScale = 1.05;
+              break;
+            case 'sad':
+              breathe = Math.sin(time * 0.8) * 0.02;
+              armSway = Math.sin(time * 0.5) * 0.02;
+              headTilt = 0.35;
+              break;
+            case 'listening':
+              breathe = Math.sin(time * 1.2) * 0.03;
+              armSway = Math.sin(time * 1) * 0.05;
+              headTilt = 0.15;
+              break;
+          }
+
+          // Apply animations to bones
+          const leftArmZ = -1.2 + armSway + armRaise * t;
+          const rightArmZ = 1.2 - armSway - armRaise * t;
+          const forearmX = 0.5 + breathe + armRaise * 0.3 * t;
+
+          // Breathing - chest
+          if (chestBone) {
+            chestBone.rotation.x = breathe;
+          }
+
+          // Head sway and tilt
+          if (headBone) {
+            headBone.rotation.y = Math.sin(time * 0.7) * 0.03;
+            headBone.rotation.z = headTilt * t;
+          }
+
+          // Arm animations
+          if (leftArmBone) {
+            leftArmBone.rotation.z = leftArmZ;
+            leftArmBone.rotation.x = 0.3 + armRaise * t;
+          }
+          if (rightArmBone) {
+            rightArmBone.rotation.z = rightArmZ;
+            rightArmBone.rotation.x = 0.3 + armRaise * t;
+          }
+          if (leftForearmBone) {
+            leftForearmBone.rotation.x = forearmX;
+          }
+          if (rightForearmBone) {
+            rightForearmBone.rotation.x = forearmX;
+          }
+
+          // Body sway
+          if (hipsBone) {
+            hipsBone.rotation.z =
+              Math.sin(time * 0.8) * 0.01 +
+              (currentEmotion === 'excited' ? Math.sin(time * 4) * 0.05 : 0);
+          }
+
+          // Apply body scale
+          model.scale.set(
+            scale * bodyScale,
+            scale * bodyScale,
+            scale * bodyScale
+          );
+
+          // Apply body lean for emotions
+          let avatarLean = 0;
+          switch (currentEmotion) {
+            case 'excited':
+              avatarLean = Math.sin(time * 4) * 0.1;
+              break;
+            case 'angry':
+              avatarLean = Math.sin(time * 2) * 0.08;
+              break;
+            case 'walking':
+              avatarLean = Math.sin(time * 6) * 0.05;
+              break;
+          }
+          model.rotation.z = avatarLean * t;
+
+          // Smooth rotation
+          currentRotationY += (targetRotationY - currentRotationY) * 0.1;
+          model.rotation.y = currentRotationY;
+
+          camera.lookAt(0, 0.8, 0);
+          renderer.render(scene, camera);
+          requestAnimationFrame(animate);
+        };
+        animate();
+
+        this._setupAvatarRotationControls(container, (delta) => {
+          targetRotationY += delta;
+        });
+
+        container.innerHTML = '';
+        container.appendChild(renderer.domElement);
+      },
+      (progress) => console.log('[Avatar 3D] Progress:', progress),
+      (error) => {
+        console.error('[Avatar 3D] Error:', error);
+        container.innerHTML =
+          '<div class="avatar-placeholder-large"><span>Error loading avatar</span></div>';
+      }
+    );
+  }
+
+  _loadWithVRM(loader, vrmUrl, scene, container, camera, renderer) {
+    let targetRotationY = 0;
+    let currentRotationY = 0;
+    const clock = new THREE.Clock();
+    let vrm = null;
+    let mixer = null;
+    let leftUpperArmBone = null;
+    let rightUpperArmBone = null;
+    let leftForearmBone = null;
+    let rightForearmBone = null;
+
+    // Store original bone rotations for breathing animation
+    const originalRotations = {};
+
+    loader.load(
+      vrmUrl,
+      (gltf) => {
+        // VRMLoaderPlugin puts the VRM in userData.vrm
+        vrm = gltf.userData.vrm || gltf;
+        console.log('[Avatar VRM] Loaded VRM:', vrm);
+        console.log('[Avatar VRM] Humanoid:', vrm.humanoid);
+        console.log('[Avatar VRM] Springbones:', vrm.springBoneManager);
+
+        // Find and fix arm bones for VRoid T-pose
+        // VRoid uses: J_Bip_L_UpperArm, J_Bip_L_LowerArm
+        // Some exporters use: mixamorig_LeftUpArm, mixamorig_LeftArm
+        const bonePatterns = {
+          leftUpperArm: [
+            'j_bip_l_upperarm',
+            'leftuparm',
+            'left_upperarm',
+            'upperarm_l',
+            'shoulder_l',
+            'arm_l1',
+          ],
+          rightUpperArm: [
+            'j_bip_r_upperarm',
+            'rightuparm',
+            'right_upperarm',
+            'upperarm_r',
+            'shoulder_r',
+            'arm_r1',
+          ],
+          leftForearm: [
+            'j_bip_l_lowerarm',
+            'leftarm',
+            'left_forearm',
+            'lowerarm_l',
+            'arm_l2',
+            'forearm_l',
+          ],
+          rightForearm: [
+            'j_bip_r_lowerarm',
+            'rightarm',
+            'right_forearm',
+            'lowerarm_r',
+            'arm_r2',
+            'forearm_r',
+          ],
+        };
+
+        vrm.scene.traverse((obj) => {
+          if (obj.isBone || obj.isObject3D) {
+            const name = obj.name.toLowerCase().replace(/\s+/g, '');
+
+            // Left upper arm
+            if (
+              !leftUpperArmBone &&
+              bonePatterns.leftUpperArm.some((p) => name.includes(p))
+            ) {
+              leftUpperArmBone = obj;
+              console.log('[Avatar VRM] Found left upper arm bone:', obj.name);
+            }
+            // Right upper arm
+            if (
+              !rightUpperArmBone &&
+              bonePatterns.rightUpperArm.some((p) => name.includes(p))
+            ) {
+              rightUpperArmBone = obj;
+              console.log('[Avatar VRM] Found right upper arm bone:', obj.name);
+            }
+            // Left forearm (check for forearm before arm to avoid partial matches)
+            if (
+              !leftForearmBone &&
+              bonePatterns.leftForearm.some((p) => name.includes(p))
+            ) {
+              leftForearmBone = obj;
+              console.log('[Avatar VRM] Found left forearm bone:', obj.name);
+            }
+            // Right forearm
+            if (
+              !rightForearmBone &&
+              bonePatterns.rightForearm.some((p) => name.includes(p))
+            ) {
+              rightForearmBone = obj;
+              console.log('[Avatar VRM] Found right forearm bone:', obj.name);
+            }
+          }
+        });
+
+        console.log(
+          '[Avatar VRM] Bone detection complete - Left:',
+          !!leftUpperArmBone,
+          'Right:',
+          !!rightUpperArmBone
+        );
+
+        // Debug: log all bones if specific ones not found
+        if (!leftUpperArmBone || !rightUpperArmBone) {
+          console.log('[Avatar VRM] Dumping all bones for debugging:');
+          vrm.scene.traverse((obj) => {
+            if (obj.isBone) {
+              console.log('  Bone:', obj.name);
+            }
+          });
+
+          // Also find meshes that might be arms (left/right of body)
+          const armMeshes = [];
+          vrm.scene.traverse((obj) => {
+            if (obj.isMesh && obj.position) {
+              // Arms are typically at x position < -0.3 or > 0.3
+              if (
+                Math.abs(obj.position.x) > 0.3 &&
+                obj.position.y > 0.5 &&
+                obj.position.y < 1.5
+              ) {
+                armMeshes.push({
+                  mesh: obj,
+                  side: obj.position.x < 0 ? 'left' : 'right',
+                });
+                console.log(
+                  '[Avatar VRM] Found arm mesh:',
+                  obj.name,
+                  'at x:',
+                  obj.position.x.toFixed(2)
+                );
+              }
+            }
+          });
+          if (armMeshes.length > 0) {
+            this._avatarArmMeshes = armMeshes.map((m) => m.mesh);
+            console.log(
+              '[Avatar VRM] Stored',
+              armMeshes.length,
+              'arm meshes for animation fallback'
+            );
+          }
+        }
+
+        // Apply standing pose to fix VRoid T-pose
+        // Upper arms: rotate inward (toward body) ~30 degrees
+        const upperArmInward = -0.5; // radians (~30 degrees)
+        // Forearms: slight downward hang ~15 degrees
+        const forearmDown = 0.25; // radians
+
+        if (leftUpperArmBone) {
+          originalRotations.leftUpperArm = leftUpperArmBone.rotation.clone();
+          leftUpperArmBone.rotation.z = upperArmInward;
+        }
+        if (rightUpperArmBone) {
+          originalRotations.rightUpperArm = rightUpperArmBone.rotation.clone();
+          rightUpperArmBone.rotation.z = -upperArmInward; // opposite for right
+        }
+        if (leftForearmBone) {
+          originalRotations.leftForearm = leftForearmBone.rotation.clone();
+          leftForearmBone.rotation.x = forearmDown;
+        }
+        if (rightForearmBone) {
+          originalRotations.rightForearm = rightForearmBone.rotation.clone();
+          rightForearmBone.rotation.x = forearmDown;
+        }
+
+        console.log('[Avatar VRM] Applied standing pose to fix T-pose');
+
+        // VRM loader automatically applies first-person standing pose
+        // Add to scene
+        scene.add(vrm.scene);
+
+        // Enable springbones for VRoid hair/clothing physics
+        if (vrm.springBoneManager) {
+          console.log('[Avatar VRM] Springbones enabled for hair physics');
+        }
+
+        // Set up VRM materials for proper lighting
+        vrm.scene.traverse((obj) => {
+          if (obj.isMesh) {
+            obj.castShadow = true;
+            obj.receiveShadow = true;
+            obj.frustumCulled = false;
+          }
+        });
+
+        // Center and scale based on avatar height
+        const box = new THREE.Box3().setFromObject(vrm.scene);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        vrm.scene.position.x = -center.x;
+        vrm.scene.position.z = -center.z;
+        vrm.scene.position.y = -box.min.y;
+
+        const scale = 1.6 / size.y;
+        vrm.scene.scale.set(scale, scale, scale);
+
+        console.log('[Avatar VRM] Model scaled to 1.6 units height');
+
+        // Initialize VRM systems before animations
+        if (vrm.humanoid) {
+          vrm.humanoid.update();
+        }
+        vrm.update(0);
+
+        // Set up animation mixer and load VRM animations
+        mixer = new THREE.AnimationMixer(vrm.scene);
+        this._avatarMixer = mixer;
+        this._avatarActions = {};
+        this._currentAvatarAction = null;
+
+        // Load VRM animations and start idle after loading completes
+        const loadAndStartIdle = async () => {
+          await this._loadAvatarAnimations(vrm, mixer);
+
+          // Start with idle animation to prevent T-pose
+          if (this._avatarActions['Standard Idle']) {
+            this._avatarActions['Standard Idle'].play();
+            this._currentAvatarAction = this._avatarActions['Standard Idle'];
+            console.log('[Avatar] Started Standard Idle animation');
+          } else if (this._animationNames && this._animationNames.length > 0) {
+            // Fallback to first available animation
+            const firstAnim = this._animationNames[0];
+            if (this._avatarActions[firstAnim]) {
+              this._avatarActions[firstAnim].play();
+              this._currentAvatarAction = this._avatarActions[firstAnim];
+              console.log('[Avatar] Started fallback animation:', firstAnim);
+            }
+          }
+
+          // Start profile cycle if enabled
+          if (this._avatarSettings.profile.enabled) {
+            this.startProfileAnimationCycle();
+          }
+        };
+        loadAndStartIdle();
+
+        // Animation loop
+        let breathingTime = 0;
+        let currentEmotion = 'idle';
+        let emotionTransition = 0;
+        let targetEmotion = 'idle';
+        const app = this;
+
+        // Store refs for emotion updates
+        this._avatarEmotionState = {
+          get emotion() {
+            return currentEmotion;
+          },
+          set emotion(val) {
+            targetEmotion = val;
+            app._playEmotionAnimation(val);
+          },
+          vrm,
+          mixer,
+          leftUpperArmBone,
+          rightUpperArmBone,
+          leftForearmBone,
+          rightForearmBone,
+          originalRotations,
+          clock,
+          breathingTime: 0,
+        };
+
+        const animate = () => {
+          if (!container.parentElement) return;
+
+          const delta = clock.getDelta();
+          breathingTime += delta;
+
+          // Smooth emotion transition - faster for better response
+          if (currentEmotion !== targetEmotion) {
+            emotionTransition += delta * 5; // Much faster transition
+            if (emotionTransition >= 1) {
+              currentEmotion = targetEmotion;
+              emotionTransition = 1;
+              console.log('[Avatar] Emotion changed to:', currentEmotion);
+            }
+          } else {
+            emotionTransition = 1;
+          }
+
+          const t = emotionTransition;
+
+          // Debug: log when target changes
+          if (targetEmotion !== currentEmotion && targetEmotion !== 'idle') {
+            // Just for excited, angry, etc - log once
+          }
+
+          // Update animation mixer
+          if (mixer) {
+            mixer.update(delta);
+          }
+
+          // Play VRM animation if emotion changed
+          if (
+            this._avatarActions[targetEmotion] &&
+            currentEmotion !== targetEmotion
+          ) {
+            this._playEmotionAnimation(targetEmotion);
+          }
+
+          // Update VRM systems
+          vrm.update(delta);
+
+          // Only apply procedural animation if no VRM animation is available
+          const hasVRMAnimation =
+            app._avatarActions && app._avatarActions[currentEmotion];
+
+          if (!hasVRMAnimation) {
+            // Emotion-based animations (procedural fallback)
+            let breathe = 0;
+            let armSway = 0;
+            let armRaise = 0;
+
+            switch (currentEmotion) {
+              case 'idle':
+                breathe = Math.sin(breathingTime * 1.5) * 0.02;
+                armSway = Math.sin(breathingTime * 0.8) * 0.05;
+                break;
+              case 'thinking':
+                breathe = Math.sin(breathingTime * 0.5) * 0.01;
+                armSway = Math.sin(breathingTime * 0.3) * 0.03;
+                break;
+              case 'excited':
+                breathe = Math.sin(breathingTime * 4) * 0.15;
+                armSway = Math.sin(breathingTime * 3) * 0.3;
+                armRaise = 0.8;
+                break;
+              case 'angry':
+                breathe = Math.sin(breathingTime * 2) * 0.05;
+                armSway = Math.sin(breathingTime * 1.5) * 0.05;
+                armRaise = 0.6;
+                break;
+              case 'walking':
+                breathe = Math.sin(breathingTime * 3) * 0.08;
+                armSway = Math.sin(breathingTime * 3) * 0.2;
+                break;
+              case 'happy':
+                breathe = Math.sin(breathingTime * 2.5) * 0.08;
+                armSway = Math.sin(breathingTime * 2) * 0.15;
+                break;
+              case 'sad':
+                breathe = Math.sin(breathingTime * 0.8) * 0.02;
+                armSway = Math.sin(breathingTime * 0.5) * 0.02;
+                break;
+              case 'listening':
+                breathe = Math.sin(breathingTime * 1.2) * 0.03;
+                armSway = Math.sin(breathingTime * 1) * 0.05;
+                break;
+            }
+
+            // Apply animations to bones only when no VRM animation
+            const leftArmZ = -0.5 + armSway + armRaise * t;
+            const rightArmZ = 0.5 - armSway - armRaise * t;
+            const forearmX = 0.25 + breathe + armRaise * 0.3 * t;
+
+            if (leftUpperArmBone) {
+              leftUpperArmBone.rotation.z = leftArmZ;
+              leftUpperArmBone.rotation.x = armRaise * t;
+            }
+            if (rightUpperArmBone) {
+              rightUpperArmBone.rotation.z = rightArmZ;
+              rightUpperArmBone.rotation.x = armRaise * t;
+            }
+            if (leftForearmBone) {
+              leftForearmBone.rotation.x = forearmX;
+            }
+            if (rightForearmBone) {
+              rightForearmBone.rotation.x = forearmX;
+            }
+
+            // Additional emotion effects - rotate the avatar for excited/angry
+            let avatarLean = 0;
+            switch (currentEmotion) {
+              case 'excited':
+                avatarLean = Math.sin(breathingTime * 4) * 0.1;
+                break;
+              case 'angry':
+                avatarLean = Math.sin(breathingTime * 2) * 0.08;
+                break;
+              case 'walking':
+                avatarLean = Math.sin(breathingTime * 6) * 0.05;
+                break;
+            }
+            vrm.scene.rotation.z = avatarLean * t;
+
+            // Smooth rotation
+            currentRotationY += (targetRotationY - currentRotationY) * 0.1;
+            vrm.scene.rotation.y = currentRotationY;
+          }
+
+          // Update VRM systems (always)
+          if (vrm.humanoid) {
+            vrm.humanoid.update();
+          }
+
+          // Look at upper body
+          camera.lookAt(0, 0.8 * scale, 0);
+          renderer.render(scene, camera);
+          requestAnimationFrame(animate);
+        };
+        animate();
+
+        this._setupAvatarRotationControls(container, (delta) => {
+          targetRotationY += delta;
+        });
+
+        container.innerHTML = '';
+        container.appendChild(renderer.domElement);
+      },
+      (progress) =>
+        console.log(
+          '[Avatar VRM] Progress:',
+          ((progress.loaded / progress.total) * 100).toFixed(1) + '%'
+        ),
+      (error) => {
+        console.error('[Avatar VRM] Error loading VRM:', error);
+        // Fallback to GLTFLoader if VRMLoader fails
+        console.log('[Avatar VRM] Falling back to GLTFLoader');
+        const gltfLoader = new THREE.GLTFLoader();
+        this._loadWithGLTF(
+          gltfLoader,
+          vrmUrl,
+          scene,
+          container,
+          camera,
+          renderer
+        );
+      }
+    );
+  }
+
+  _setupAvatarZoomControls(container, camera, scene, renderer) {
+    // Mouse wheel zoom
+    container.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const zoomSpeed = 0.001;
+        this._avatarZoom += e.deltaY * zoomSpeed;
+        this._avatarZoom = Math.max(1.5, Math.min(8, this._avatarZoom));
+        camera.position.z = this._avatarZoom;
+        camera.position.y = 1.0; // Keep looking at torso level
+      },
+      { passive: false }
+    );
+
+    // Button zoom controls
+    const zoomInBtn = document.getElementById('zoom-in-btn');
+    const zoomOutBtn = document.getElementById('zoom-out-btn');
+
+    if (zoomInBtn) {
+      zoomInBtn.onclick = () => {
+        this._avatarZoom = Math.max(1.5, this._avatarZoom - 0.5);
+        camera.position.z = this._avatarZoom;
+      };
+    }
+
+    if (zoomOutBtn) {
+      zoomOutBtn.onclick = () => {
+        this._avatarZoom = Math.min(8, this._avatarZoom + 0.5);
+        camera.position.z = this._avatarZoom;
+      };
+    }
+  }
+
+  _setupAvatarRotationControls(container, onRotate) {
+    let isDragging = false;
+    let previousX = 0;
+
+    container.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      previousX = e.clientX;
+      container.style.cursor = 'grabbing';
+    });
+
+    container.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const deltaX = e.clientX - previousX;
+      previousX = e.clientX;
+      onRotate(deltaX * 0.01);
+    });
+
+    container.addEventListener('mouseup', () => {
+      isDragging = false;
+      container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('mouseleave', () => {
+      isDragging = false;
+      container.style.cursor = 'grab';
+    });
+
+    container.style.cursor = 'grab';
+  }
+
+  // Speech bubble and expression system
+  showSpeechBubble(message, duration = 5000) {
+    const bubble = document.getElementById('avatar-speech-bubble');
+    const content = document.getElementById('speech-content');
+    if (!bubble || !content) return;
+
+    content.textContent = message;
+    bubble.style.display = 'block';
+    bubble.classList.remove('fade-out');
+
+    if (this._speechBubbleTimeout) {
+      clearTimeout(this._speechBubbleTimeout);
+    }
+
+    if (duration > 0) {
+      this._speechBubbleTimeout = setTimeout(() => {
+        this.hideSpeechBubble();
+      }, duration);
+    }
+  }
+
+  hideSpeechBubble() {
+    const bubble = document.getElementById('avatar-speech-bubble');
+    if (!bubble) return;
+
+    bubble.classList.add('fade-out');
+    setTimeout(() => {
+      bubble.style.display = 'none';
+      bubble.classList.remove('fade-out');
+    }, 300);
+  }
+
+  showTypingIndicator() {
+    const typing = document.getElementById('avatar-typing');
+    if (typing) {
+      typing.style.display = 'flex';
+    }
+  }
+
+  hideTypingIndicator() {
+    const typing = document.getElementById('avatar-typing');
+    if (typing) {
+      typing.style.display = 'none';
+    }
+  }
+
+  // AI Speech Bubble (for AI responses in browser)
+  showAISpeechBubble(message, duration = 5000) {
+    const bubble = document.getElementById('ai-speech-bubble');
+    const content = document.getElementById('ai-speech-content');
+    if (!bubble || !content) return;
+
+    content.textContent = message;
+    bubble.style.display = 'block';
+    bubble.classList.remove('fade-out');
+
+    if (this._aiSpeechTimeout) {
+      clearTimeout(this._aiSpeechTimeout);
+    }
+
+    if (duration > 0) {
+      this._aiSpeechTimeout = setTimeout(() => {
+        this.hideAISpeechBubble();
+      }, duration);
+    }
+  }
+
+  hideAISpeechBubble() {
+    const bubble = document.getElementById('ai-speech-bubble');
+    if (!bubble) return;
+
+    bubble.classList.add('fade-out');
+    setTimeout(() => {
+      bubble.style.display = 'none';
+      bubble.classList.remove('fade-out');
+    }, 300);
+  }
+
+  showAITypingIndicator() {
+    const typing = document.getElementById('ai-typing-indicator');
+    if (typing) {
+      typing.style.display = 'flex';
+    }
+  }
+
+  hideAITypingIndicator() {
+    const typing = document.getElementById('ai-typing-indicator');
+    if (typing) {
+      typing.style.display = 'none';
+    }
+  }
+
+  // Browser Avatar Speech Bubble (for the browser section)
+  showBrowserSpeechBubble(message, duration = 5000) {
+    const bubble = document.getElementById('browser-ai-speech-bubble');
+    const content = document.getElementById('browser-speech-content');
+    if (!bubble || !content) return;
+
+    content.textContent = message;
+    bubble.style.display = 'block';
+    bubble.classList.remove('fade-out');
+
+    if (this._browserSpeechTimeout) {
+      clearTimeout(this._browserSpeechTimeout);
+    }
+
+    if (duration > 0) {
+      this._browserSpeechTimeout = setTimeout(() => {
+        this.hideBrowserSpeechBubble();
+      }, duration);
+    }
+  }
+
+  hideBrowserSpeechBubble() {
+    const bubble = document.getElementById('browser-ai-speech-bubble');
+    if (!bubble) return;
+
+    bubble.classList.add('fade-out');
+    setTimeout(() => {
+      bubble.style.display = 'none';
+      bubble.classList.remove('fade-out');
+    }, 300);
+  }
+
+  showBrowserTypingIndicator() {
+    const typing = document.getElementById('browser-ai-typing');
+    if (typing) {
+      typing.style.display = 'flex';
+    }
+  }
+
+  hideBrowserTypingIndicator() {
+    const typing = document.getElementById('browser-ai-typing');
+    if (typing) {
+      typing.style.display = 'none';
+    }
+  }
+
+  // Avatar emotion states - merged with animation
+  setAvatarEmotion(emotion) {
+    console.log('[Avatar] Setting emotion:', emotion);
+
+    // Handle idle - play idle animation instead of stopping
+    if (emotion === 'idle') {
+      // Play Standard Idle animation if available
+      const idleAnim =
+        this._avatarActions['Standard Idle'] ||
+        this._avatarActions['Offensive Idle'] ||
+        this._avatarActions['Bored'] ||
+        this._avatarActions['Idle Dance'];
+
+      if (idleAnim) {
+        if (this._currentAvatarAction) {
+          this._currentAvatarAction.fadeOut(0.3);
+        }
+        idleAnim.reset().fadeIn(0.3).play();
+        this._currentAvatarAction = idleAnim;
+      }
+
+      // Update UI
+      document.querySelectorAll('.anim-btn').forEach((btn) => {
+        btn.classList.remove('active');
+      });
+      const idleBtn = document.getElementById('anim-idle');
+      if (idleBtn) idleBtn.classList.add('active');
+
+      const emotionDisplay = document.getElementById('emotion-name');
+      if (emotionDisplay) emotionDisplay.textContent = 'Standard Idle';
+
+      this._currentAvatarEmotion = 'idle';
+
+      // Update avatar emotion state
+      if (this._avatarEmotionState) {
+        this._avatarEmotionState.emotion = 'idle';
+      }
+      return;
+    }
+
+    // Prevent rapid changes if same animation
+    if (this._currentAvatarEmotion === emotion) {
+      return;
+    }
+
+    // Update button states
+    document.querySelectorAll('.anim-btn').forEach((btn) => {
+      btn.classList.remove('active');
+    });
+
+    // Update emotion display
+    const emotionName = document.getElementById('emotion-name');
+    if (emotionName) {
+      emotionName.textContent = emotion;
+    }
+
+    // Store current emotion
+    this._currentAvatarEmotion = emotion;
+
+    // Play animation if it exists
+    if (this._avatarActions && this._avatarActions[emotion]) {
+      if (this._currentAvatarAction) {
+        this._currentAvatarAction.fadeOut(0.3);
+      }
+      const action = this._avatarActions[emotion];
+      action.reset().fadeIn(0.3).play();
+      this._currentAvatarAction = action;
+    }
+
+    // Update the avatar emotion state if it exists (for VRM)
+    if (this._avatarEmotionState) {
+      this._avatarEmotionState.emotion = emotion;
+    }
+
+    // Auto-return to idle after animation finishes (for LoopOnce animations)
+    clearTimeout(this._emotionTimeout);
+    this._emotionTimeout = setTimeout(() => {
+      if (this._currentAvatarEmotion === emotion) {
+        this.setAvatarEmotion('idle');
+      }
+    }, 8000);
+  }
+
+  getEmotionEmoji(emotion) {
+    const emojis = {
+      thinking: '🤔',
+      happy: '😄',
+      sad: '😢',
+      surprised: '😮',
+      excited: '🎉',
+      confused: '😕',
+      speechless: '😐',
+      angry: '😠',
+      loves: '😍',
+      wave: '👋',
+      thumbsup: '👍',
+      idle: '🧍',
+      walking: '🚶',
+      listening: '👂',
+    };
+    return emojis[emotion] || '🧍';
+  }
+
+  // Trigger avatar animation based on context
+  triggerAvatarAnimation(type) {
+    switch (type) {
+      case 'thinking':
+        this.setAvatarEmotion('thinking');
+        this.showTypingIndicator();
+        break;
+      case 'happy':
+        this.setAvatarEmotion('happy');
+        break;
+      case 'excited':
+        this.setAvatarEmotion('excited');
+        break;
+      case 'speaking':
+        this.setAvatarEmotion('speechless');
+        break;
+      case 'react':
+        this.setAvatarEmotion('loves');
+        break;
+      case 'success':
+        this.setAvatarEmotion('thumbsup');
+        this.showSpeechBubble('✅ Done!', 3000);
+        break;
+      case 'error':
+        this.setAvatarEmotion('confused');
+        this.showSpeechBubble('❌ Oops!', 4000);
+        break;
+      case 'welcome':
+        this.setAvatarEmotion('wave');
+        this.showSpeechBubble('👋 Welcome back!', 3000);
+        break;
+      case 'bye':
+        this.setAvatarEmotion('wave');
+        this.showSpeechBubble('👋 Goodbye!', 3000);
+        break;
+      case 'loading':
+        this.showTypingIndicator();
+        this.showSpeechBubble('⏳ Loading...', 0);
+        break;
+      case 'idle':
+        this.hideTypingIndicator();
+        this.hideSpeechBubble();
+        break;
+      default:
+        break;
+    }
+  }
+
+  // AI Chat integration - show AI response in avatar bubble
+  showAIResponse(message, type = 'normal') {
+    this.hideTypingIndicator();
+
+    const emotionMap = {
+      normal: 'speechless',
+      success: 'happy',
+      error: 'confused',
+      question: 'thinking',
+      excited: 'excited',
+      greeting: 'wave',
+    };
+
+    const emotion = emotionMap[type] || 'speechless';
+    this.setAvatarEmotion(emotion);
+
+    // Truncate long messages for bubble
+    const displayMessage =
+      message.length > 100 ? message.substring(0, 100) + '...' : message;
+
+    this.showSpeechBubble(displayMessage, 5000);
+  }
+
+  // Public API for external integration
+  avatarReact(type, message) {
+    if (type === 'bubble' && message) {
+      this.showSpeechBubble(message);
+    } else if (type === 'emotion' && message) {
+      this.setAvatarEmotion(message);
+    } else {
+      this.triggerAvatarAnimation(type);
+    }
+  }
+
+  async handleVRMUpload(file) {
+    const uploadStatus = document.getElementById('upload-status');
+    const fileName = file.name.toLowerCase();
+
+    if (!fileName.endsWith('.vrm') && !fileName.endsWith('.xroid')) {
+      if (uploadStatus) {
+        uploadStatus.textContent = 'Please upload a .vrm or .xroid file';
+        uploadStatus.className = 'upload-status error';
+      }
+      return;
+    }
+
+    try {
+      console.log('[Avatar] Processing VRM file:', file.name);
+
+      if (uploadStatus) {
+        uploadStatus.textContent = 'Uploading...';
+        uploadStatus.className = 'upload-status';
+      }
+
+      // Convert file to base64 for persistent storage
+      const reader = new FileReader();
+      const dataUrl = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Save VRM file to disk for persistence
+      if (window.electronAPI) {
+        const saveResult = await window.electronAPI.saveVrmFile(
+          file.name,
+          dataUrl
+        );
+
+        if (saveResult.success) {
+          console.log('[Avatar] VRM file saved to disk:', saveResult.vrmPath);
+
+          // Save metadata with file reference
+          await window.electronAPI.saveAvatarCustomization({
+            fileName: file.name,
+            vrmPath: saveResult.vrmPath,
+            uploadedAt: new Date().toISOString(),
+          });
+
+          if (uploadStatus) {
+            uploadStatus.textContent = 'Avatar uploaded and saved!';
+            uploadStatus.className = 'upload-status success';
+          }
+
+          // Store VRM data URL for browser avatar
+          this._savedVrmDataUrl = dataUrl;
+
+          // Render avatar in 3D
+          this.renderAvatar3D(dataUrl);
+
+          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
+          // this.renderBrowserAvatar(dataUrl);
+        } else {
+          throw new Error(saveResult.error);
+        }
+      }
+    } catch (error) {
+      console.error('[Avatar] VRM upload error:', error);
+      if (uploadStatus) {
+        uploadStatus.textContent = 'Failed to upload avatar';
+        uploadStatus.className = 'upload-status error';
+      }
+    }
+  }
+
+  renderAvatar(style, primaryColor, accentColor) {
+    const container = document.getElementById('avatar-canvas');
+    if (!container) return;
+
+    // Clear existing
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
+
+    // Create Three.js scene with professional lighting
+    const scene = new THREE.Scene();
+
+    // Gradient-like background using multiple colored planes
+    const bgGeo = new THREE.PlaneGeometry(20, 20);
+    const bgMat1 = new THREE.MeshBasicMaterial({
+      color: 0x0f0f1a,
+      side: THREE.DoubleSide,
+    });
+    const bg1 = new THREE.Mesh(bgGeo, bgMat1);
+    bg1.position.z = -5;
+    scene.add(bg1);
+
+    // Add subtle grid floor
+    const gridHelper = new THREE.GridHelper(4, 20, 0x333355, 0x222244);
+    gridHelper.position.y = -0.1;
+    scene.add(gridHelper);
+
+    // Platform/pedestal for avatar
+    const platformGeo = new THREE.CylinderGeometry(0.5, 0.55, 0.08, 32);
+    const platformMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2a3a,
+      metalness: 0.8,
+      roughness: 0.3,
+    });
+    const platform = new THREE.Mesh(platformGeo, platformMat);
+    platform.position.y = -0.15;
+    platform.receiveShadow = true;
+    scene.add(platform);
+
+    // Platform ring glow
+    const ringGeo = new THREE.TorusGeometry(0.52, 0.015, 8, 64);
+    const ringMat = new THREE.MeshStandardMaterial({
+      color: primaryColor,
+      emissive: primaryColor,
+      emissiveIntensity: 0.5,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = -0.11;
+    scene.add(ring);
+
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      container.clientWidth / container.clientHeight,
+      0.1,
+      1000
+    );
+    camera.position.set(0, 1.6, 2.8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    container.appendChild(renderer.domElement);
+
+    // Professional lighting setup
+    const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
+    scene.add(ambientLight);
+
+    // Main key light
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    keyLight.position.set(3, 5, 4);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 2048;
+    keyLight.shadow.mapSize.height = 2048;
+    keyLight.shadow.camera.near = 0.5;
+    keyLight.shadow.camera.far = 20;
+    scene.add(keyLight);
+
+    // Fill light
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.4);
+    fillLight.position.set(-5, 0, -5);
+    scene.add(fillLight);
+
+    // Create avatar based on style
+    const avatar = new THREE.Group();
+
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: primaryColor,
+      roughness: 0.7,
+    });
+    const skinMat = new THREE.MeshStandardMaterial({
+      color: 0xffdbac,
+      roughness: 0.8,
+    });
+    const hairMat = new THREE.MeshStandardMaterial({
+      color: accentColor,
+      roughness: 0.9,
+    });
+    const metalMat = new THREE.MeshStandardMaterial({
+      color: primaryColor,
+      metalness: 0.8,
+      roughness: 0.3,
+    });
+    const glowMat = new THREE.MeshStandardMaterial({
+      color: accentColor,
+      emissive: accentColor,
+      emissiveIntensity: 0.5,
+    });
+
+    switch (style) {
+      case 'default':
+        this.createAvatarGeometry(avatar, 'default', bodyMat, skinMat, hairMat);
+        break;
+      case 'revolutionary':
+        this.createAvatarGeometry(
+          avatar,
+          'revolutionary',
+          bodyMat,
+          skinMat,
+          hairMat
+        );
+        break;
+      case 'journalist':
+        this.createAvatarGeometry(
+          avatar,
+          'journalist',
+          bodyMat,
+          skinMat,
+          hairMat
+        );
+        break;
+      case 'activist':
+        this.createAvatarGeometry(
+          avatar,
+          'activist',
+          bodyMat,
+          skinMat,
+          hairMat
+        );
+        break;
+      case 'robot':
+        this.createAvatarGeometry(avatar, 'robot', metalMat, metalMat, glowMat);
+        break;
+      case 'minimal':
+        this.createAvatarGeometry(avatar, 'minimal', bodyMat, skinMat, hairMat);
+        break;
+      default:
+        this.createAvatarGeometry(avatar, 'default', bodyMat, skinMat, hairMat);
+    }
+
+    avatar.position.y = -0.5;
+    scene.add(avatar);
+
+    // Animation loop
+    let isSpinning = false;
+    const animate = () => {
+      if (!container.parentElement) return;
+      requestAnimationFrame(animate);
+
+      if (isSpinning) {
+        avatar.rotation.y += 0.01;
+      }
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // Mouse drag rotation
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      isSpinning = false;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    });
+
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - previousMousePosition.x;
+      avatar.rotation.y += deltaX * 0.01;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    });
+
+    renderer.domElement.addEventListener('mouseup', () => {
+      isDragging = false;
+      isSpinning = true;
+    });
+
+    renderer.domElement.addEventListener('mouseleave', () => {
+      isDragging = false;
+    });
+
+    // Store for cleanup
+    this._currentAvatarRenderer = { renderer, scene, camera };
+  }
+
+  createAvatarGeometry(avatar, style, bodyMat, skinMat, hairMat) {
+    switch (style) {
+      case 'default': {
+        const head = new THREE.Mesh(
+          new THREE.SphereGeometry(0.25, 32, 32),
+          skinMat
+        );
+        head.position.y = 1.6;
+        head.castShadow = true;
+        avatar.add(head);
+
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.2, 0.25, 0.7, 32),
+          bodyMat
+        );
+        body.position.y = 1.0;
+        body.castShadow = true;
+        avatar.add(body);
+
+        const hair = new THREE.Mesh(
+          new THREE.SphereGeometry(
+            0.27,
+            32,
+            16,
+            0,
+            Math.PI * 2,
+            0,
+            Math.PI / 2
+          ),
+          hairMat
+        );
+        hair.position.y = 1.75;
+        hair.castShadow = true;
+        avatar.add(hair);
+
+        const eyeGeo = new THREE.SphereGeometry(0.03, 16, 16);
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.position.set(-0.08, 1.65, 0.22);
+        avatar.add(leftEye);
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        rightEye.position.set(0.08, 1.65, 0.22);
+        avatar.add(rightEye);
+        break;
+      }
+
+      case 'revolutionary': {
+        const revHead = new THREE.Mesh(
+          new THREE.SphereGeometry(0.25, 32, 32),
+          skinMat
+        );
+        revHead.position.y = 1.6;
+        revHead.castShadow = true;
+        avatar.add(revHead);
+
+        const revBody = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.22, 0.28, 0.8, 32),
+          bodyMat
+        );
+        revBody.position.y = 0.95;
+        revBody.castShadow = true;
+        avatar.add(revBody);
+
+        const revHair = new THREE.Mesh(
+          new THREE.ConeGeometry(0.3, 0.3, 8),
+          hairMat
+        );
+        revHair.position.y = 1.9;
+        revHair.castShadow = true;
+        avatar.add(revHair);
+
+        const bandana = new THREE.Mesh(
+          new THREE.TorusGeometry(0.26, 0.03, 8, 32),
+          hairMat
+        );
+        bandana.position.y = 1.8;
+        bandana.rotation.x = Math.PI / 2;
+        avatar.add(bandana);
+        break;
+      }
+
+      case 'journalist': {
+        const jourHead = new THREE.Mesh(
+          new THREE.SphereGeometry(0.25, 32, 32),
+          skinMat
+        );
+        jourHead.position.y = 1.6;
+        jourHead.castShadow = true;
+        avatar.add(jourHead);
+
+        const jourBody = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.2, 0.22, 0.7, 32),
+          bodyMat
+        );
+        jourBody.position.y = 1.0;
+        jourBody.castShadow = true;
+        avatar.add(jourBody);
+
+        const glassesFrame = new THREE.MeshStandardMaterial({
+          color: 0x333333,
+          metalness: 0.8,
+          roughness: 0.2,
+        });
+        const leftLens = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.06, 0.06, 0.02, 16),
+          glassesFrame
+        );
+        leftLens.position.set(-0.1, 1.65, 0.2);
+        leftLens.rotation.z = Math.PI / 2;
+        avatar.add(leftLens);
+        const rightLens = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.06, 0.06, 0.02, 16),
+          glassesFrame
+        );
+        rightLens.position.set(0.1, 1.65, 0.2);
+        rightLens.rotation.z = Math.PI / 2;
+        avatar.add(rightLens);
+        break;
+      }
+
+      case 'activist': {
+        const actHead = new THREE.Mesh(
+          new THREE.SphereGeometry(0.25, 32, 32),
+          skinMat
+        );
+        actHead.position.y = 1.6;
+        actHead.castShadow = true;
+        avatar.add(actHead);
+
+        const actBody = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.22, 0.26, 0.75, 32),
+          bodyMat
+        );
+        actBody.position.y = 0.97;
+        actBody.castShadow = true;
+        avatar.add(actBody);
+
+        const fistGeo = new THREE.SphereGeometry(0.08, 16, 16);
+        const leftFist = new THREE.Mesh(fistGeo, skinMat);
+        leftFist.position.set(-0.3, 1.3, 0.1);
+        avatar.add(leftFist);
+        const rightFist = new THREE.Mesh(fistGeo, skinMat);
+        rightFist.position.set(0.3, 1.3, 0.1);
+        avatar.add(rightFist);
+
+        const actHair = new THREE.Mesh(
+          new THREE.ConeGeometry(0.32, 0.15, 6),
+          hairMat
+        );
+        actHair.position.y = 1.88;
+        avatar.add(actHair);
+        break;
+      }
+
+      case 'robot': {
+        const robotGroup = new THREE.Group();
+
+        // Head - main
+        const headGeo = new THREE.BoxGeometry(0.45, 0.42, 0.4, 2, 2, 2);
+        const head = new THREE.Mesh(headGeo, bodyMat);
+        head.position.y = 1.6;
+        head.castShadow = true;
+        robotGroup.add(head);
+
+        // Face plate - darker
+        const facePlate = new THREE.Mesh(
+          new THREE.BoxGeometry(0.4, 0.32, 0.03),
+          new THREE.MeshStandardMaterial({
+            color: 0x1a1a2e,
+            metalness: 0.95,
+            roughness: 0.15,
+          })
+        );
+        facePlate.position.set(0, 1.58, 0.2);
+        robotGroup.add(facePlate);
+
+        // Visor - glowing
+        const visorMat = new THREE.MeshStandardMaterial({
+          color: accentColor,
+          emissive: accentColor,
+          emissiveIntensity: 1.2,
+          metalness: 0.1,
+          roughness: 0.1,
+        });
+        const visor = new THREE.Mesh(
+          new THREE.BoxGeometry(0.34, 0.09, 0.04),
+          visorMat
+        );
+        visor.position.set(0, 1.62, 0.22);
+        robotGroup.add(visor);
+
+        // Visor glow spheres
+        const glowMat = new THREE.MeshStandardMaterial({
+          color: accentColor,
+          emissive: accentColor,
+          emissiveIntensity: 1.5,
+        });
+        [-0.11, -0.04, 0.04, 0.11].forEach((x) => {
+          const glow = new THREE.Mesh(
+            new THREE.SphereGeometry(0.02, 12, 12),
+            glowMat
+          );
+          glow.position.set(x, 1.62, 0.24);
+          robotGroup.add(glow);
+        });
+
+        // Head side panels
+        const sidePanelMat = new THREE.MeshStandardMaterial({
+          color: 0x3a3a4a,
+          metalness: 0.9,
+          roughness: 0.2,
+        });
+        [-0.24, 0.24].forEach((x) => {
+          const sidePanel = new THREE.Mesh(
+            new THREE.BoxGeometry(0.04, 0.25, 0.2),
+            sidePanelMat
+          );
+          sidePanel.position.set(x, 1.58, 0.1);
+          robotGroup.add(sidePanel);
+        });
+
+        // Antenna base
+        const antBase = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.05, 0.06, 0.05, 16),
+          bodyMat
+        );
+        antBase.position.set(0, 1.95, 0);
+        robotGroup.add(antBase);
+
+        // Antenna pole
+        const antPole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.012, 0.012, 0.2, 8),
+          new THREE.MeshStandardMaterial({
+            color: 0x666666,
+            metalness: 0.9,
+            roughness: 0.3,
+          })
+        );
+        antPole.position.set(0, 2.08, 0);
+        robotGroup.add(antPole);
+
+        // Antenna tip - glowing
+        const antTip = new THREE.Mesh(
+          new THREE.SphereGeometry(0.04, 16, 16),
+          glowMat
+        );
+        antTip.position.set(0, 2.2, 0);
+        robotGroup.add(antTip);
+
+        // Neck
+        const neck = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.07, 0.09, 0.12, 16),
+          new THREE.MeshStandardMaterial({
+            color: 0x333344,
+            metalness: 0.85,
+            roughness: 0.35,
+          })
+        );
+        neck.position.y = 1.33;
+        robotGroup.add(neck);
+
+        // Chest - main body
+        const chest = new THREE.Mesh(
+          new THREE.BoxGeometry(0.48, 0.5, 0.32, 2, 2, 2),
+          bodyMat
+        );
+        chest.position.y = 1.03;
+        chest.castShadow = true;
+        robotGroup.add(chest);
+
+        // Chest panel
+        const chestPanel = new THREE.Mesh(
+          new THREE.BoxGeometry(0.38, 0.35, 0.025),
+          sidePanelMat
+        );
+        chestPanel.position.set(0, 1.03, 0.17);
+        robotGroup.add(chestPanel);
+
+        // Status lights (3 colored buttons)
+        const buttonColors = [0x00ff66, 0xffaa00, 0xff3366];
+        [-0.1, 0, 0.1].forEach((x, i) => {
+          const btnMat = new THREE.MeshStandardMaterial({
+            color: buttonColors[i],
+            emissive: buttonColors[i],
+            emissiveIntensity: 0.5,
+          });
+          const button = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.028, 0.028, 0.015, 16),
+            btnMat
+          );
+          button.rotation.x = Math.PI / 2;
+          button.position.set(x, 0.83, 0.175);
+          robotGroup.add(button);
+        });
+
+        // Speakers
+        [-0.16, 0.16].forEach((x) => {
+          const speaker = new THREE.Mesh(
+            new THREE.CircleGeometry(0.04, 16),
+            sidePanelMat
+          );
+          speaker.position.set(x, 1.15, 0.165);
+          robotGroup.add(speaker);
+        });
+
+        // Shoulders
+        const shoulderGeo = new THREE.SphereGeometry(0.11, 16, 16);
+        [-0.32, 0.32].forEach((x) => {
+          const shoulder = new THREE.Mesh(shoulderGeo, bodyMat);
+          shoulder.position.set(x, 1.28, 0);
+          shoulder.castShadow = true;
+          robotGroup.add(shoulder);
+        });
+
+        // Upper arms
+        const upperArmGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.32, 12);
+        const armMat = new THREE.MeshStandardMaterial({
+          color: primaryColor,
+          metalness: 0.75,
+          roughness: 0.3,
+        });
+        [-0.36, 0.36].forEach((x) => {
+          const arm = new THREE.Mesh(upperArmGeo, armMat);
+          arm.position.set(x, 1.05, 0);
+          arm.castShadow = true;
+          robotGroup.add(arm);
+        });
+
+        // Elbows
+        const elbowGeo = new THREE.SphereGeometry(0.07, 12, 12);
+        [-0.36, 0.36].forEach((x) => {
+          const elbow = new THREE.Mesh(elbowGeo, sidePanelMat);
+          elbow.position.set(x, 0.86, 0);
+          robotGroup.add(elbow);
+        });
+
+        // Forearms
+        const foreArmGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.28, 12);
+        [-0.36, 0.36].forEach((x) => {
+          const foreArm = new THREE.Mesh(foreArmGeo, armMat);
+          foreArm.position.set(x, 0.69, 0);
+          foreArm.castShadow = true;
+          robotGroup.add(foreArm);
+        });
+
+        // Hands
+        const handGeo = new THREE.BoxGeometry(0.09, 0.11, 0.07);
+        [-0.36, 0.36].forEach((x) => {
+          const hand = new THREE.Mesh(handGeo, sidePanelMat);
+          hand.position.set(x, 0.52, 0);
+          robotGroup.add(hand);
+        });
+
+        // Waist
+        const waist = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.13, 0.16, 0.14, 16),
+          sidePanelMat
+        );
+        waist.position.y = 0.74;
+        robotGroup.add(waist);
+
+        // Legs
+        const legGeo = new THREE.CylinderGeometry(0.075, 0.085, 0.42, 12);
+        [-0.13, 0.13].forEach((x) => {
+          const leg = new THREE.Mesh(legGeo, armMat);
+          leg.position.set(x, 0.48, 0);
+          leg.castShadow = true;
+          robotGroup.add(leg);
+        });
+
+        // Knees
+        const kneeGeo = new THREE.SphereGeometry(0.085, 12, 12);
+        [-0.13, 0.13].forEach((x) => {
+          const knee = new THREE.Mesh(kneeGeo, sidePanelMat);
+          knee.position.set(x, 0.26, 0);
+          robotGroup.add(knee);
+        });
+
+        // Lower legs
+        const lowerLegGeo = new THREE.CylinderGeometry(0.06, 0.075, 0.28, 12);
+        [-0.13, 0.13].forEach((x) => {
+          const lowerLeg = new THREE.Mesh(lowerLegGeo, armMat);
+          lowerLeg.position.set(x, 0.1, 0);
+          robotGroup.add(lowerLeg);
+        });
+
+        // Feet
+        const footGeo = new THREE.BoxGeometry(0.11, 0.07, 0.16);
+        [-0.13, 0.13].forEach((x) => {
+          const foot = new THREE.Mesh(footGeo, sidePanelMat);
+          foot.position.set(x, -0.08, 0.02);
+          robotGroup.add(foot);
+        });
+
+        avatar.add(robotGroup);
+        break;
+      }
+
+      case 'minimal': {
+        const minHead = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(0.2, 1),
+          skinMat
+        );
+        minHead.position.y = 1.65;
+        minHead.castShadow = true;
+        avatar.add(minHead);
+
+        const minBody = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(0.25, 1),
+          bodyMat
+        );
+        minBody.position.y = 1.05;
+        minBody.castShadow = true;
+        avatar.add(minBody);
+
+        const leftMinEye = new THREE.Mesh(
+          new THREE.BoxGeometry(0.04, 0.04, 0.02),
+          new THREE.MeshStandardMaterial({ color: 0x333333 })
+        );
+        leftMinEye.position.set(-0.06, 1.68, 0.18);
+        avatar.add(leftMinEye);
+        const rightMinEye = new THREE.Mesh(
+          new THREE.BoxGeometry(0.04, 0.04, 0.02),
+          new THREE.MeshStandardMaterial({ color: 0x333333 })
+        );
+        rightMinEye.position.set(0.06, 1.68, 0.18);
+        avatar.add(rightMinEye);
+        break;
+      }
+    }
+  }
+
+  async saveAvatarSettings() {
+    const activeStyle = document.querySelector('.style-btn.active');
+    const primaryColor = document.getElementById('avatar-primary').value;
+    const accentColor = document.getElementById('avatar-accent').value;
+
+    const avatarData = {
+      style: activeStyle?.dataset.style || 'default',
+      primaryColor,
+      accentColor,
+      ...this.avatarData,
+    };
+
+    try {
+      if (window.electronAPI) {
+        await window.electronAPI.saveAvatarCustomization(avatarData);
+        this.avatarData = avatarData;
+        alert('Avatar settings saved!');
+      }
+    } catch (error) {
+      console.error('[Avatar] Save error:', error);
+      alert('Failed to save avatar settings');
     }
   }
 
@@ -1628,6 +4515,19 @@ class TheRevApp {
     if (window.electronAPI) {
       this.avatarData = await window.electronAPI.getAvatarData();
       this.updateAvatarDisplay();
+
+      // If there's a saved VRM, load it for the browser avatar
+      if (this.avatarData?.fileName) {
+        const vrmResult = await window.electronAPI.loadVrmFile(
+          this.avatarData.fileName
+        );
+        if (vrmResult.success && vrmResult.dataUrl) {
+          console.log('[Avatar] Loaded saved VRM for browser');
+          this._savedVrmDataUrl = vrmResult.dataUrl;
+          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
+          // this.renderBrowserAvatar(vrmResult.dataUrl);
+        }
+      }
     }
   }
 
@@ -1817,6 +4717,10 @@ class TheRevApp {
     if (statusText) statusText.textContent = '🤖 Rev is thinking...';
     if (aiResponseArea) aiResponseArea.style.display = 'none';
 
+    // AI Avatar: Show thinking/typing state
+    this.showAITypingIndicator();
+    this.showAISpeechBubble('🤔 Thinking...', 0);
+
     try {
       if (window.electronAPI?.['ai-brain:execute']) {
         const result = await window.electronAPI['ai-brain:execute']({
@@ -1826,8 +4730,13 @@ class TheRevApp {
 
         console.log('AI Brain result:', result);
 
+        // AI Avatar: Hide typing, show response
+        this.hideAITypingIndicator();
+
         if (result.success) {
           if (result.approvalRequest) {
+            // AI Avatar: Show approval emotion
+            this.showAISpeechBubble('🤔 Need your approval...', 4000);
             if (aiResponseText) {
               aiResponseText.textContent = result.approvalRequest.actions
                 .map((a) => `${a.type}: ${a.reason}`)
@@ -1841,6 +4750,8 @@ class TheRevApp {
               originalCommand: command,
             };
           } else if (result.actions) {
+            // AI Avatar: Show success
+            this.showAISpeechBubble('✅ Done!', 3000);
             if (aiResponseText)
               aiResponseText.textContent = `Executed: ${result.actions.map((a) => a.type).join(', ')}`;
             if (aiApprovalSection) aiApprovalSection.style.display = 'none';
@@ -1849,6 +4760,8 @@ class TheRevApp {
             input.value = '';
           }
         } else {
+          // AI Avatar: Show error
+          this.showAISpeechBubble('❌ Oops, something went wrong...', 4000);
           if (aiResponseText)
             aiResponseText.textContent = 'Error: ' + (result.error || 'Failed');
           if (aiResponseArea) aiResponseArea.style.display = 'block';
@@ -1857,6 +4770,9 @@ class TheRevApp {
         }
       }
     } catch (error) {
+      // AI Avatar: Show error on catch
+      this.hideAITypingIndicator();
+      this.showAISpeechBubble('❌ Error occurred', 4000);
       if (statusText) statusText.textContent = 'Error: ' + error.message;
     }
   }
@@ -1890,6 +4806,8 @@ class TheRevApp {
     const command = this.currentApprovalRequest.originalCommand;
 
     if (!approved) {
+      // AI Avatar: Show sad/rejected reaction
+      this.showAISpeechBubble('😕 Maybe next time...', 3000);
       if (statusText) statusText.textContent = '❌ Denied';
       if (aiResponseText) aiResponseText.textContent = 'Action denied';
       if (aiApprovalSection) aiApprovalSection.style.display = 'none';
@@ -1898,6 +4816,8 @@ class TheRevApp {
     }
 
     // Approved - open AI browser window
+    // AI Avatar: Show excited reaction
+    this.showAISpeechBubble("🎉 Let's go!", 3000);
     if (statusText) statusText.textContent = '✅ Opening AI Browser...';
 
     try {
