@@ -29,6 +29,9 @@ import {
 import { SmartFallbackService } from './ai/SmartFallbackService';
 import { browserAgent } from './ai/BrowserAgent';
 import { NewsIngestionService } from './services/news/NewsIngestionService';
+import { ollamaRepair, RepairResult } from './ai/OllamaRepairService';
+import { createOllamaAdapter } from './ai/adapters/OllamaAdapter';
+import { websiteRouter } from './ai/WebsiteRouter';
 
 const app = express();
 const PORT = 4000;
@@ -107,13 +110,21 @@ async function initializeAIProviders() {
       return;
     }
 
-    // Use configured model or default to tinyllama, preferring CPU variants
-    const configuredModel = process.env.OLLAMA_MODEL || 'tinyllama';
+    // Use configured model or default to mistral (better quality than tinyllama)
+    const configuredModel = process.env.OLLAMA_MODEL || 'mistral';
 
-    // First try to find CPU variant, then fallback to configured model name
-    let model = availableModels.find(
-      (m) => m.includes('cpu') && m.includes('tinyllama')
-    );
+    // Prefer better models over tinyllama
+    const modelPriority = ['mistral', 'llama3', 'phi3', 'gemma2', 'tinyllama'];
+    let model: string | undefined;
+    
+    for (const priority of modelPriority) {
+      const found = availableModels.find((m) => m.toLowerCase().includes(priority));
+      if (found) {
+        model = found;
+        break;
+      }
+    }
+    
     if (!model) {
       model = availableModels.find((m) => m.startsWith(configuredModel));
     }
@@ -122,16 +133,52 @@ async function initializeAIProviders() {
     }
 
     await ollama.initialize({ baseUrl, model });
+    const selectedModel = model;
+    
     if (await ollama.isHealthy()) {
-      await adapterFactory.registerAdapter(AIProvider.OPEN_SOURCE, ollama);
-      configuredProviders.set(AIProvider.OPEN_SOURCE, { baseUrl, model });
-      console.log(`✅ Ollama adapter initialized (model: ${model})`);
+      // Test the model to ensure it's working (catches corruption issues)
+      console.log(`[Ollama] Testing model ${selectedModel}...`);
+      const testResult = await ollama.testModel();
+      
+      if (testResult.success) {
+        await adapterFactory.registerAdapter(AIProvider.OPEN_SOURCE, ollama);
+        configuredProviders.set(AIProvider.OPEN_SOURCE, { baseUrl, model: selectedModel });
+        console.log(`✅ Ollama adapter initialized (model: ${selectedModel})`);
+      } else if (testResult.repairTriggered) {
+        console.log(`[Ollama] Auto-repair triggered for model ${selectedModel}`);
+        // Re-test after repair
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const retest = await ollama.testModel();
+        if (retest.success) {
+          await adapterFactory.registerAdapter(AIProvider.OPEN_SOURCE, ollama);
+          configuredProviders.set(AIProvider.OPEN_SOURCE, { baseUrl, model: selectedModel });
+          console.log(`✅ Ollama adapter initialized after repair (model: ${selectedModel})`);
+        } else {
+          console.log(`[Ollama] Repair did not fix the issue: ${retest.error}`);
+          console.log(`[Ollama] Users can try /api/ollama/repair endpoint for manual repair`);
+        }
+      }
     }
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.log(
       '⚠️ Ollama not available:',
-      err instanceof Error ? err.message : 'Unknown error'
+      errorMsg
     );
+    // Try to repair even on initial failure
+    if (errorMsg.includes('CUDA') || errorMsg.includes('GPU') || errorMsg.includes('runner')) {
+      console.log('[Ollama] Attempting auto-repair on startup...');
+      const repairResult = await ollamaRepair.performRepair({ 
+        autoRepair: true, 
+        allowReinstall: true,
+        modelToTest: 'mistral'
+      });
+      if (repairResult.success) {
+        console.log('[Ollama] Startup repair successful!');
+      } else {
+        console.log('[Ollama] Startup repair failed:', repairResult.userMessage);
+      }
+    }
   }
 
   // Start health monitoring
@@ -194,9 +241,28 @@ async function startServer() {
           intentResult.confidence
         );
 
-        // For automation/deterministic tasks, use Browser Agent to execute in browser
+        // For navigation intents - open browser immediately, do context async
+        if (intentResult.intent === AIIntentType.NAVIGATE_URL) {
+          const route = websiteRouter.route(command);
+          console.log('[Ask Rev] Routing to:', route.website, 'URL:', route.url);
+          if (route.query) {
+            console.log('[Ask Rev] Search query:', route.query);
+          }
+
+          // Return immediately - open browser window now, context async
+          return res.json({
+            success: true,
+            url: route.url,
+            website: route.website,
+            intent: intentResult.intent,
+            context: route.query 
+              ? `Searching ${route.website} for "${route.query}"...`
+              : `Opening ${route.website}...`,
+          });
+        }
+
+        // For other deterministic tasks, use Browser Agent
         if (
-          intentResult.intent === AIIntentType.NAVIGATE_URL ||
           intentResult.intent === AIIntentType.DETERMINISTIC_AUTOMATION ||
           intentResult.intent === AIIntentType.FORM_FILLING ||
           intentResult.intent === AIIntentType.SCREEN_SCRAPE ||
@@ -208,7 +274,6 @@ async function startServer() {
             const agentResult = await browserAgent.executeTask(command);
 
             if (agentResult.success && agentResult.results) {
-              // Get screenshot of final state
               let screenshot = null;
               try {
                 const ssRes = await fetch(
@@ -227,28 +292,17 @@ async function startServer() {
                 screenshot,
                 intent: intentResult.intent,
                 message: `Executed ${agentResult.actions.length} browser actions`,
-                url: agentResult.results[0]?.result?.url || null,
                 context: agentResult.context || null,
-              });
-            } else {
-              // Fallback to URL navigation
-              const url = extractNavigationUrl(command, intentResult);
-              return res.json({
-                success: true,
-                url,
-                command,
-                intent: intentResult.intent,
-                confidence: intentResult.confidence,
-                fallback: true,
               });
             }
           } catch (agentError) {
             console.error('[Ask Rev] Browser agent error:', agentError);
-            // Fallback to simple navigation
-            const url = extractNavigationUrl(command, intentResult);
+            // Fallback to website router
+            const route = websiteRouter.route(command);
             return res.json({
               success: true,
-              url,
+              url: route.url,
+              website: route.website,
               command,
               intent: intentResult.intent,
               confidence: intentResult.confidence,
@@ -520,6 +574,61 @@ async function startServer() {
       return res.json({ ready: false, error: 'Ollama not available' });
     });
 
+    // Ollama diagnostics and repair endpoint
+    app.get('/api/ollama/diagnostics', async (req, res) => {
+      try {
+        const ollamaAdapter = createOllamaAdapter({
+          baseUrl: process.env.OLLAMA_URL || 'http://localhost:11434',
+          model: process.env.OLLAMA_MODEL || 'llama3',
+        });
+        const diagnostics = await ollamaAdapter.getDiagnostics();
+        res.json(diagnostics);
+      } catch (error) {
+        res.json({
+          healthy: false,
+          running: false,
+          modelsAvailable: [],
+          modelTested: false,
+          modelTestSuccess: false,
+          lastError: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    });
+
+    // Trigger Ollama repair (for when users report issues)
+    app.post('/api/ollama/repair', async (req, res) => {
+      console.log('[API] Ollama repair requested');
+      try {
+        const result: RepairResult = await ollamaRepair.performRepair({
+          autoRepair: true,
+          allowReinstall: true,
+          modelToTest: process.env.OLLAMA_MODEL || 'llama3'
+        });
+        
+        if (result.success) {
+          console.log('[API] Ollama repair successful:', result.actionsPerformed);
+        } else {
+          console.log('[API] Ollama repair failed:', result.userMessage);
+        }
+        
+        res.json({
+          success: result.success,
+          repairType: result.repairType,
+          actions: result.actionsPerformed,
+          userMessage: result.userMessage,
+          requiresRestart: result.requiresRestart,
+          userActionRequired: result.userActionRequired
+        });
+      } catch (error) {
+        console.error('[API] Ollama repair error:', error);
+        res.json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          userMessage: 'Repair failed. Please try restarting the app or reinstalling Ollama manually.'
+        });
+      }
+    });
+
     const newsIngestionService = new NewsIngestionService();
 
     // Get news articles
@@ -668,65 +777,6 @@ async function startServer() {
   } catch (error) {
     console.error('DB init error:', error);
   }
-}
-
-function extractNavigationUrl(command: string, intentResult: any): string {
-  const lowerCommand = command.toLowerCase();
-
-  // YouTube
-  if (lowerCommand.includes('youtube') || lowerCommand.includes('yt ')) {
-    let query = '';
-    const searchMatch = command.match(
-      /(?:search|find|watch|look up)[\s]+(.+?)(?:\s+on|\s+in|\s+at|\s+youtube|$)/i
-    );
-    const ytMatch = command.match(/(?:youtube|yt)[\s:,-]*(.+)/i);
-
-    if (searchMatch?.[1]) query = searchMatch[1].trim();
-    else if (ytMatch?.[1])
-      query = ytMatch[1]
-        .replace(/^(go to|search|find|to|and)[\s]*/gi, '')
-        .trim();
-
-    return query
-      ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
-      : 'https://www.youtube.com';
-  }
-
-  // Gmail
-  if (lowerCommand.includes('gmail') || lowerCommand.includes('email')) {
-    return 'https://mail.google.com';
-  }
-
-  // Reddit
-  if (lowerCommand.includes('reddit')) {
-    const match = command.match(
-      /(?:search|find|look up)[\s]+(.+?)(?:\s+on|\s+reddit|$)/i
-    );
-    const query = match?.[1]?.trim();
-    return query
-      ? `https://www.reddit.com/search/?q=${encodeURIComponent(query)}`
-      : 'https://reddit.com';
-  }
-
-  // Generic search
-  if (lowerCommand.includes('search') || lowerCommand.includes('google')) {
-    let query = command
-      .replace(/^.*?(?:search|google)[:\s]*/gi, '')
-      .replace(/^(?:go to|for|on|in|to|and|then)[\s]*/gi, '')
-      .trim();
-    if (!query) {
-      const m = command.match(/(?:search|find|look up)[\s]+(.+)/i);
-      query = m?.[1]?.trim() || command;
-    }
-    return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-  }
-
-  // Check for URL entity
-  const urlMatch = command.match(/(https?:\/\/[^\s]+)|(www\.[^\s]+)/i);
-  if (urlMatch) return urlMatch[0];
-
-  // Default - search the command
-  return `https://www.google.com/search?q=${encodeURIComponent(command)}`;
 }
 
 startServer();

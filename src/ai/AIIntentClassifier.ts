@@ -108,6 +108,10 @@ const DEFAULT_INTENT_PATTERNS: IntentPattern[] = [
       /^(youtube|gmail|reddit|google)\s+(.+)/i,
       /find\s+(.+?)\s+on\s+(youtube|google|reddit)/i,
       /look\s+up\s+(.+?)\s+on\s+(youtube|google)/i,
+      /search\s+youtube\s+(for\s+)?/i,
+      /search\s+google\s+(for\s+)?/i,
+      /search\s+reddit\s+(for\s+)?/i,
+      /youtube\s+(.+)/i,
     ],
     keywords: [
       'go to',

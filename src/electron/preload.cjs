@@ -110,6 +110,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('deep-link', (event, url) => callback(url));
   },
 
+  // Browser window events
+  onBrowserWindowOpened: (callback) => {
+    ipcRenderer.on('browser-window-opened', callback);
+  },
+  onBrowserWindowClosed: (callback) => {
+    ipcRenderer.on('browser-window-closed', callback);
+  },
+
   // Tasks
   getTasks: (filter) => ipcRenderer.invoke('get-tasks', filter),
 

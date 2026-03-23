@@ -28,20 +28,32 @@ class TheRevApp {
     this._avatarActions = {};
     this._currentAvatarAction = null;
 
-    // Avatar animation mode settings
+    // Avatar animation settings
     this._avatarSettings = {
-      profile: {
-        enabled: true,
-        cycleInterval: 30,
-        selectedAnimations: [],
-      },
-      chat: {
-        enabled: true,
-        selectedAnimations: [],
-      },
+      enabled: true,
+      cycleInterval: 30,
     };
     this._profileCycleTimer = null;
     this._profileCurrentIndex = 0;
+
+    // Avatar scene cache
+    this._avatarSceneReady = false;
+    this._avatarAnimationsReady = false;
+    this._avatarAnimatingPaused = false;
+
+    // Voice control state
+    this._voiceRecognition = null;
+    this._isListening = false;
+    this._voiceTranscript = '';
+
+    // Tab cache for instant switching
+    this._tabCache = {
+      threads: { data: null, timestamp: 0 },
+      news: { data: null, timestamp: 0, rawData: null },
+      profile: { data: null, timestamp: 0 },
+      avatar: { loaded: false, vrmDataUrl: null, fileName: null },
+    };
+    this._cacheTimeout = 5 * 60 * 1000; // 5 minutes
 
     this.init();
   }
@@ -60,6 +72,7 @@ class TheRevApp {
     this.setupElectronListeners();
     this.loadInitialContent();
     this.setupWebviewListeners();
+    this.setupVoiceControl();
 
     // Handle deep links from Electron
     this.handleDeepLinks();
@@ -563,6 +576,150 @@ class TheRevApp {
     });
   }
 
+  setupVoiceControl() {
+    const voiceBtn = document.getElementById('voice-btn');
+    if (!voiceBtn) return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.log('[VoiceControl] Speech recognition not supported');
+      voiceBtn.style.display = 'none';
+      return;
+    }
+
+    this._voiceRecognition = new SpeechRecognition();
+    this._voiceRecognition.continuous = true;
+    this._voiceRecognition.interimResults = true;
+    this._voiceRecognition.lang = 'en-US';
+
+    voiceBtn.addEventListener('click', () => {
+      if (this._isListening) {
+        this.stopListening(true);
+      } else {
+        this.startListening();
+      }
+    });
+
+    this._voiceRecognition.onresult = (event) => {
+      const result = event.results[event.results.length - 1];
+      const transcript = result[0].transcript;
+      const isFinal = result.isFinal;
+      
+      this._voiceTranscript = transcript;
+      
+      const transcriptEl = document.getElementById('voice-transcript');
+      if (transcriptEl) {
+        transcriptEl.textContent = `"${transcript}"`;
+      }
+
+      const input = document.getElementById('ai-command-input');
+      if (input && isFinal && transcript.trim()) {
+        input.value = transcript;
+        this.stopListening(true);
+        this.executeAICommand();
+      }
+    };
+
+    this._voiceRecognition.onerror = (event) => {
+      console.error('[VoiceControl] Error:', event.error);
+      this.stopListening(false);
+      if (event.error === 'not-allowed') {
+        alert('Microphone access denied. Please allow microphone access.');
+      }
+    };
+
+    this._voiceRecognition.onend = () => {
+      if (this._isListening) {
+        try {
+          this._voiceRecognition.start();
+        } catch (e) {}
+      }
+    };
+
+    console.log('[VoiceControl] Voice control initialized');
+  }
+
+  startListening() {
+    if (!this._voiceRecognition || this._isListening) return;
+
+    try {
+      this._voiceRecognition.start();
+      this._isListening = true;
+      this._voiceTranscript = '';
+
+      // Update UI
+      const voiceBtn = document.getElementById('voice-btn');
+      const voiceIndicator = document.getElementById('voice-indicator');
+      const transcriptEl = document.getElementById('voice-transcript');
+      
+      if (voiceBtn) {
+        voiceBtn.classList.add('listening');
+        voiceBtn.textContent = '🔴';
+      }
+      if (voiceIndicator) {
+        voiceIndicator.style.display = 'block';
+      }
+      if (transcriptEl) {
+        transcriptEl.textContent = '';
+      }
+
+      console.log('[VoiceControl] Started listening');
+    } catch (error) {
+      console.error('[VoiceControl] Failed to start:', error);
+    }
+  }
+
+  stopListening(clearTranscript = true) {
+    if (!this._voiceRecognition) return;
+
+    this._isListening = false;
+
+    try {
+      this._voiceRecognition.stop();
+    } catch (e) {}
+
+    const voiceBtn = document.getElementById('voice-btn');
+    const voiceIndicator = document.getElementById('voice-indicator');
+    const transcriptEl = document.getElementById('voice-transcript');
+    
+    if (voiceBtn) {
+      voiceBtn.classList.remove('listening');
+      voiceBtn.textContent = '🎤';
+    }
+    if (voiceIndicator) {
+      voiceIndicator.style.display = 'none';
+    }
+    if (transcriptEl && !clearTranscript) {
+      // Keep the transcript if we're stopping due to error
+    } else if (transcriptEl) {
+      transcriptEl.textContent = '';
+    }
+
+    console.log('[VoiceControl] Stopped listening');
+  }
+
+  speakText(text) {
+    if (!window.speechSynthesis) {
+      console.log('[VoiceControl] Speech synthesis not supported');
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+    
+    // Try to find a good English voice
+    const voices = speechSynthesis.getVoices();
+    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Natural')) ||
+                        voices.find(v => v.lang.startsWith('en'));
+    if (englishVoice) {
+      utterance.voice = englishVoice;
+    }
+
+    window.speechSynthesis.speak(utterance);
+  }
+
   setupEventListeners() {
     console.log('[setupEventListeners] Setting up all event listeners');
     // Use event delegation - attach to document for dynamically created elements
@@ -638,14 +795,6 @@ class TheRevApp {
       if (target.id === 'ai-command-btn' || target.closest('#ai-command-btn')) {
         this.executeAICommand();
       }
-
-      // New Window button
-      if (
-        target.id === 'browser-new-window' ||
-        target.closest('#browser-new-window')
-      ) {
-        this.openNewBrowserWindow();
-      }
     });
 
     document.addEventListener('keypress', (e) => {
@@ -653,24 +802,6 @@ class TheRevApp {
         this.executeAICommand();
       }
     });
-
-    // Browser mode switch
-    const browserModeSelect = document.getElementById('browser-input-mode');
-    if (browserModeSelect) {
-      browserModeSelect.addEventListener('change', (e) => {
-        const isAiMode = e.target.value === 'ai';
-        const input = document.getElementById('ai-command-input');
-        const btn = document.getElementById('ai-command-btn');
-        if (input) {
-          input.placeholder = isAiMode
-            ? 'Ask Rev: "Go to Gmail and find emails about meeting"'
-            : 'Type a website: youtube.com, gmail.com';
-        }
-        if (btn) {
-          btn.textContent = isAiMode ? '🤖 Ask Rev' : 'Go';
-        }
-      });
-    }
 
     // AI approval buttons
     document.getElementById('ai-approve-btn')?.addEventListener('click', () => {
@@ -694,6 +825,21 @@ class TheRevApp {
       .querySelector('.close-btn')
       .addEventListener('click', () => this.closeAvatarCustomizer());
 
+    // Animations panel button
+    document.getElementById('animations-btn')?.addEventListener('click', () => {
+      this.showAnimationsModal();
+    });
+
+    // Close animations panel when clicking outside
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('animations-panel');
+      const btn = document.getElementById('animations-btn');
+      if (panel && panel.classList.contains('active') && 
+          !panel.contains(e.target) && !btn.contains(e.target)) {
+        this.closeAnimationsModal();
+      }
+    });
+
     // Profile photo upload
     document
       .getElementById('upload-photo-btn')
@@ -703,19 +849,6 @@ class TheRevApp {
     document
       .getElementById('profile-pic-input')
       ?.addEventListener('change', (e) => this.handleProfilePicUpload(e));
-
-    // Browser controls
-    document
-      .getElementById('browser-navigate')
-      ?.addEventListener('click', () => this.navigateBrowser());
-    document
-      .getElementById('browser-new-window')
-      ?.addEventListener('click', () => this.openNewBrowserWindow());
-    document
-      .getElementById('browser-url')
-      ?.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') this.navigateBrowser();
-      });
 
     // Quick site buttons - also use delegation
     document.addEventListener('click', (e) => {
@@ -983,11 +1116,39 @@ class TheRevApp {
           this.setAvatarEmotion(emotion);
         });
       }
+
+      // Browser window listeners
+      if (window.electronAPI.onBrowserWindowOpened) {
+        window.electronAPI.onBrowserWindowOpened(() => {
+          this._browserWindowOpen = true;
+          // Pause avatar when browser window opens
+          if (this._avatarSceneReady) {
+            this._avatarAnimatingPaused = true;
+            if (this._avatarRenderer?.domElement) {
+              this._avatarRenderer.domElement.style.display = 'none';
+            }
+            console.log('[Avatar] Paused - browser window opened');
+          }
+        });
+      }
+      if (window.electronAPI.onBrowserWindowClosed) {
+        window.electronAPI.onBrowserWindowClosed(() => {
+          this._browserWindowOpen = false;
+          // Resume avatar when browser window closes (if on avatar or profile section)
+          if ((this.currentSection === 'avatar' || this.currentSection === 'profile') && this._avatarSceneReady) {
+            this._avatarAnimatingPaused = false;
+            if (this._avatarRenderer?.domElement) {
+              this._avatarRenderer.domElement.style.display = 'block';
+            }
+            console.log('[Avatar] Resumed - browser window closed');
+          }
+        });
+      }
     }
   }
 
-  switchSection(section) {
-    console.log('[switchSection] Switching to:', section);
+  switchSection(section, forceRefresh = false) {
+    console.log('[switchSection] Switching to:', section, 'forceRefresh:', forceRefresh);
 
     // Update navigation
     document
@@ -995,7 +1156,6 @@ class TheRevApp {
       .forEach((btn) => btn.classList.remove('active'));
 
     const btn = document.getElementById(`${section}-btn`);
-    console.log('[switchSection] Button element:', btn);
     if (btn) btn.classList.add('active');
 
     // Update content sections
@@ -1004,16 +1164,28 @@ class TheRevApp {
       .forEach((sec) => sec.classList.remove('active'));
 
     const sectionEl = document.getElementById(`${section}-section`);
-    console.log(
-      '[switchSection] Section element:',
-      sectionEl,
-      'id:',
-      `${section}-section`
-    );
     if (sectionEl) sectionEl.classList.add('active');
     else console.log('[switchSection] Section not found!');
 
     this.currentSection = section;
+
+    // Resume avatar for avatar and profile sections, pause for others
+    if ((section === 'avatar' || section === 'profile') && this._avatarSceneReady && !this._browserWindowOpen) {
+      this._avatarAnimatingPaused = false;
+      if (this._avatarRenderer?.domElement) {
+        this._avatarRenderer.domElement.style.display = 'block';
+      }
+      console.log('[Avatar] Resumed for', section);
+    } else {
+      this._avatarAnimatingPaused = true;
+      if (this._avatarRenderer?.domElement) {
+        this._avatarRenderer.domElement.style.display = 'none';
+      }
+    }
+
+    // Check cache first (unless force refresh)
+    const cache = this._tabCache[section];
+    const isCacheValid = cache?.data && (Date.now() - cache.timestamp < this._cacheTimeout);
 
     // Load section-specific data
     switch (section) {
@@ -1030,20 +1202,25 @@ class TheRevApp {
         this.loadShardHealth();
         break;
       case 'news':
-        this.loadNews();
+        if (forceRefresh || !isCacheValid) {
+          this.loadNews(false);
+        } else if (cache?.data) {
+          this.loadNews(true);
+        }
         break;
       case 'profile':
-        this.loadProfile();
+        if (forceRefresh || !isCacheValid) {
+          this.loadProfile();
+        }
         break;
       case 'threads':
-        this.loadThreads();
+        if (forceRefresh || !isCacheValid) {
+          this.loadThreads(false);
+        } else if (cache?.data) {
+          this.loadThreads(true);
+        }
         break;
       case 'browser':
-        // Try to render browser avatar if we have avatar data
-        if (this.avatarData?.vrmPath && this._savedVrmDataUrl) {
-          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
-          // this.renderBrowserAvatar(this._savedVrmDataUrl);
-        }
         break;
       case 'ai-settings':
         break;
@@ -1053,19 +1230,21 @@ class TheRevApp {
     }
   }
 
-  async loadThreads() {
-    console.log('[Threads] loadThreads called');
-    console.log(
-      '[Threads] jwtToken:',
-      this.jwtToken ? 'present' : 'missing',
-      'currentUser:',
-      this.currentUser?.userName
-    );
+  async loadThreads(useCache = false) {
+    console.log('[Threads] loadThreads called, useCache:', useCache);
 
     if (!this.jwtToken || !this.currentUser) {
       console.log('[Threads] Not logged in, skipping load');
-      // Show login prompt
       alert('Please log in to view threads');
+      return;
+    }
+
+    const container = document.querySelector('.threads-container');
+    
+    // Check cache first
+    if (useCache && this._tabCache.threads.data) {
+      if (container) container.innerHTML = this._tabCache.threads.data;
+      this.bindThreadsClickHandlers();
       return;
     }
 
@@ -1246,10 +1425,29 @@ class TheRevApp {
               });
             });
         }
+        
+        // Save to cache
+        this._tabCache.threads = {
+          data: container?.innerHTML || '',
+          timestamp: Date.now()
+        };
       }
     } catch (error) {
       console.error('Error loading threads:', error);
     }
+  }
+
+  bindThreadsClickHandlers() {
+    const container = document.querySelector('.threads-container');
+    if (!container) return;
+    
+    container.querySelectorAll('.url-link.clickable, .post-media.video.clickable').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = el.dataset.url;
+        if (url) this.showOpenModeModal(url, '', 'Link');
+      });
+    });
   }
 
   async loadProfile() {
@@ -1299,39 +1497,37 @@ class TheRevApp {
         'http://localhost:4000' + this.currentUser.profilePicUrl;
     }
 
-    // Load avatar if user has one saved locally
+    // Load avatar if user has one saved locally (use cache if available)
     if (window.electronAPI) {
-      const savedAvatar = await window.electronAPI.getAvatarData();
-      if (savedAvatar && savedAvatar.fileName) {
-        // Update avatar in header
-        const avatarContainer = document.getElementById('avatar-container');
-        if (avatarContainer) {
-          avatarContainer.innerHTML = `
-            <div class="avatar-mini" style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center;">
-              <span style="color: white; font-weight: bold;">${this.currentUser?.userName?.charAt(0).toUpperCase() || 'U'}</span>
-            </div>
-          `;
+      // Use cached VRM if available
+      if (this._tabCache.avatar.loaded && this._tabCache.avatar.vrmDataUrl) {
+        this._savedVrmDataUrl = this._tabCache.avatar.vrmDataUrl;
+        this.renderAvatar3D(this._tabCache.avatar.vrmDataUrl, 'profile-avatar-3d-container');
+        
+        const profilePlaceholder = document.getElementById('profile-avatar-placeholder');
+        if (profilePlaceholder) {
+          profilePlaceholder.innerHTML = '';
         }
-
-        // Load VRM from disk and render in profile section
-        const vrmResult = await window.electronAPI.loadVrmFile(
-          savedAvatar.fileName
-        );
-        if (vrmResult.success && vrmResult.dataUrl) {
-          // Store VRM data URL for browser avatar
-          this._savedVrmDataUrl = vrmResult.dataUrl;
-
-          this.renderAvatar3D(vrmResult.dataUrl, 'profile-avatar-3d-container');
-
-          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
-          // this.renderBrowserAvatar(vrmResult.dataUrl);
-
-          // Update placeholder text
-          const profilePlaceholder = document.getElementById(
-            'profile-avatar-placeholder'
-          );
-          if (profilePlaceholder) {
-            profilePlaceholder.innerHTML = '';
+      } else {
+        // Load from disk if not cached
+        const savedAvatar = await window.electronAPI.getAvatarData();
+        if (savedAvatar && savedAvatar.fileName) {
+          const vrmResult = await window.electronAPI.loadVrmFile(savedAvatar.fileName);
+          if (vrmResult.success && vrmResult.dataUrl) {
+            // Cache it
+            this._tabCache.avatar = {
+              loaded: true,
+              vrmDataUrl: vrmResult.dataUrl,
+              fileName: savedAvatar.fileName
+            };
+            
+            this._savedVrmDataUrl = vrmResult.dataUrl;
+            this.renderAvatar3D(vrmResult.dataUrl, 'profile-avatar-3d-container');
+            
+            const profilePlaceholder = document.getElementById('profile-avatar-placeholder');
+            if (profilePlaceholder) {
+              profilePlaceholder.innerHTML = '';
+            }
           }
         }
       }
@@ -1396,6 +1592,27 @@ class TheRevApp {
   async loadAvatar() {
     console.log('[Avatar] Loading avatar section');
 
+    // Check if we already have VRM loaded in cache
+    if (this._tabCache.avatar.loaded && this._tabCache.avatar.vrmDataUrl) {
+      console.log('[Avatar] Using cached VRM');
+      this._savedVrmDataUrl = this._tabCache.avatar.vrmDataUrl;
+      this.renderAvatar3D(this._tabCache.avatar.vrmDataUrl);
+      
+      // Update placeholder
+      const placeholder = document.getElementById('avatar-placeholder');
+      if (placeholder && this._tabCache.avatar.fileName) {
+        placeholder.innerHTML = `
+          <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 16px; border-radius: 20px; color: #22c55e; font-size: 12px;">
+            ${this._tabCache.avatar.fileName}
+          </div>
+        `;
+      }
+      
+      // Skip reloading, just setup UI elements
+      this.setupAvatarUI();
+      return;
+    }
+
     // Load saved avatar data and render in 3D
     if (window.electronAPI) {
       const savedAvatar = await window.electronAPI.getAvatarData();
@@ -1410,14 +1627,18 @@ class TheRevApp {
         if (vrmResult.success && vrmResult.dataUrl) {
           console.log('[Avatar] VRM loaded from disk');
 
+          // Cache the VRM data
+          this._tabCache.avatar = {
+            loaded: true,
+            vrmDataUrl: vrmResult.dataUrl,
+            fileName: savedAvatar.fileName
+          };
+
           // Store VRM data URL for browser avatar
           this._savedVrmDataUrl = vrmResult.dataUrl;
 
           // Render saved avatar in 3D
           this.renderAvatar3D(vrmResult.dataUrl);
-
-          // Browser tab avatar disabled - avatar lives in AI Browser popup instead
-          // this.renderBrowserAvatar(vrmResult.dataUrl);
 
           // Update placeholder to show filename
           const placeholder = document.getElementById('avatar-placeholder');
@@ -1432,21 +1653,26 @@ class TheRevApp {
       }
     }
 
+    this.setupAvatarUI();
+  }
+
+  setupAvatarUI() {
     // Check if VRoid Studio is installed
     const vroidStatus = document.getElementById('vroid-status');
     if (window.electronAPI) {
-      const vroidInfo = await window.electronAPI.checkVroidStudio();
-      console.log('[Avatar] VRoid Studio status:', vroidInfo);
+      window.electronAPI.checkVroidStudio().then(vroidInfo => {
+        console.log('[Avatar] VRoid Studio status:', vroidInfo);
 
-      if (vroidStatus) {
-        if (vroidInfo.installed) {
-          vroidStatus.innerHTML =
-            '<span class="status-installed">✓ VRoid Studio is installed and ready</span>';
-        } else {
-          vroidStatus.innerHTML =
-            '<span class="status-not-installed">VRoid Studio not found - click below to download</span>';
+        if (vroidStatus) {
+          if (vroidInfo.installed) {
+            vroidStatus.innerHTML =
+              '<span class="status-installed">✓ VRoid Studio is installed and ready</span>';
+          } else {
+            vroidStatus.innerHTML =
+              '<span class="status-not-installed">VRoid Studio not found - click below to download</span>';
+          }
         }
-      }
+      });
     }
 
     // Setup VRoid Studio launch button
@@ -1508,7 +1734,7 @@ class TheRevApp {
   }
 
   renderAnimationButtons() {
-    const container = document.getElementById('animation-list');
+    const container = document.getElementById('animation-grid') || document.getElementById('animation-list');
     if (!container) return;
 
     container.innerHTML = '';
@@ -1531,17 +1757,9 @@ class TheRevApp {
       btn.className =
         'anim-btn' + (this._currentAnimationIndex === index ? ' active' : '');
 
-      // Check if animation is selected for profile or chat
-      const inProfile =
-        this._avatarSettings.profile.selectedAnimations.includes(name);
-      const inChat =
-        this._avatarSettings.chat.selectedAnimations.includes(name);
-      const checkmarks = (inProfile ? '📷' : '') + (inChat ? '💬' : '');
-
       btn.innerHTML = `
         <span class="anim-icon">🎬</span>
         <span>${name.substring(0, 12)}${name.length > 12 ? '...' : ''}</span>
-        ${checkmarks ? `<span style="font-size:10px">${checkmarks}</span>` : ''}
       `;
       btn.title = name;
       btn.onclick = () => {
@@ -1549,56 +1767,17 @@ class TheRevApp {
       };
       container.appendChild(btn);
     });
-
-    // Also update the mode selection lists
-    this.updateModeSelectLists();
-  }
-
-  updateModeSelectLists() {
-    // Update profile animation selection
-    const profileSelect = document.getElementById('profile-animation-select');
-    if (profileSelect) {
-      profileSelect.innerHTML = '';
-      this._animationNames.forEach((name) => {
-        const checked =
-          this._avatarSettings.profile.selectedAnimations.includes(name);
-        profileSelect.innerHTML += `
-          <label class="animation-select-item">
-            <input type="checkbox" data-animation="${name}" data-mode="profile" ${checked ? 'checked' : ''}>
-            <span>${name}</span>
-          </label>
-        `;
-      });
-    }
-
-    // Update chat animation selection
-    const chatSelect = document.getElementById('chat-animation-select');
-    if (chatSelect) {
-      chatSelect.innerHTML = '';
-      this._animationNames.forEach((name) => {
-        const checked =
-          this._avatarSettings.chat.selectedAnimations.includes(name);
-        chatSelect.innerHTML += `
-          <label class="animation-select-item">
-            <input type="checkbox" data-animation="${name}" data-mode="chat" ${checked ? 'checked' : ''}>
-            <span>${name}</span>
-          </label>
-        `;
-      });
-    }
   }
 
   setupAvatarModeControls() {
-    // Profile mode checkbox
-    const profileEnabled = document.getElementById(
-      'profile-animations-enabled'
-    );
-    if (profileEnabled) {
-      profileEnabled.checked = this._avatarSettings.profile.enabled;
-      profileEnabled.onchange = () => {
-        this._avatarSettings.profile.enabled = profileEnabled.checked;
+    // Animations enabled checkbox
+    const animationsEnabled = document.getElementById('animations-enabled');
+    if (animationsEnabled) {
+      animationsEnabled.checked = this._avatarSettings.enabled;
+      animationsEnabled.onchange = () => {
+        this._avatarSettings.enabled = animationsEnabled.checked;
         this.saveAvatarSettings();
-        if (this._avatarSettings.profile.enabled) {
+        if (this._avatarSettings.enabled) {
           this.startProfileAnimationCycle();
         } else {
           this.stopProfileAnimationCycle();
@@ -1610,69 +1789,22 @@ class TheRevApp {
     const cycleSlider = document.getElementById('profile-cycle-interval');
     const cycleValue = document.getElementById('cycle-interval-value');
     if (cycleSlider && cycleValue) {
-      cycleSlider.value = this._avatarSettings.profile.cycleInterval;
-      cycleValue.textContent = this._avatarSettings.profile.cycleInterval + 's';
+      cycleSlider.value = this._avatarSettings.cycleInterval;
+      cycleValue.textContent = this._avatarSettings.cycleInterval + 's';
 
       cycleSlider.oninput = () => {
         cycleValue.textContent = cycleSlider.value + 's';
       };
       cycleSlider.onchange = () => {
-        this._avatarSettings.profile.cycleInterval = parseInt(
-          cycleSlider.value
-        );
+        this._avatarSettings.cycleInterval = parseInt(cycleSlider.value);
         this.saveAvatarSettings();
-        // Restart cycle with new interval
-        if (this._avatarSettings.profile.enabled) {
+        if (this._avatarSettings.enabled) {
           this.startProfileAnimationCycle();
         }
       };
     }
 
-    // Chat mode checkbox
-    const chatEnabled = document.getElementById('chat-animations-enabled');
-    if (chatEnabled) {
-      chatEnabled.checked = this._avatarSettings.chat.enabled;
-      chatEnabled.onchange = () => {
-        this._avatarSettings.chat.enabled = chatEnabled.checked;
-        this.saveAvatarSettings();
-      };
-    }
-
-    // Animation selection checkboxes (event delegation)
-    document.addEventListener('change', (e) => {
-      if (e.target.dataset.animation && e.target.dataset.mode) {
-        const animation = e.target.dataset.animation;
-        const mode = e.target.dataset.mode;
-
-        if (e.target.checked) {
-          if (
-            !this._avatarSettings[mode].selectedAnimations.includes(animation)
-          ) {
-            this._avatarSettings[mode].selectedAnimations.push(animation);
-          }
-        } else {
-          this._avatarSettings[mode].selectedAnimations = this._avatarSettings[
-            mode
-          ].selectedAnimations.filter((a) => a !== animation);
-        }
-
-        this.saveAvatarSettings();
-        this.renderAnimationButtons(); // Update checkmarks
-      }
-    });
-
-    // Initialize with all animations selected for both modes
-    if (this._avatarSettings.profile.selectedAnimations.length === 0) {
-      this._avatarSettings.profile.selectedAnimations = [
-        ...this._animationNames,
-      ];
-    }
-    if (this._avatarSettings.chat.selectedAnimations.length === 0) {
-      this._avatarSettings.chat.selectedAnimations = [...this._animationNames];
-    }
-
     this.loadAvatarSettings();
-    this.updateModeSelectLists();
   }
 
   loadAvatarSettings() {
@@ -1701,20 +1833,15 @@ class TheRevApp {
   startProfileAnimationCycle() {
     this.stopProfileAnimationCycle();
 
-    if (
-      !this._avatarSettings.profile.enabled ||
-      this._avatarSettings.profile.selectedAnimations.length === 0
-    ) {
+    if (!this._avatarSettings.enabled || !this._animationNames || this._animationNames.length === 0) {
       return;
     }
 
-    const animations = this._avatarSettings.profile.selectedAnimations;
-
     const playNext = () => {
-      if (!this._avatarSettings.profile.enabled) return;
+      if (!this._avatarSettings.enabled) return;
 
       const animation =
-        animations[this._profileCurrentIndex % animations.length];
+        this._animationNames[this._profileCurrentIndex % this._animationNames.length];
       console.log('[Profile Avatar] Cycling to:', animation);
 
       if (this._avatarActions[animation]) {
@@ -1730,14 +1857,14 @@ class TheRevApp {
       // Schedule next animation
       this._profileCycleTimer = setTimeout(
         playNext,
-        this._avatarSettings.profile.cycleInterval * 1000
+        this._avatarSettings.cycleInterval * 1000
       );
     };
 
     // Start cycling
     this._profileCycleTimer = setTimeout(
       playNext,
-      this._avatarSettings.profile.cycleInterval * 1000
+      this._avatarSettings.cycleInterval * 1000
     );
 
     console.log('[Profile Avatar] Started animation cycle');
@@ -1751,16 +1878,12 @@ class TheRevApp {
   }
 
   playRandomChatAnimation() {
-    if (
-      !this._avatarSettings.chat.enabled ||
-      this._avatarSettings.chat.selectedAnimations.length === 0
-    ) {
+    if (!this._avatarSettings.enabled || !this._animationNames || this._animationNames.length === 0) {
       return;
     }
 
-    const animations = this._avatarSettings.chat.selectedAnimations;
-    const randomIndex = Math.floor(Math.random() * animations.length);
-    const animation = animations[randomIndex];
+    const randomIndex = Math.floor(Math.random() * this._animationNames.length);
+    const animation = this._animationNames[randomIndex];
 
     console.log('[Chat Avatar] Playing random animation:', animation);
 
@@ -1820,13 +1943,45 @@ class TheRevApp {
       return;
     }
 
+    // Check if scene already exists AND animations are loaded - if so, just show it
+    if (this._avatarSceneReady && this._avatarAnimationsReady && 
+        this._avatarRenderer && this._avatarRenderer.domElement && 
+        Object.keys(this._avatarActions).length > 0) {
+      console.log('[Avatar 3D] Using cached scene, animations loaded:', Object.keys(this._avatarActions).length);
+      
+      // Move renderer to new container if different
+      if (container !== this._avatarRenderer.domElement.parentElement) {
+        container.innerHTML = '';
+        container.appendChild(this._avatarRenderer.domElement);
+      }
+      
+      // Make sure renderer is visible
+      this._avatarRenderer.domElement.style.display = 'block';
+      
+      // Ensure an animation is playing
+      if (!this._currentAvatarAction && this._avatarActions['Standard Idle']) {
+        this._avatarActions['Standard Idle'].play();
+        this._currentAvatarAction = this._avatarActions['Standard Idle'];
+      }
+      
+      // Render animation buttons
+      this.renderAnimationButtons();
+      
+      // Unpause animation
+      this._avatarAnimatingPaused = false;
+      
+      return;
+    }
+
     // Store references for zoom controls
     this._avatarScene = null;
     this._avatarCamera = null;
     this._avatarRenderer = null;
     this._avatarMixer = null;
     this._avatarModel = null;
-    this._avatarZoom = 3.5; // Start zoomed out to see full body
+    this._avatarSceneReady = false;
+    this._avatarAnimationsReady = false;
+    this._avatarZoom = 3.5;
     this._avatarClock = new THREE.Clock();
 
     container.innerHTML =
@@ -1850,9 +2005,8 @@ class TheRevApp {
       0.1,
       1000
     );
-    // Position camera to show full body (adjust Y for center of body, Z for distance)
     camera.position.set(0, 1.0, this._avatarZoom);
-    camera.lookAt(0, 0.8, 0); // Look at torso area
+    camera.lookAt(0, 0.8, 0);
     this._avatarCamera = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -2864,8 +3018,13 @@ class TheRevApp {
             }
           }
 
+          // Mark scene as ready for caching
+          this._avatarSceneReady = true;
+          this._avatarAnimationsReady = true;
+          console.log('[Avatar] Scene ready and cached');
+
           // Start profile cycle if enabled
-          if (this._avatarSettings.profile.enabled) {
+          if (this._avatarSettings.enabled) {
             this.startProfileAnimationCycle();
           }
         };
@@ -2900,6 +3059,10 @@ class TheRevApp {
 
         const animate = () => {
           if (!container.parentElement) return;
+          if (app._avatarAnimatingPaused) {
+            requestAnimationFrame(animate);
+            return;
+          }
 
           const delta = clock.getDelta();
           breathingTime += delta;
@@ -4549,6 +4712,21 @@ class TheRevApp {
     document.getElementById('avatar-customizer').classList.remove('active');
   }
 
+  showAnimationsModal() {
+    const panel = document.getElementById('animations-panel');
+    if (panel) {
+      panel.classList.add('active');
+      this.renderAnimationButtons();
+    }
+  }
+
+  closeAnimationsModal() {
+    const panel = document.getElementById('animations-panel');
+    if (panel) {
+      panel.classList.remove('active');
+    }
+  }
+
   updateAvatarPreview() {
     const preview = document.getElementById('avatar-preview-img');
     const style = document.getElementById('avatar-style').value;
@@ -4674,50 +4852,18 @@ class TheRevApp {
 
   async executeAICommand() {
     const input = document.getElementById('ai-command-input');
-    const modeSelect = document.getElementById('browser-input-mode');
     const command = input.value.trim();
     if (!command) return;
 
-    const isAiMode = modeSelect?.value === 'ai';
     const statusEl = document.getElementById('browser-status');
     const statusText = statusEl?.querySelector('.status-text');
     const aiResponseArea = document.getElementById('ai-response-area');
     const aiResponseText = document.getElementById('ai-response-text');
     const aiApprovalSection = document.getElementById('ai-approval-section');
 
-    // URL Mode - use webview to load actual sites
-    if (!isAiMode) {
-      let finalUrl = command;
-      if (!command.startsWith('http://') && !command.startsWith('https://')) {
-        finalUrl = `https://${command}`;
-      }
-
-      if (statusText) statusText.textContent = 'Loading: ' + finalUrl;
-
-      const frame = document.getElementById('browser-frame');
-      if (frame && frame.tagName === 'WEBVIEW') {
-        // Use webview's loadURL for actual site rendering
-        frame
-          .loadURL(finalUrl)
-          .then(() => {
-            if (statusText) statusText.textContent = 'Loaded: ' + finalUrl;
-          })
-          .catch((err) => {
-            if (statusText) statusText.textContent = 'Error: ' + err.message;
-          });
-      } else if (frame) {
-        // Fallback for iframe
-        frame.src = finalUrl;
-        if (statusText) statusText.textContent = 'Opening: ' + finalUrl;
-      }
-      return;
-    }
-
-    // AI Mode
     if (statusText) statusText.textContent = '🤖 Rev is thinking...';
     if (aiResponseArea) aiResponseArea.style.display = 'none';
 
-    // AI Avatar: Show thinking/typing state
     this.showAITypingIndicator();
     this.showAISpeechBubble('🤔 Thinking...', 0);
 
@@ -4730,12 +4876,12 @@ class TheRevApp {
 
         console.log('AI Brain result:', result);
 
-        // AI Avatar: Hide typing, show response
         this.hideAITypingIndicator();
 
         if (result.success) {
           if (result.approvalRequest) {
-            // AI Avatar: Show approval emotion
+            this.showApprovalRequest(result.approvalRequest);
+            this.avatarReact('thinking', 'Should I do this?');
             this.showAISpeechBubble('🤔 Need your approval...', 4000);
             if (aiResponseText) {
               aiResponseText.textContent = result.approvalRequest.actions
@@ -4749,6 +4895,39 @@ class TheRevApp {
               ...result.approvalRequest,
               originalCommand: command,
             };
+          } else if (result.url) {
+            if (aiResponseText) {
+              aiResponseText.textContent = result.approvalRequest.actions
+                .map((a) => `${a.type}: ${a.reason}`)
+                .join(' | ');
+            }
+            if (aiApprovalSection) aiApprovalSection.style.display = 'flex';
+            if (aiResponseArea) aiResponseArea.style.display = 'block';
+            if (statusText) statusText.textContent = '⚠️ Approval needed';
+            this.currentApprovalRequest = {
+              ...result.approvalRequest,
+              originalCommand: command,
+            };
+          } else if (result.url) {
+            // Navigation intent - open AI Browser immediately with URL and context
+            console.log('[executeAICommand] Opening AI Browser with URL:', result.url);
+            
+            // Extract context for the chat
+            const context = result.context || `Navigating to: ${result.url}`;
+            
+            if (window.electronAPI?.openAIBrowser) {
+              await window.electronAPI.openAIBrowser(result.url, context);
+            }
+            
+            // AI Avatar: Show success
+            this.showAISpeechBubble('✅ Opening!', 2000);
+            if (aiResponseText) {
+              aiResponseText.textContent = `Opening ${result.url}`;
+            }
+            if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+            if (aiResponseArea) aiResponseArea.style.display = 'block';
+            if (statusText) statusText.textContent = '✅ Opening AI Browser...';
+            input.value = '';
           } else if (result.actions) {
             // AI Avatar: Show success
             this.showAISpeechBubble('✅ Done!', 3000);
@@ -4815,19 +4994,32 @@ class TheRevApp {
       return;
     }
 
-    // Approved - open AI browser window
+    // Approved - extract URL from actions and open AI browser
     // AI Avatar: Show excited reaction
     this.showAISpeechBubble("🎉 Let's go!", 3000);
     if (statusText) statusText.textContent = '✅ Opening AI Browser...';
 
+    // Extract URL from navigate action
+    let targetUrl = null;
+    const actions = this.currentApprovalRequest.actions || [];
+    for (const action of actions) {
+      if (action.action === 'navigate' && action.params?.url) {
+        targetUrl = action.params.url;
+        break;
+      }
+    }
+
+    console.log('[respondToApproval] Target URL:', targetUrl);
+
     try {
-      // Use IPC to open the AI browser window
+      // Use IPC to open the AI browser window with URL
       if (window.electronAPI?.openAIBrowser) {
-        await window.electronAPI.openAIBrowser();
+        await window.electronAPI.openAIBrowser(targetUrl);
         if (statusText) statusText.textContent = '✅ AI Browser opened!';
         if (aiResponseText)
-          aiResponseText.textContent =
-            'AI Browser opened - you can now chat with Rev there!';
+          aiResponseText.textContent = targetUrl
+            ? `Opening ${targetUrl}...`
+            : 'AI Browser opened - you can now chat with Rev there!';
       } else {
         // Fallback - open directly
         window.open('ai-browser.html', '_blank', 'width=1200,height=800');
@@ -5275,9 +5467,15 @@ class TheRevApp {
     }
   }
 
-  async loadNews() {
+  async loadNews(useCache = false) {
     const container = document.querySelector('.news-container');
     if (!container) return;
+
+    // Check cache first
+    if (useCache && this._tabCache.news.rawData) {
+      this.renderNews(this._tabCache.news.rawData);
+      return;
+    }
 
     container.innerHTML = '<div class="loading">Loading news...</div>';
 
@@ -5285,7 +5483,6 @@ class TheRevApp {
       const newsType = this.currentNewsType || 'article';
       const typeParam = newsType === 'video' ? 'video' : 'article';
 
-      // Fetch news filtered by type
       const url = new URL('http://localhost:4000/api/news');
       url.searchParams.set('type', typeParam);
 
@@ -5299,6 +5496,13 @@ class TheRevApp {
       }
 
       this.renderNews(news);
+
+      // Save to cache
+      this._tabCache.news = {
+        data: container.innerHTML,
+        rawData: news,
+        timestamp: Date.now()
+      };
     } catch (error) {
       console.error('Error loading news:', error);
       container.innerHTML = '<div class="error">Failed to load news</div>';

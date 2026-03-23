@@ -992,28 +992,22 @@
                   R
                 </div>
               </div>
-              <select
-                id="browser-input-mode"
-                style="
-                  background: #404040;
-                  color: white;
-                  padding: 8px;
-                  border-radius: 4px;
-                  border: none;
-                  margin-right: 10px;
-                "
-              >
-                <option value="url">URL Mode</option>
-                <option value="ai">🤖 AI Mode</option>
-              </select>
               <input
                 type="text"
                 id="ai-command-input"
-                placeholder="Type a website: youtube.com, gmail.com"
+                placeholder="Ask Rev: 'Go to Gmail and find emails about meeting'"
                 class="ai-command-input"
                 style="flex: 1"
               />
-              <button id="ai-command-btn" class="ai-command-btn">Go</button>
+              <button
+                id="voice-btn"
+                class="secondary-btn"
+                style="margin-left: 8px; padding: 8px 12px; font-size: 18px;"
+                title="Voice Command"
+              >
+                🎤
+              </button>
+              <button id="ai-command-btn" class="ai-command-btn">🤖 Ask Rev</button>
               <button
                 id="browser-new-window"
                 class="secondary-btn"
@@ -1021,6 +1015,21 @@
               >
                 New Window
               </button>
+            </div>
+            <!-- Voice Indicator -->
+            <div
+              id="voice-indicator"
+              style="
+                display: none;
+                background: linear-gradient(90deg, #00ccff, #ff6600);
+                padding: 6px 15px;
+                text-align: center;
+                font-weight: bold;
+                color: white;
+                animation: pulse 1s infinite;
+              "
+            >
+              🔴 Listening... <span id="voice-transcript"></span>
             </div>
             <!-- AI Response Area -->
             <div
@@ -1332,6 +1341,9 @@
                   <button id="zoom-out-btn" class="icon-btn" title="Zoom Out">
                     −
                   </button>
+                  <button id="animations-btn" class="icon-btn" title="Animations">
+                    ▶
+                  </button>
                 </div>
                 <p class="avatar-hint">
                   Upload a VRM avatar created in VRoid Studio
@@ -1340,75 +1352,25 @@
 
               <div class="avatar-options">
                 <div class="option-card">
-                  <h3>Animations</h3>
-                  <p class="hint-text">
-                    Click to preview, check to enable in modes
-                  </p>
-                  <div class="animation-buttons" id="animation-list">
-                    <!-- Animations will be dynamically added here -->
-                  </div>
-                  <div class="current-emotion" id="current-emotion-display">
-                    Current: <span id="emotion-name">idle</span>
-                  </div>
-                </div>
-
-                <div class="option-card">
-                  <h3>Avatar Modes</h3>
-                  <p class="hint-text">
-                    Configure avatar behavior in different contexts
-                  </p>
-                  <div class="avatar-modes">
-                    <div class="mode-section">
-                      <h4>Profile Mode</h4>
-                      <label class="mode-toggle">
-                        <input
-                          type="checkbox"
-                          id="profile-animations-enabled"
-                          checked
-                        />
-                        <span>Enable animation loop</span>
-                      </label>
-                      <div class="mode-setting">
-                        <label>Cycle interval:</label>
-                        <input
-                          type="range"
-                          id="profile-cycle-interval"
-                          min="10"
-                          max="120"
-                          value="30"
-                        />
-                        <span id="cycle-interval-value">30s</span>
-                      </div>
-                      <div class="mode-setting">
-                        <label>Animations to cycle:</label>
-                        <div
-                          id="profile-animation-select"
-                          class="animation-select-list"
-                        >
-                          <!-- Will be populated dynamically -->
-                        </div>
-                      </div>
-                    </div>
-                    <div class="mode-section">
-                      <h4>Chat Mode</h4>
-                      <label class="mode-toggle">
-                        <input
-                          type="checkbox"
-                          id="chat-animations-enabled"
-                          checked
-                        />
-                        <span>Enable chat animations</span>
-                      </label>
-                      <div class="mode-setting">
-                        <label>Random animations on send:</label>
-                        <div
-                          id="chat-animation-select"
-                          class="animation-select-list"
-                        >
-                          <!-- Will be populated dynamically -->
-                        </div>
-                      </div>
-                    </div>
+                  <h3>Animation Settings</h3>
+                  <label class="mode-toggle">
+                    <input
+                      type="checkbox"
+                      id="animations-enabled"
+                      checked
+                    />
+                    <span>Enable animations</span>
+                  </label>
+                  <div class="mode-setting">
+                    <label>Cycle interval:</label>
+                    <input
+                      type="range"
+                      id="profile-cycle-interval"
+                      min="10"
+                      max="120"
+                      value="30"
+                    />
+                    <span id="cycle-interval-value">30s</span>
                   </div>
                 </div>
 
@@ -1530,6 +1492,20 @@
             <button id="cancel-avatar-btn" class="secondary-btn">Cancel</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Animations Panel -->
+    <div id="animations-panel" class="animations-panel">
+      <div class="animations-panel-header">
+        <h3>Animations</h3>
+        <button class="close-btn" onclick="theRevApp.closeAnimationsModal()">×</button>
+      </div>
+      <div class="animation-grid" id="animation-grid">
+        <!-- Animations will be added here -->
+      </div>
+      <div class="current-emotion" id="current-emotion-display">
+        Current: <span id="emotion-name">idle</span>
       </div>
     </div>
 

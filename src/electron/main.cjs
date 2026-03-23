@@ -191,6 +191,14 @@ function createBrowserWindow(url = 'https://www.google.com') {
     title: 'Rev Browser',
   });
 
+  // Notify main window when browser opens
+  mainWindow.webContents.send('browser-window-opened');
+
+  // Notify main window when browser closes
+  browserWindow.on('closed', () => {
+    mainWindow.webContents.send('browser-window-closed');
+  });
+
   // Load the URL directly
   browserWindow.loadURL(url);
   return browserWindow;
@@ -405,77 +413,116 @@ function startOllama() {
     }
 
     const isWindows = process.platform === 'win32';
-    const env = { ...process.env };
-    env.CUDA_VISIBLE_DEVICES = '';
-    env.OLLAMA_GPU_MODE = 'disabled';
-
-    console.log('[Ollama] Starting in FORCED CPU-only mode...');
-
     const { spawn } = require('child_process');
-    let args;
 
-    if (isWindows) {
-      args = [
-        '/c',
-        'set CUDA_VISIBLE_DEVICES= && set OLLAMA_GPU_MODE=disabled && ollama serve',
-      ];
-    } else {
-      args = [
-        '-c',
-        'CUDA_VISIBLE_DEVICES="" OLLAMA_GPU_MODE=disabled ollama serve &',
-      ];
-    }
+    // GPU startup strategies (tried in order)
+    const strategies = isWindows ? [
+      { name: 'DirectML', cmd: 'cmd', args: ['/c', 'set OLLAMA_GPU_MODE=directml&& ollama serve'], env: {} },
+      { name: 'CUDA', cmd: 'ollama', args: ['serve'], env: {} },
+      { name: 'CPU', cmd: 'cmd', args: ['/c', 'set OLLAMA_GPU_MODE=cpu&& ollama serve'], env: { CUDA_VISIBLE_DEVICES: '' } },
+    ] : [
+      { name: 'CUDA', cmd: 'ollama', args: ['serve'], env: {} },
+      { name: 'CPU', cmd: 'bash', args: ['-c', 'CUDA_VISIBLE_DEVICES="" OLLAMA_GPU_MODE=cpu ollama serve &'], env: {} },
+    ];
 
-    ollamaProcess = spawn(isWindows ? 'cmd' : 'bash', args, {
-      shell: false,
-      env,
-      detached: !isWindows,
-      stdio: 'ignore',
-    });
+    let currentStrategy = 0;
 
-    if (isWindows) {
-      ollamaProcess.unref();
-    }
-
-    ollamaProcess.on('error', (err) => {
-      console.error('[Ollama] Start error:', err.message);
-    });
-
-    ollamaProcess.on('exit', (code) => {
-      console.log(`[Ollama] Process exited with code: ${code}`);
-      ollamaProcess = null;
-    });
-
-    setTimeout(async () => {
-      const running = await checkOllamaRunning();
-      if (running) {
-        console.log('[Ollama] Started successfully in CPU-only mode');
-        resolve(true);
-      } else {
-        console.log('[Ollama] Startup pending...');
-        resolve(true);
+    function tryNextStrategy() {
+      if (currentStrategy >= strategies.length) {
+        console.log('[Ollama] All startup strategies failed');
+        resolve(false);
+        return;
       }
-    }, 8000);
+
+      const strategy = strategies[currentStrategy];
+      console.log(`[Ollama] Trying ${strategy.name}...`);
+
+      const env = { ...process.env, ...strategy.env };
+      ollamaProcess = spawn(strategy.cmd, strategy.args, {
+        shell: false,
+        env,
+        detached: !isWindows || strategy.name !== 'CUDA',
+        stdio: 'ignore',
+      });
+
+      if (isWindows && strategy.name !== 'CUDA') {
+        ollamaProcess.unref();
+      }
+
+      let startupTimeout;
+
+      ollamaProcess.on('error', (err) => {
+        console.log(`[Ollama] ${strategy.name} error:`, err.message);
+        clearTimeout(startupTimeout);
+        currentStrategy++;
+        tryNextStrategy();
+      });
+
+      ollamaProcess.on('exit', (code) => {
+        console.log(`[Ollama] ${strategy.name} exited with code ${code}`);
+        clearTimeout(startupTimeout);
+        if (code === 0 || code === null) {
+          resolve(true);
+        } else {
+          currentStrategy++;
+          tryNextStrategy();
+        }
+      });
+
+      // Wait for startup or timeout
+      startupTimeout = setTimeout(() => {
+        console.log(`[Ollama] ${strategy.name} startup timeout, checking...`);
+        // Check if running by testing the API
+        fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+          .then(() => {
+            console.log(`[Ollama] ${strategy.name} is running!`);
+            resolve(true);
+          })
+          .catch(() => {
+            console.log(`[Ollama] ${strategy.name} not responding, trying next...`);
+            currentStrategy++;
+            tryNextStrategy();
+          });
+      }, 10000);
+    }
+
+    tryNextStrategy();
   });
 }
 
-// Check if Ollama has models, if not pull a CPU-friendly model
+function checkOllamaAndStart() {
+  return new Promise((resolve) => {
+    fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+      .then(() => {
+        console.log('[Ollama] Already running');
+        resolve(true);
+      })
+      .catch(() => {
+        console.log('[Ollama] Not running, starting...');
+        startOllama().then(resolve);
+      });
+  });
+}
+
+// Check if Ollama has models, if not pull a good model
 async function ensureOllamaModel() {
   try {
     const response = await fetch('http://localhost:11434/api/tags');
     const data = await response.json();
 
-    // CPU-FRIENDLY models only (smallest first)
-    const cpuFriendlyModels = [
-      'tinyllama:latest',
-      'llama3.2:1b',
-      'phi3:latest',
+    // Preferred models (best quality first, but not too large)
+    const preferredModels = [
+      'mistral:latest',     // Best quality, ~4GB
+      'llama3.2:3b',       // Good quality, smaller
+      'llama3.2:1b',       // Smaller, faster
+      'phi3:latest',        // Microsoft's model
+      'tinyllama:latest',  // Fastest, lowest quality
     ];
     let modelToUse = null;
 
     if (data.models && data.models.length > 0) {
-      // First, look for CPU-friendly models
-      for (const preferred of cpuFriendlyModels) {
+      // First, look for best available model
+      for (const preferred of preferredModels) {
         const found = data.models.find(
           (m) =>
             m.name === preferred ||
@@ -483,11 +530,11 @@ async function ensureOllamaModel() {
         );
         if (found) {
           modelToUse = found.name;
-          console.log('[Ollama] Found CPU-friendly model:', modelToUse);
+          console.log('[Ollama] Using model:', modelToUse);
           break;
         }
       }
-      // If no CPU-friendly model found, use first available
+      // If no preferred model found, use first available
       if (!modelToUse) {
         // Filter out large models that won't work on CPU
         const smallModels = data.models.filter((m) =>
@@ -511,21 +558,21 @@ async function ensureOllamaModel() {
 
     if (!modelToUse) {
       console.log(
-        '[Ollama] No models found, pulling tinyllama (fastest CPU model)...'
+        '[Ollama] No models found, pulling mistral (best quality)...'
       );
 
       const pullResponse = await fetch('http://localhost:11434/api/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'tinyllama:latest' }),
+        body: JSON.stringify({ name: 'mistral:latest' }),
       });
 
       if (pullResponse.ok) {
-        console.log('[Ollama] Successfully pulled tinyllama model');
+        console.log('[Ollama] Successfully pulled mistral model');
         return {
           success: true,
-          model: 'tinyllama:latest',
-          message: 'CPU-friendly model installed',
+          model: 'mistral:latest',
+          message: 'Mistral model installed',
         };
       }
       return { success: false, error: 'Failed to pull model' };
@@ -782,22 +829,41 @@ ipcMain.handle('open-ai-browser', async (event, url, context) => {
 
     if (url) {
       const finalUrl = url.startsWith('http') ? url : 'https://' + url;
+      const escapedUrl = finalUrl.replace(/'/g, "\\'");
 
-      // Navigate the webview element INSIDE the page, not the window itself
-      currentWindow.webContents.executeJavaScript(`
-        (function() {
-          const webview = document.querySelector('webview');
-          if (webview) {
-            webview.src = '${finalUrl.replace(/'/g, "\\'")}';
-            console.log('[open-ai-browser] Navigating webview to:', '${finalUrl.replace(/'/g, "\\'")}');
-          } else {
-            console.log('[open-ai-browser] Webview not found!');
-          }
-        })();
-      `);
+      // Wait for webview to be ready, then navigate immediately
+      const navigateWebview = () => {
+        currentWindow.webContents.executeJavaScript(`
+          (function() {
+            const webview = document.getElementById('browserFrame');
+            if (webview) {
+              webview.src = '${escapedUrl}';
+              console.log('[open-ai-browser] Navigating webview to:', '${escapedUrl}');
+            } else {
+              console.log('[open-ai-browser] Webview not found!');
+            }
+          })();
+        `);
+      };
+
+      // Try immediately first (webview usually ready)
+      navigateWebview();
+
+      // If webview wasn't ready, wait for it
+      setTimeout(() => {
+        currentWindow.webContents.executeJavaScript(`
+          (function() {
+            const webview = document.getElementById('browserFrame');
+            if (webview && webview.src === 'about:blank') {
+              webview.src = '${escapedUrl}';
+              console.log('[open-ai-browser] Late navigation to:', '${escapedUrl}');
+            }
+          })();
+        `);
+      }, 500);
     }
 
-    // Inject context/summary after a short delay to let the page settle
+    // Inject context/summary asynchronously - navigation is already done
     if (context) {
       setTimeout(() => {
         const escapedContext = context
@@ -810,14 +876,14 @@ ipcMain.handle('open-ai-browser', async (event, url, context) => {
               if (chatMessages) {
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'message ai';
-                msgDiv.innerHTML = '<span class="avatar">🤖</span><strong>📰 Article Summary:</strong><br><br>' + '${escapedContext}';
+                msgDiv.innerHTML = '<span class="avatar">🤖</span><strong>📰 Context:</strong><br><br>' + '${escapedContext}';
                 chatMessages.appendChild(msgDiv);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
               }
             } catch(e) { console.log('Error adding context:', e); }
           })();
         `);
-      }, 3000);
+      }, 1000); // Reduced delay - context is async, page should be loaded by now
     }
   });
 

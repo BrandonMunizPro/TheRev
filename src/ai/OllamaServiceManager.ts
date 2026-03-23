@@ -128,39 +128,85 @@ export class OllamaServiceManager {
       // Not running, will start it
     }
 
-    return new Promise((resolve) => {
-      const isWindows = os.platform() === 'win32';
-
-      let command: string;
-      let spawnArgs: string[] = [];
-
-      if (cpuOnly) {
-        if (isWindows) {
-          command = 'cmd.exe';
-          spawnArgs = [
-            '/c',
-            'set CUDA_VISIBLE_DEVICES=&& set OLLAMA_GPU_MODE=cpu&& ollama serve',
-          ];
-          console.log(
-            '[OllamaService] Starting Ollama in CPU-only mode (Windows)'
-          );
-        } else {
-          command = 'bash';
-          spawnArgs = [
-            '-c',
-            'CUDA_VISIBLE_DEVICES="" OLLAMA_GPU_MODE=cpu ollama serve',
-          ];
-          console.log(
-            '[OllamaService] Starting Ollama in CPU-only mode (Unix)'
-          );
-        }
-      } else {
-        command = 'ollama';
-        spawnArgs = ['serve'];
-        console.log('[OllamaService] Starting Ollama');
+    // Try startup strategies in order: CUDA -> DirectML (Windows) -> CPU
+    const strategies = this.getStartupStrategies(cpuOnly);
+    
+    for (const strategy of strategies) {
+      console.log(`[OllamaService] Trying: ${strategy.name}`);
+      const started = await this.tryStartWithStrategy(strategy);
+      if (started) {
+        return true;
       }
+      // Clean up before trying next strategy
+      this.cleanup();
+      await this.delay(500);
+    }
 
-      this.ollamaProcess = spawn(command, spawnArgs, {
+    console.error('[OllamaService] All startup strategies failed');
+    return false;
+  }
+
+  private getStartupStrategies(cpuOnly: boolean) {
+    const isWindows = os.platform() === 'win32';
+    const strategies: Array<{ name: string; command: string; args: string[] }> = [];
+
+    if (cpuOnly) {
+      // CPU-only strategies
+      if (isWindows) {
+        strategies.push({
+          name: 'CPU (Windows)',
+          command: 'cmd.exe',
+          args: ['/c', 'set OLLAMA_GPU_MODE=cpu&& ollama serve'],
+        });
+      } else {
+        strategies.push({
+          name: 'CPU (Unix)',
+          command: 'bash',
+          args: ['-c', 'OLLAMA_GPU_MODE=cpu ollama serve'],
+        });
+      }
+    } else {
+      // GPU strategies first
+      if (isWindows) {
+        // DirectML (Microsoft's GPU acceleration - works on most GPUs)
+        strategies.push({
+          name: 'DirectML (Windows GPU)',
+          command: 'cmd.exe',
+          args: ['/c', 'set OLLAMA_GPU_MODE=directml&& ollama serve'],
+        });
+        // CUDA as fallback
+        strategies.push({
+          name: 'CUDA (NVIDIA GPU)',
+          command: 'ollama',
+          args: ['serve'],
+        });
+        // CPU fallback
+        strategies.push({
+          name: 'CPU (Windows fallback)',
+          command: 'cmd.exe',
+          args: ['/c', 'set OLLAMA_GPU_MODE=cpu&& ollama serve'],
+        });
+      } else {
+        // Unix: CUDA first, then CPU
+        strategies.push({
+          name: 'CUDA (Unix)',
+          command: 'ollama',
+          args: ['serve'],
+        });
+        strategies.push({
+          name: 'CPU (Unix fallback)',
+          command: 'bash',
+          args: ['-c', 'CUDA_VISIBLE_DEVICES="" OLLAMA_GPU_MODE=cpu ollama serve'],
+        });
+      }
+    }
+
+    return strategies;
+  }
+
+  private async tryStartWithStrategy(strategy: { name: string; command: string; args: string[] }): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.ollamaProcess = spawn(strategy.command, strategy.args, {
         detached: false,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: false,
@@ -168,6 +214,15 @@ export class OllamaServiceManager {
 
       let startupOutput = '';
       let started = false;
+      let errored = false;
+
+      const startupTimeout = setTimeout(() => {
+        if (!started) {
+          console.log(`[OllamaService] ${strategy.name}: Startup timeout`);
+          errored = true;
+          this.ollamaProcess?.kill();
+        }
+      }, 10000); // 10 second timeout per strategy
 
       this.ollamaProcess.stdout?.on('data', (data) => {
         const output = data.toString();
@@ -176,6 +231,8 @@ export class OllamaServiceManager {
 
         if (output.includes('listening') || output.includes('running')) {
           started = true;
+          clearTimeout(startupTimeout);
+          console.log(`[OllamaService] ${strategy.name}: Started successfully!`);
         }
       });
 
@@ -183,29 +240,55 @@ export class OllamaServiceManager {
         const output = data.toString();
         startupOutput += output;
         console.log('[Ollama] ' + output.trim());
+
+        // Check for GPU errors
+        if (output.includes('CUDA error') || 
+            output.includes('GPU not available') ||
+            output.includes('no GPU') ||
+            output.includes('cudaError')) {
+          console.log(`[OllamaService] ${strategy.name}: GPU error detected`);
+          errored = true;
+          this.ollamaProcess?.kill();
+          clearTimeout(startupTimeout);
+        }
       });
 
       this.ollamaProcess.on('error', (error) => {
-        console.error('[OllamaService] Failed to start:', error.message);
-        this.ollamaProcess = null;
-        resolve(false);
+        console.error(`[OllamaService] ${strategy.name} failed:`, error.message);
+        errored = true;
+        clearTimeout(startupTimeout);
       });
 
       this.ollamaProcess.on('exit', (code) => {
-        console.log(`[OllamaService] Ollama exited with code ${code}`);
-        this.ollamaProcess = null;
+        clearTimeout(startupTimeout);
+        if (code === 0 || started) {
+          resolve(true);
+        } else {
+          console.log(`[OllamaService] ${strategy.name}: Exit code ${code}`);
+          resolve(false);
+        }
       });
 
-      // Wait for startup (max 15 seconds)
+      // Initial check
       setTimeout(() => {
-        if (!started) {
-          console.log(
-            '[OllamaService] Startup timeout, checking if running...'
-          );
+        if (!started && !errored) {
+          // Still starting, give it more time
         }
-        resolve(started || this.ollamaProcess !== null);
-      }, 15000);
+      }, 3000);
     });
+  }
+
+  private cleanup(): void {
+    if (this.ollamaProcess) {
+      try {
+        this.ollamaProcess.kill();
+      } catch {}
+      this.ollamaProcess = null;
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async stopOllama(): Promise<void> {
@@ -249,7 +332,7 @@ export class OllamaServiceManager {
     return await this.startOllama(true);
   }
 
-  async pullModel(modelName: string = 'phi3:latest'): Promise<boolean> {
+  async pullModel(modelName: string = 'mistral:latest'): Promise<boolean> {
     return new Promise((resolve) => {
       console.log(`[OllamaService] Pulling model: ${modelName}`);
 
@@ -389,10 +472,6 @@ export class OllamaServiceManager {
     };
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   // Install Ollama if not present
   async isOllamaInstalled(): Promise<boolean> {
     return new Promise((resolve) => {
@@ -410,16 +489,16 @@ export class OllamaServiceManager {
 1. Download from https://ollama.com/download
 2. Run the installer
 3. Restart your terminal
-4. Run: ollama pull phi3:latest`;
+4. Run: ollama pull mistral:latest`;
     } else if (platform === 'darwin') {
       return `To install Ollama:
 1. Run: brew install ollama
    OR download from https://ollama.com/download
-2. Run: ollama pull phi3:latest`;
+2. Run: ollama pull mistral:latest`;
     } else {
       return `To install Ollama:
 1. Run: curl -fsSL https://ollama.com/install.sh | sh
-2. Run: ollama pull phi3:latest`;
+2. Run: ollama pull mistral:latest`;
     }
   }
 }
