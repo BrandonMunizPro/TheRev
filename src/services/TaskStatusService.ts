@@ -1,6 +1,7 @@
 import { EntityManager, Repository } from 'typeorm';
 import { TaskEntity, TaskEvent, TaskStatus, TaskType } from '../entities/Task';
 import { v4 as uuidv4 } from 'uuid';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export class TaskStatusService {
   private taskRepo: Repository<TaskEntity>;
@@ -49,7 +50,7 @@ export class TaskStatusService {
   ): Promise<TaskEntity> {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) {
-      throw new Error(`Task not found: ${taskId}`);
+      throw ErrorHandler.operationNotAllowed(`Task not found: ${taskId}`);
     }
 
     const oldStatus = task.status;
@@ -98,7 +99,7 @@ export class TaskStatusService {
   ): Promise<TaskEntity> {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) {
-      throw new Error(`Task not found: ${taskId}`);
+      throw ErrorHandler.operationNotAllowed(`Task not found: ${taskId}`);
     }
 
     task.workerId = workerId;

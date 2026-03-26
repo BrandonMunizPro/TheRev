@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export class EmailService {
   private transporter;
@@ -33,7 +34,7 @@ export class EmailService {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Email sending error:', err);
-      throw new Error('Could not send email');
+      throw ErrorHandler.emailSendFailed();
     }
   }
 

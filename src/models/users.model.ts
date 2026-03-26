@@ -9,6 +9,7 @@ import {
   returnedUser,
 } from '../resolvers/User';
 import { Constants } from '../utils/constants';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 const PASSWORD_HASH_ROUNDS = 10;
 const JWT_EXPIRATION = '2h';
@@ -45,7 +46,7 @@ export class UsersModel {
     const { id, userName, email } = data;
 
     if (!id && !userName && !email) {
-      throw new Error('Please provide id, userName, or email');
+      throw ErrorHandler.missingRequiredFields(['id', 'userName', 'email']);
     }
 
     let user: User | null = null;
@@ -78,7 +79,7 @@ export class UsersModel {
 
   async registerUser(input: CreateUserInput): Promise<returnedUser> {
     const existing = await this.dao.findByEmail(input.email);
-    if (existing) throw new Error('Email is already in use');
+    if (existing) throw ErrorHandler.emailAlreadyInUse(input.email);
 
     const hashedPassword = await bcrypt.hash(
       input.password,
@@ -115,10 +116,10 @@ export class UsersModel {
     password: string
   ): Promise<returnedUser> {
     const user = await this.getUser(identifier);
-    if (!user || !user.password) throw new Error('Invalid user or password');
+    if (!user || !user.password) throw ErrorHandler.invalidCredentials();
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) throw new Error('Incorrect password');
+    if (!match) throw ErrorHandler.invalidCredentials();
 
     user.jwt = jwt.sign(
       {
@@ -137,7 +138,7 @@ export class UsersModel {
 
   async forgotPassword(userName: string): Promise<string> {
     const user = await this.getUser({ userName });
-    if (!user || !user.email) throw new Error('User has no email defined');
+    if (!user || !user.email) throw ErrorHandler.userNotFound(userName);
 
     const resetToken = jwt.sign(
       { userId: user.id, userName: user.userName, email: user.email },
@@ -165,7 +166,7 @@ export class UsersModel {
   ): Promise<string> {
     const decoded: any = jwt.verify(resetToken, process.env.JWT_SECRET_KEY!);
     if (decoded.userName !== userName) {
-      throw new Error('Forbidden: user mismatch in password reset');
+      throw ErrorHandler.userMismatch();
     }
     return this.savePassword(userName, newPassword);
   }
@@ -177,7 +178,7 @@ export class UsersModel {
   ): Promise<string> {
     await this.verifyUser({ userName }, oldPassword);
 
-    if (oldPassword === newPassword) throw new Error('Passwords are unchanged');
+    if (oldPassword === newPassword) throw ErrorHandler.passwordsUnchanged();
 
     return this.savePassword(userName, newPassword);
   }

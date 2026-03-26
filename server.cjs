@@ -1,12 +1,27 @@
 const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = 4000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsProfilesDir = path.join(uploadsDir, 'profiles');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(uploadsProfilesDir)) {
+  fs.mkdirSync(uploadsProfilesDir, { recursive: true });
+}
 
 // In-memory task storage (would be Redis/DB in production)
 const aiTasks = new Map();
@@ -602,6 +617,47 @@ app.post('/api/ai-chat', async (req, res) => {
   }
 });
 
+// ============================================
+// PROFILE PICTURE UPLOAD
+// ============================================
+app.post('/api/profile/upload', async (req, res) => {
+  try {
+    const { imageBase64, userId, fileName } = req.body;
+
+    if (!imageBase64) {
+      return res
+        .status(400)
+        .json({ success: false, error: 'No image provided' });
+    }
+
+    // Extract base64 data (remove data:image/jpeg;base64, prefix if present)
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+
+    // Determine file extension from mime type in base64
+    let extension = 'jpg';
+    if (imageBase64.includes('image/png')) extension = 'png';
+    else if (imageBase64.includes('image/gif')) extension = 'gif';
+    else if (imageBase64.includes('image/webp')) extension = 'webp';
+
+    // Generate unique filename
+    const uniqueName = `${userId || 'user'}_${Date.now()}_${uuidv4().substring(0, 8)}.${extension}`;
+    const filePath = path.join(uploadsProfilesDir, uniqueName);
+
+    // Save the file
+    fs.writeFileSync(filePath, imageBuffer);
+
+    // Return the URL
+    const imageUrl = `/uploads/profiles/${uniqueName}`;
+    console.log(`[Profile] Uploaded profile picture: ${imageUrl}`);
+
+    res.json({ success: true, imageUrl: imageUrl });
+  } catch (error) {
+    console.error('[Profile] Upload error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
   console.log(
@@ -610,4 +666,5 @@ app.listen(PORT, () => {
   console.log(`📋 Task API: http://localhost:${PORT}/api/ai-tasks`);
   console.log(`💚 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🌐 Browser Status: http://localhost:${PORT}/api/browser-status`);
+  console.log(`📷 Profile Upload: http://localhost:${PORT}/api/profile/upload`);
 });

@@ -5,9 +5,82 @@ const {
   Menu,
   dialog,
   shell,
+  session,
 } = require('electron');
 app.commandLine.appendSwitch('enable-webview');
 app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
+
+// Enable microphone and Web Speech API
+app.commandLine.appendSwitch('enable-speech-input');
+app.commandLine.appendSwitch('enable-web-speech');
+app.commandLine.appendSwitch('force-web-speech-api');
+app.commandLine.appendSwitch(
+  'enable-features',
+  'MediaStreamAudioEncoding,MediaStreamSpeechRecognitionAlwaysOn'
+);
+app.commandLine.appendSwitch('enable-speech-dispatcher');
+
+// Allow insecure origins for Web Speech API (Electron uses file://)
+app.commandLine.appendSwitch('allow-insecure-localhost');
+app.commandLine.appendSwitch('ignore-certificate-errors');
+
+// Set up permission handler for microphone
+app.whenReady().then(() => {
+  // Set content settings for Web Speech API
+  session.defaultSession.setContentSettings({
+    microphone: 'allow',
+    'media-stream': 'allow',
+    javascript: 'allow',
+  });
+
+  // Pre-grant microphone permission for the main window
+  session.defaultSession.setDevicePermissionHandler((details) => {
+    console.log('[DevicePermission]', details.deviceType, details.origin);
+    if (details.deviceType === 'microphone') {
+      return true; // Always allow microphone
+    }
+    return false;
+  });
+
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback) => {
+      console.log(
+        '[Permission] Requested:',
+        permission,
+        'URL:',
+        webContents.getURL()
+      );
+      if (permission === 'microphone') {
+        console.log('[Permission] Granting microphone access');
+        callback(true); // Grant microphone permission
+      } else if (permission === 'notifications') {
+        callback(true); // Grant notification permission
+      } else if (permission === 'media') {
+        callback(true); // Grant media access
+      } else if (permission === 'geolocation') {
+        callback(true);
+      } else {
+        callback(true); // Allow everything for development
+      }
+    }
+  );
+
+  // Allow access to Google's speech services and other APIs
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Access-Control-Allow-Origin': ['*'],
+        'Access-Control-Allow-Headers': ['*'],
+      },
+    });
+  });
+
+  // Allow HTTPS requests to speech.googleapis.com
+  session.defaultSession.allowSecurityOrigin('https://speech.googleapis.com');
+
+  console.log('[App] Security settings configured for speech API');
+});
 
 // Register custom protocol for deep links
 if (process.defaultApp) {
@@ -65,6 +138,8 @@ function createWindow() {
       webSecurity: false, // For sandbox browser
       webviewTag: true,
       partition: 'persist:main',
+      // Use WebView2 (Edge) instead of Chromium for better compatibility
+      sandbox: false,
     },
     icon: path.join(__dirname, '../assets/icon.png'),
     titleBarStyle: 'hiddenInset',
@@ -87,6 +162,17 @@ function createWindow() {
     .catch((err) => {
       console.log('[App] Ollama auto-start failed:', err.message);
       // Don't block app startup - just log it
+    });
+
+  // Auto-start local STT server (Whisper) in background
+  console.log('[App] Auto-starting local STT server...');
+  startSTTServer()
+    .then((success) => {
+      console.log('[App] STT server started:', success ? 'ready' : 'failed');
+      mainWindow?.webContents.send('stt-ready', success);
+    })
+    .catch((err) => {
+      console.log('[App] STT server auto-start failed:', err.message);
     });
 
   // Open DevTools in development
@@ -416,14 +502,34 @@ function startOllama() {
     const { spawn } = require('child_process');
 
     // GPU startup strategies (tried in order)
-    const strategies = isWindows ? [
-      { name: 'DirectML', cmd: 'cmd', args: ['/c', 'set OLLAMA_GPU_MODE=directml&& ollama serve'], env: {} },
-      { name: 'CUDA', cmd: 'ollama', args: ['serve'], env: {} },
-      { name: 'CPU', cmd: 'cmd', args: ['/c', 'set OLLAMA_GPU_MODE=cpu&& ollama serve'], env: { CUDA_VISIBLE_DEVICES: '' } },
-    ] : [
-      { name: 'CUDA', cmd: 'ollama', args: ['serve'], env: {} },
-      { name: 'CPU', cmd: 'bash', args: ['-c', 'CUDA_VISIBLE_DEVICES="" OLLAMA_GPU_MODE=cpu ollama serve &'], env: {} },
-    ];
+    const strategies = isWindows
+      ? [
+          {
+            name: 'DirectML',
+            cmd: 'cmd',
+            args: ['/c', 'set OLLAMA_GPU_MODE=directml&& ollama serve'],
+            env: {},
+          },
+          { name: 'CUDA', cmd: 'ollama', args: ['serve'], env: {} },
+          {
+            name: 'CPU',
+            cmd: 'cmd',
+            args: ['/c', 'set OLLAMA_GPU_MODE=cpu&& ollama serve'],
+            env: { CUDA_VISIBLE_DEVICES: '' },
+          },
+        ]
+      : [
+          { name: 'CUDA', cmd: 'ollama', args: ['serve'], env: {} },
+          {
+            name: 'CPU',
+            cmd: 'bash',
+            args: [
+              '-c',
+              'CUDA_VISIBLE_DEVICES="" OLLAMA_GPU_MODE=cpu ollama serve &',
+            ],
+            env: {},
+          },
+        ];
 
     let currentStrategy = 0;
 
@@ -473,13 +579,17 @@ function startOllama() {
       startupTimeout = setTimeout(() => {
         console.log(`[Ollama] ${strategy.name} startup timeout, checking...`);
         // Check if running by testing the API
-        fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+        fetch('http://localhost:11434/api/tags', {
+          signal: AbortSignal.timeout(2000),
+        })
           .then(() => {
             console.log(`[Ollama] ${strategy.name} is running!`);
             resolve(true);
           })
           .catch(() => {
-            console.log(`[Ollama] ${strategy.name} not responding, trying next...`);
+            console.log(
+              `[Ollama] ${strategy.name} not responding, trying next...`
+            );
             currentStrategy++;
             tryNextStrategy();
           });
@@ -492,7 +602,9 @@ function startOllama() {
 
 function checkOllamaAndStart() {
   return new Promise((resolve) => {
-    fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+    fetch('http://localhost:11434/api/tags', {
+      signal: AbortSignal.timeout(2000),
+    })
       .then(() => {
         console.log('[Ollama] Already running');
         resolve(true);
@@ -504,24 +616,45 @@ function checkOllamaAndStart() {
   });
 }
 
-// Check if Ollama has models, if not pull a good model
+// Core models that should ALWAYS be installed
+const CORE_MODELS = [
+  'mistral:latest', // Best quality, ~4GB - fast responses
+  'llama3.2:3b', // Good quality, smaller - versatile
+];
+
+// Check if Ollama has models, if not pull the core models
 async function ensureOllamaModel() {
   try {
     const response = await fetch('http://localhost:11434/api/tags');
     const data = await response.json();
 
-    // Preferred models (best quality first, but not too large)
-    const preferredModels = [
-      'mistral:latest',     // Best quality, ~4GB
-      'llama3.2:3b',       // Good quality, smaller
-      'llama3.2:1b',       // Smaller, faster
-      'phi3:latest',        // Microsoft's model
-      'tinyllama:latest',  // Fastest, lowest quality
-    ];
-    let modelToUse = null;
+    // Check which core models are missing
+    const missingModels = [];
+    for (const coreModel of CORE_MODELS) {
+      const found = data.models?.find(
+        (m) =>
+          m.name === coreModel ||
+          m.name.startsWith(coreModel.replace(':latest', '').replace(':3b', ''))
+      );
+      if (!found) {
+        missingModels.push(coreModel);
+      } else {
+        console.log('[Ollama] Found core model:', found.name);
+      }
+    }
 
-    if (data.models && data.models.length > 0) {
-      // First, look for best available model
+    // If all core models exist, we're good
+    if (missingModels.length === 0) {
+      // Find best available model to use
+      let modelToUse = null;
+      const preferredModels = [
+        'mistral:latest',
+        'llama3.2:3b',
+        'llama3.2:1b',
+        'phi3:latest',
+        'tinyllama:latest',
+      ];
+
       for (const preferred of preferredModels) {
         const found = data.models.find(
           (m) =>
@@ -534,54 +667,65 @@ async function ensureOllamaModel() {
           break;
         }
       }
-      // If no preferred model found, use first available
+
       if (!modelToUse) {
-        // Filter out large models that won't work on CPU
-        const smallModels = data.models.filter((m) =>
-          cpuFriendlyModels.some(
-            (pm) =>
-              m.name.includes(pm.replace(':latest', '')) ||
-              m.name.includes('tinyllama') ||
-              m.name.includes('phi3')
-          )
-        );
-        if (smallModels.length > 0) {
-          modelToUse = smallModels[0].name;
+        modelToUse = data.models[0]?.name || 'mistral:latest';
+      }
+
+      return {
+        success: true,
+        model: modelToUse,
+        message: `Core models ready: ${data.models.map((m) => m.name).join(', ')}`,
+        models: data.models.map((m) => m.name),
+      };
+    }
+
+    // Pull missing core models
+    console.log('[Ollama] Missing models:', missingModels.join(', '));
+    console.log('[Ollama] Pulling core models...');
+
+    const installedModels = [];
+    const errors = [];
+
+    for (const model of missingModels) {
+      try {
+        console.log(`[Ollama] Pulling ${model}...`);
+
+        // Pull model via streaming endpoint
+        const pullResponse = await fetch('http://localhost:11434/api/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: model, stream: false }),
+        });
+
+        if (pullResponse.ok) {
+          console.log(`[Ollama] Successfully pulled ${model}`);
+          installedModels.push(model);
         } else {
-          modelToUse = data.models[0].name;
-          console.log(
-            '[Ollama] WARNING: Using large model on CPU, might be slow'
-          );
+          const errorText = await pullResponse.text();
+          console.error(`[Ollama] Failed to pull ${model}:`, errorText);
+          errors.push(`${model}: ${errorText}`);
         }
+      } catch (err) {
+        console.error(`[Ollama] Error pulling ${model}:`, err.message);
+        errors.push(`${model}: ${err.message}`);
       }
     }
 
-    if (!modelToUse) {
-      console.log(
-        '[Ollama] No models found, pulling mistral (best quality)...'
-      );
-
-      const pullResponse = await fetch('http://localhost:11434/api/pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'mistral:latest' }),
-      });
-
-      if (pullResponse.ok) {
-        console.log('[Ollama] Successfully pulled mistral model');
-        return {
-          success: true,
-          model: 'mistral:latest',
-          message: 'Mistral model installed',
-        };
-      }
-      return { success: false, error: 'Failed to pull model' };
+    if (installedModels.length > 0) {
+      return {
+        success: true,
+        model: installedModels[0],
+        message: `Installed models: ${installedModels.join(', ')}`,
+        models: installedModels,
+        errors: errors.length > 0 ? errors : undefined,
+      };
     }
 
     return {
-      success: true,
-      model: modelToUse,
-      message: 'Model ready for CPU-only mode',
+      success: false,
+      error: 'Failed to install any models',
+      details: errors,
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -593,7 +737,24 @@ ipcMain.handle('check-ollama-status', async () => {
   // First check if it's already running
   const running = await checkOllamaRunning();
   if (running) {
-    return { installed: true, running: true, needsInstall: false };
+    // Get list of installed models
+    try {
+      const response = await fetch('http://localhost:11434/api/tags');
+      const data = await response.json();
+      return {
+        installed: true,
+        running: true,
+        needsInstall: false,
+        models: data.models?.map((m) => m.name) || [],
+      };
+    } catch {
+      return {
+        installed: true,
+        running: true,
+        needsInstall: false,
+        models: [],
+      };
+    }
   }
 
   // Try to start it - if it works, we know it's installed
@@ -602,10 +763,20 @@ ipcMain.handle('check-ollama-status', async () => {
       if (error) {
         // Try Windows executable name too
         exec('ollama.exe --version', { timeout: 5000 }, (err2) => {
-          resolve({ installed: !err2, running: false, needsInstall: !!err2 });
+          resolve({
+            installed: !err2,
+            running: false,
+            needsInstall: !!err2,
+            models: [],
+          });
         });
       } else {
-        resolve({ installed: true, running: false, needsInstall: false });
+        resolve({
+          installed: true,
+          running: false,
+          needsInstall: false,
+          models: [],
+        });
       }
     });
   });
@@ -622,6 +793,48 @@ ipcMain.handle('start-ollama', async () => {
     const modelResult = await ensureOllamaModel();
 
     return { success: true, ...modelResult };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Force reinstall core models (mistral + llama3)
+ipcMain.handle('reinstall-ollama-models', async () => {
+  try {
+    await startOllama();
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Force reinstall both core models
+    console.log('[App] Force reinstalling core models...');
+
+    const models = ['mistral:latest', 'llama3.2:3b'];
+    const installed = [];
+
+    for (const model of models) {
+      try {
+        console.log(`[App] Pulling ${model}...`);
+        const pullResponse = await fetch('http://localhost:11434/api/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: model }),
+        });
+
+        if (pullResponse.ok) {
+          console.log(`[App] Successfully pulled ${model}`);
+          installed.push(model);
+        } else {
+          console.error(`[App] Failed to pull ${model}`);
+        }
+      } catch (err) {
+        console.error(`[App] Error pulling ${model}:`, err.message);
+      }
+    }
+
+    return {
+      success: true,
+      models: installed,
+      message: `Installed ${installed.length}/${models.length} core models`,
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -754,6 +967,117 @@ ipcMain.handle('browser-automation:close', async () => {
   return { success: true };
 });
 
+// ============ LOCAL STT SERVER (Whisper) ============
+let sttServerProcess = null;
+const STT_PORT = 3001;
+
+async function startSTTServer() {
+  return new Promise((resolve, reject) => {
+    // Check if already running
+    fetch(`http://localhost:${STT_PORT}/health`, {
+      signal: AbortSignal.timeout(1000),
+    })
+      .then(() => {
+        console.log('[STT Server] Already running');
+        resolve(true);
+      })
+      .catch(() => {
+        // Not running, start it
+        console.log('[STT Server] Starting local STT server...');
+
+        const { spawn } = require('child_process');
+        const scriptPath = path.join(__dirname, 'stt-server.cjs');
+
+        sttServerProcess = spawn('node', [scriptPath], {
+          cwd: path.dirname(scriptPath),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, STT_PORT: String(STT_PORT) },
+        });
+
+        let modelReady = false;
+
+        sttServerProcess.stdout.on('data', (data) => {
+          const output = data.toString().trim();
+          console.log('[STT Server]', output);
+
+          // Check if server is running
+          if (output.includes('Running on')) {
+            modelReady = true;
+            resolve(true);
+          }
+
+          // Check model download progress
+          if (output.includes('Downloading model')) {
+            mainWindow?.webContents.send('stt-download-progress', {
+              status: 'downloading',
+              message: 'Downloading Whisper model...',
+            });
+          }
+
+          if (
+            output.includes('download complete') ||
+            output.includes('Model download complete')
+          ) {
+            mainWindow?.webContents.send('stt-download-progress', {
+              status: 'done',
+              message: 'Whisper model ready!',
+            });
+          }
+        });
+
+        sttServerProcess.stderr.on('data', (data) => {
+          console.log('[STT Server] stderr:', data.toString().trim());
+        });
+
+        sttServerProcess.on('error', (err) => {
+          console.error('[STT Server] Error:', err.message);
+          resolve(false); // Don't block app, just means STT won't work
+        });
+
+        sttServerProcess.on('exit', (code) => {
+          console.log('[STT Server] Exited with code:', code);
+          sttServerProcess = null;
+        });
+
+        // Timeout - resolve anyway after 30 seconds
+        setTimeout(() => {
+          console.log('[STT Server] Startup timeout');
+          resolve(true); // Don't block app
+        }, 30000);
+      });
+  });
+}
+
+// IPC handler for frontend to check/get STT server status
+ipcMain.handle('stt:status', async () => {
+  try {
+    const response = await fetch(`http://localhost:${STT_PORT}/health`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    const data = await response.json();
+    return {
+      available: true,
+      modelLoaded: data.modelDownloaded,
+      downloadProgress: data.downloadProgress || null,
+    };
+  } catch {
+    return { available: false, modelLoaded: false, downloadProgress: null };
+  }
+});
+
+// IPC handler to trigger model download
+ipcMain.handle('stt:download', async () => {
+  try {
+    const response = await fetch(`http://localhost:${STT_PORT}/download`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
+});
+
 let aiBrowserWindow = null;
 let aiWebview = null;
 
@@ -808,6 +1132,39 @@ ipcMain.handle('open-ai-browser', async (event, url, context) => {
         partition: 'persist:ai-browser',
       },
       title: 'Rev AI Browser',
+    });
+
+    // Set up microphone permissions for AI browser window
+    aiBrowserWindow.webContents.on('did-finish-load', () => {
+      console.log('[AIBrowser] Window loaded, setting permissions...');
+
+      // Grant microphone permission
+      aiBrowserWindow.webContents.session.setPermissionRequestHandler(
+        (webContents, permission, callback) => {
+          console.log(
+            '[AIBrowser Permission]',
+            permission,
+            'URL:',
+            webContents.getURL()
+          );
+          if (permission === 'microphone' || permission === 'media') {
+            callback(true);
+          } else {
+            callback(true);
+          }
+        }
+      );
+
+      // Allow microphone
+      aiBrowserWindow.webContents.session.setDevicePermissionHandler(
+        (details) => {
+          if (details.deviceType === 'microphone') {
+            console.log('[AIBrowser] Granting microphone permission');
+            return true;
+          }
+          return false;
+        }
+      );
     });
 
     aiBrowserWindow.on('closed', () => {
@@ -1344,27 +1701,36 @@ ipcMain.handle('ai-brain:execute', async (event, { task, userId }) => {
       };
     }
 
-    // Handle navigation URL - navigate in webview
+    // Handle navigation URL - return URL for frontend to open AI Browser
     if (result.success && result.url) {
-      const win = getOrCreateAIBrowserWindow();
-
-      // Navigate in webview
-      const navResult = await win.webContents.executeJavaScript(`
-        (function() {
-          const webview = document.querySelector('webview');
-          if (webview) {
-            webview.loadURL('${result.url.replace(/'/g, "\\'")}');
-            return { success: true };
-          }
-          return { success: false };
-        })();
-      `);
+      // Also try to navigate in existing AI Browser window (best effort)
+      try {
+        const win = getOrCreateAIBrowserWindow();
+        if (win && !win.isDestroyed()) {
+          win.webContents.executeJavaScript(`
+            (function() {
+              const webview = document.querySelector('webview');
+              if (webview) {
+                webview.loadURL('${result.url.replace(/'/g, "\\'")}');
+                return { success: true };
+              }
+              return { success: false };
+            })();
+          `);
+        }
+      } catch (e) {
+        console.log(
+          '[AI Brain] Could not navigate existing window:',
+          e.message
+        );
+      }
 
       return {
         success: true,
+        url: result.url, // Return URL so frontend can open AI Browser
         executed: true,
         actions: [{ type: 'NAVIGATE', value: result.url }],
-        response: `🚀 Navigated to ${result.url}`,
+        response: `🚀 Navigating to ${result.url}`,
         context: result.context || null,
       };
     }

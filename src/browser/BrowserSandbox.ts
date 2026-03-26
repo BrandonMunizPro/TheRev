@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export interface SandboxConfig {
   maxMemoryMB: number;
@@ -89,7 +90,7 @@ export class BrowserSandbox extends EventEmitter {
 
   createSession(metadata?: Record<string, any>): SandboxSession {
     if (this.sessions.size >= this.config.maxConcurrentTabs) {
-      throw new Error(
+      throw ErrorHandler.operationNotAllowed(
         `Maximum concurrent sessions (${this.config.maxConcurrentTabs}) reached`
       );
     }
@@ -116,7 +117,7 @@ export class BrowserSandbox extends EventEmitter {
   async terminateSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
+      throw ErrorHandler.operationNotAllowed(`Session not found: ${sessionId}`);
     }
 
     session.status = SessionStatus.TERMINATING;

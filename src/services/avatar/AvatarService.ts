@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AvatarAnimations, AvatarEmotion } from './AvatarAnimations';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export interface AvatarConfig {
   bodyType: string;
@@ -40,7 +41,8 @@ export class AvatarService {
 
   constructor(containerId: string) {
     const container = document.getElementById(containerId);
-    if (!container) throw new Error(`Container ${containerId} not found`);
+    if (!container)
+      throw ErrorHandler.invalidInput(`Container ${containerId} not found`);
 
     this.clock = new THREE.Clock();
     this.scene = new THREE.Scene();

@@ -1,6 +1,7 @@
 import { AppDataSource } from '../data-source';
 import { Thread } from '../entities/Thread';
 import { DeepPartial, Repository } from 'typeorm';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export class ThreadsDao {
   private get repo(): Repository<Thread> {
@@ -94,7 +95,7 @@ export class ThreadsDao {
     const updated = await this.repo.findOne({ where: { id } });
 
     if (!updated) {
-      throw new Error(`Thread with id ${id} not found`);
+      throw ErrorHandler.threadNotFound(id);
     }
     return updated;
   }

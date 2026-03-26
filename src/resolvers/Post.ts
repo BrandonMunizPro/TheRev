@@ -4,6 +4,7 @@ import { PostsModel } from '../models/posts.model';
 import { InputType, Field, ID } from 'type-graphql';
 import { GraphQLContext } from '../graphql/context';
 import { PostType } from '../graphql/enums/PostType';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 @InputType()
 export class CreatePostInput {
@@ -97,7 +98,7 @@ export class PostResolver {
     @Arg('input') data: CreatePostInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost> {
-    if (!ctx.user) throw new Error('Authentication required');
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
     return this.model.createPost(data, ctx.user.userId);
   }
 
@@ -140,7 +141,7 @@ export class PostResolver {
     @Arg('input') data: UpdatePostInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost> {
-    if (!ctx.user) throw new Error('Authentication required');
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
     return this.model.updatePost(data, ctx.user.userId, id);
   }
 
@@ -149,7 +150,7 @@ export class PostResolver {
     @Arg('id', () => ID) id: string,
     @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
-    if (!ctx.user) throw new Error('Authentication required');
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
     return this.model.deletePost(id, ctx.user.userId);
   }
 
@@ -158,7 +159,7 @@ export class PostResolver {
     @Arg('input') data: UpdatePostPinnedInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost | null> {
-    if (!ctx.user) throw new Error('Authentication required');
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
     return this.model.updatePostPin(data, ctx.user.userId);
   }
 }

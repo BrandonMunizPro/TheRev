@@ -1,4 +1,5 @@
 import { UserRole } from '../graphql/enums/UserRole';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export enum AIPermission {
   CONTENT_GENERATION = 'content:generate',
@@ -99,7 +100,10 @@ export const DEFAULT_PERMISSION_RULES: AIPermissionRule[] = [
 export class AIPermissionService {
   private permissionRules: Map<UserRole, AIPermissionRule>;
   private userPermissions: Map<string, UserAIPermissions>;
-  private usageTracker: Map<string, { dailyTokens: number; monthlyTasks: number; lastReset: Date }>;
+  private usageTracker: Map<
+    string,
+    { dailyTokens: number; monthlyTasks: number; lastReset: Date }
+  >;
 
   constructor(rules: AIPermissionRule[] = DEFAULT_PERMISSION_RULES) {
     this.permissionRules = new Map();
@@ -113,13 +117,18 @@ export class AIPermissionService {
     }
   }
 
-  async getUserPermissions(userId: string, userRole: UserRole): Promise<UserAIPermissions> {
+  async getUserPermissions(
+    userId: string,
+    userRole: UserRole
+  ): Promise<UserAIPermissions> {
     const cached = this.userPermissions.get(userId);
     if (cached && (!cached.expiresAt || cached.expiresAt > new Date())) {
       return cached;
     }
 
-    const rule = this.permissionRules.get(userRole) || this.permissionRules.get(UserRole.STANDARD)!;
+    const rule =
+      this.permissionRules.get(userRole) ||
+      this.permissionRules.get(UserRole.STANDARD)!;
     const permissions = new Set(rule.permissions);
 
     const userPerms: UserAIPermissions = {
@@ -138,19 +147,35 @@ export class AIPermissionService {
     return userPerms;
   }
 
-  async checkPermission(userId: string, userRole: UserRole, permission: AIPermission): Promise<boolean> {
+  async checkPermission(
+    userId: string,
+    userRole: UserRole,
+    permission: AIPermission
+  ): Promise<boolean> {
     const perms = await this.getUserPermissions(userId, userRole);
     return perms.permissions.has(permission);
   }
 
-  async requirePermission(userId: string, userRole: UserRole, permission: AIPermission): Promise<void> {
-    const hasPermission = await this.checkPermission(userId, userRole, permission);
+  async requirePermission(
+    userId: string,
+    userRole: UserRole,
+    permission: AIPermission
+  ): Promise<void> {
+    const hasPermission = await this.checkPermission(
+      userId,
+      userRole,
+      permission
+    );
     if (!hasPermission) {
-      throw new Error(`User ${userId} lacks permission: ${permission}`);
+      throw ErrorHandler.insufficientPermissions(permission, 'AI feature');
     }
   }
 
-  async checkRateLimit(userId: string, tokensToUse: number, tasksToAdd: number): Promise<{ allowed: boolean; reason?: string }> {
+  async checkRateLimit(
+    userId: string,
+    tokensToUse: number,
+    tasksToAdd: number
+  ): Promise<{ allowed: boolean; reason?: string }> {
     const usage = this.getOrInitUsage(userId);
 
     const perms = this.userPermissions.get(userId);
@@ -167,30 +192,47 @@ export class AIPermissionService {
     return { allowed: true };
   }
 
-  async consumeRateLimit(userId: string, tokensUsed: number, tasksAdded: number = 1): Promise<void> {
+  async consumeRateLimit(
+    userId: string,
+    tokensUsed: number,
+    tasksAdded: number = 1
+  ): Promise<void> {
     const usage = this.getOrInitUsage(userId);
     usage.dailyTokens += tokensUsed;
     usage.monthlyTasks += tasksAdded;
     this.usageTracker.set(userId, usage);
   }
 
-  private getOrInitUsage(userId: string): { dailyTokens: number; monthlyTasks: number; lastReset: Date } {
+  private getOrInitUsage(userId: string): {
+    dailyTokens: number;
+    monthlyTasks: number;
+    lastReset: Date;
+  } {
     const now = new Date();
     let usage = this.usageTracker.get(userId);
 
     if (!usage) {
       usage = { dailyTokens: 0, monthlyTasks: 0, lastReset: now };
     } else {
-      const hoursSinceReset = (now.getTime() - usage.lastReset.getTime()) / (1000 * 60 * 60);
+      const hoursSinceReset =
+        (now.getTime() - usage.lastReset.getTime()) / (1000 * 60 * 60);
       if (hoursSinceReset >= 24) {
-        usage = { dailyTokens: 0, monthlyTasks: usage.monthlyTasks, lastReset: now };
+        usage = {
+          dailyTokens: 0,
+          monthlyTasks: usage.monthlyTasks,
+          lastReset: now,
+        };
       }
     }
 
     return usage;
   }
 
-  async getUsageStats(userId: string): Promise<{ dailyTokens: number; monthlyTasks: number; limits: { daily: number; monthly: number } }> {
+  async getUsageStats(userId: string): Promise<{
+    dailyTokens: number;
+    monthlyTasks: number;
+    limits: { daily: number; monthly: number };
+  }> {
     const usage = this.getOrInitUsage(userId);
     const perms = this.userPermissions.get(userId);
 
@@ -231,7 +273,10 @@ export class AIPermissionService {
     this.userPermissions.set(userId, perms);
   }
 
-  async revokePermission(userId: string, permission: AIPermission): Promise<void> {
+  async revokePermission(
+    userId: string,
+    permission: AIPermission
+  ): Promise<void> {
     const perms = this.userPermissions.get(userId);
     if (perms) {
       perms.permissions.delete(permission);
@@ -239,7 +284,10 @@ export class AIPermissionService {
     }
   }
 
-  async setUserRole(userId: string, role: UserRole): Promise<UserAIPermissions> {
+  async setUserRole(
+    userId: string,
+    role: UserRole
+  ): Promise<UserAIPermissions> {
     return this.getUserPermissions(userId, role);
   }
 }

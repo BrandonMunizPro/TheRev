@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import 'reflect-metadata';
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import { getUserFromRequest } from './auth/getUserFromRequest';
 import { createYoga } from 'graphql-yoga';
 import { AppDataSource } from './data-source';
@@ -91,23 +93,82 @@ async function initializeAIProviders() {
     }
   }
 
+  // Initialize Ollama (will auto-install models if needed)
+  initializeOllama();
+
+  // Endpoint to refresh/reinstall Ollama models
+  app.post('/api/ollama/refresh-models', async (req, res) => {
+    try {
+      console.log('[Backend] Refreshing Ollama models...');
+      const result = await initializeOllama(true);
+      res.json(result);
+    } catch (error) {
+      console.error('[Backend] Error refreshing models:', error);
+      res.json({ success: false, error: error.message });
+    }
+  });
+}
+
+// Function to initialize Ollama and auto-install models
+async function initializeOllama(forceRefresh = false) {
   // Always initialize Ollama as fallback
   try {
     const ollama = new OllamaAdapter();
     const baseUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
 
-    // First check what models are available
+    // Check what models are available
     const tagsResponse = await fetch(`${baseUrl}/api/tags`);
     const tagsData = (await tagsResponse.json()) as {
       models?: Array<{ name: string }>;
     };
-    const availableModels = tagsData.models?.map((m) => m.name) || [];
+    let availableModels = tagsData.models?.map((m) => m.name) || [];
+
+    // Core models to ensure are installed
+    const coreModels = ['mistral', 'llama3'];
+    const missingCoreModels: string[] = [];
+
+    for (const core of coreModels) {
+      const found = availableModels.find((m) => m.toLowerCase().includes(core));
+      if (!found) {
+        missingCoreModels.push(
+          core === 'mistral' ? 'mistral:latest' : 'llama3.2:3b'
+        );
+      }
+    }
+
+    // Auto-install missing core models
+    if (missingCoreModels.length > 0 || forceRefresh) {
+      console.log(
+        `⚠️ Ollama ${forceRefresh ? 'refreshing' : 'missing models'}: ${missingCoreModels.join(', ') || 'forcing reinstall'}`
+      );
+
+      for (const modelName of missingCoreModels) {
+        try {
+          console.log(`[Backend] Installing ${modelName}...`);
+          const pullResponse = await fetch(`${baseUrl}/api/pull`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: modelName }),
+          });
+
+          if (pullResponse.ok) {
+            console.log(`[Backend] Successfully installed ${modelName}`);
+            availableModels.push(modelName);
+          } else {
+            console.error(`[Backend] Failed to install ${modelName}`);
+          }
+        } catch (err) {
+          console.error(
+            `[Backend] Error installing ${modelName}:`,
+            err.message
+          );
+        }
+      }
+    }
 
     if (availableModels.length === 0) {
-      console.log(
-        '⚠️ Ollama has no models. Run "ollama pull tinyllama" to download a model.'
-      );
-      return;
+      console.log('⚠️ Still no models after auto-install attempt.');
+      return { success: false, error: 'No models available', models: [] };
     }
 
     // Use configured model or default to mistral (better quality than tinyllama)
@@ -116,15 +177,17 @@ async function initializeAIProviders() {
     // Prefer better models over tinyllama
     const modelPriority = ['mistral', 'llama3', 'phi3', 'gemma2', 'tinyllama'];
     let model: string | undefined;
-    
+
     for (const priority of modelPriority) {
-      const found = availableModels.find((m) => m.toLowerCase().includes(priority));
+      const found = availableModels.find((m) =>
+        m.toLowerCase().includes(priority)
+      );
       if (found) {
         model = found;
         break;
       }
     }
-    
+
     if (!model) {
       model = availableModels.find((m) => m.startsWith(configuredModel));
     }
@@ -134,59 +197,79 @@ async function initializeAIProviders() {
 
     await ollama.initialize({ baseUrl, model });
     const selectedModel = model;
-    
+
     if (await ollama.isHealthy()) {
       // Test the model to ensure it's working (catches corruption issues)
       console.log(`[Ollama] Testing model ${selectedModel}...`);
       const testResult = await ollama.testModel();
-      
+
       if (testResult.success) {
         await adapterFactory.registerAdapter(AIProvider.OPEN_SOURCE, ollama);
-        configuredProviders.set(AIProvider.OPEN_SOURCE, { baseUrl, model: selectedModel });
+        configuredProviders.set(AIProvider.OPEN_SOURCE, {
+          baseUrl,
+          model: selectedModel,
+        });
         console.log(`✅ Ollama adapter initialized (model: ${selectedModel})`);
+        return {
+          success: true,
+          model: selectedModel,
+          models: availableModels,
+        };
       } else if (testResult.repairTriggered) {
-        console.log(`[Ollama] Auto-repair triggered for model ${selectedModel}`);
+        console.log(
+          `[Ollama] Auto-repair triggered for model ${selectedModel}`
+        );
         // Re-test after repair
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, 5000));
         const retest = await ollama.testModel();
         if (retest.success) {
           await adapterFactory.registerAdapter(AIProvider.OPEN_SOURCE, ollama);
-          configuredProviders.set(AIProvider.OPEN_SOURCE, { baseUrl, model: selectedModel });
-          console.log(`✅ Ollama adapter initialized after repair (model: ${selectedModel})`);
+          configuredProviders.set(AIProvider.OPEN_SOURCE, {
+            baseUrl,
+            model: selectedModel,
+          });
+          console.log(
+            `✅ Ollama adapter initialized after repair (model: ${selectedModel})`
+          );
+          return {
+            success: true,
+            model: selectedModel,
+            models: availableModels,
+            repaired: true,
+          };
         } else {
           console.log(`[Ollama] Repair did not fix the issue: ${retest.error}`);
-          console.log(`[Ollama] Users can try /api/ollama/repair endpoint for manual repair`);
+          return {
+            success: false,
+            error: retest.error,
+            models: availableModels,
+          };
         }
       }
     }
+
+    return {
+      success: false,
+      error: 'Ollama not healthy',
+      models: availableModels,
+    };
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    console.log(
-      '⚠️ Ollama not available:',
-      errorMsg
-    );
-    // Try to repair even on initial failure
-    if (errorMsg.includes('CUDA') || errorMsg.includes('GPU') || errorMsg.includes('runner')) {
-      console.log('[Ollama] Attempting auto-repair on startup...');
-      const repairResult = await ollamaRepair.performRepair({ 
-        autoRepair: true, 
-        allowReinstall: true,
-        modelToTest: 'mistral'
-      });
-      if (repairResult.success) {
-        console.log('[Ollama] Startup repair successful!');
-      } else {
-        console.log('[Ollama] Startup repair failed:', repairResult.userMessage);
-      }
-    }
+    console.error('[Ollama] Initialization error:', err.message);
+    return { success: false, error: err.message };
   }
+}
 
-  // Start health monitoring
-  adapterFactory.startHealthMonitoring(30000);
+async function initializeBrowserAgent() {
+  try {
+    // Start health monitoring
+    adapterFactory.startHealthMonitoring(30000);
 
-  // Initialize browser agent with Ollama
-  await browserAgent.initialize(AIProvider.OPEN_SOURCE);
-  console.log('✅ Browser Agent initialized');
+    // Initialize browser agent with Ollama
+    await browserAgent.initialize(AIProvider.OPEN_SOURCE);
+    console.log('✅ Browser Agent initialized');
+  } catch (err) {
+    console.log('[BrowserAgent] Initialization warning:', err.message);
+  }
 }
 
 async function startServer() {
@@ -196,8 +279,11 @@ async function startServer() {
       console.log('📡 NEXUS database connected');
     }
 
-    // Initialize AI providers
+    // Initialize AI providers (includes auto-installing Ollama models)
     await initializeAIProviders();
+
+    // Initialize browser agent after AI providers
+    initializeBrowserAgent();
 
     const schema = await buildSchema({
       resolvers: [
@@ -218,8 +304,19 @@ async function startServer() {
       }),
     });
 
-    app.use(express.json());
+    app.use(express.json({ limit: '50mb' }));
     app.use('/graphql', yoga as any);
+
+    // Serve uploaded files
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    const uploadsProfilesDir = path.join(uploadsDir, 'profiles');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    if (!fs.existsSync(uploadsProfilesDir)) {
+      fs.mkdirSync(uploadsProfilesDir, { recursive: true });
+    }
+    app.use('/uploads', express.static(uploadsDir));
 
     // AI Browser Command Endpoint
     app.post('/api/ai-browser-command', async (req, res) => {
@@ -241,21 +338,105 @@ async function startServer() {
           intentResult.confidence
         );
 
-        // For navigation intents - open browser immediately, do context async
+        // Fallback: If confidence is low, try routing as search query
+        if (
+          intentResult.intent === AIIntentType.UNKNOWN ||
+          intentResult.confidence < 0.5
+        ) {
+          const route = websiteRouter.route(command);
+
+          // For conversational questions, generate an AI response AND navigate
+          const isQuestion =
+            /^(what|who|how|when|where|why|can|could|would|should|tell|explain|describe|define)/i.test(
+              command
+            );
+
+          if (route.url && route.url !== 'https://www.google.com/search?q=') {
+            console.log(
+              '[Ask Rev] Low confidence - routing as search:',
+              route.url
+            );
+
+            // Generate conversational response for questions
+            let response = '';
+            if (isQuestion) {
+              try {
+                console.log('[Ask Rev] Generating conversational response...');
+                const provider =
+                  adapterFactory.getBestAvailableProvider() ||
+                  AIProvider.OPEN_SOURCE;
+                const adapter = adapterFactory.getAdapter(provider);
+                if (adapter) {
+                  // Add timeout to prevent hanging
+                  const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('AI timeout')), 30000);
+                  });
+
+                  const aiResponse = await Promise.race([
+                    adapter.complete({
+                      provider,
+                      prompt: `You are Rev, a helpful AI assistant. Answer this question briefly (2-3 sentences max): ${command}`,
+                      systemPrompt: 'You are Rev, a helpful AI assistant.',
+                      maxTokens: 256,
+                      temperature: 0.7,
+                    }),
+                    timeoutPromise,
+                  ]);
+
+                  if (
+                    aiResponse &&
+                    typeof aiResponse === 'object' &&
+                    'content' in aiResponse
+                  ) {
+                    response =
+                      (aiResponse as { content?: string }).content || '';
+                    console.log('[Ask Rev] AI response:', response);
+                  }
+                }
+
+                // If no response from AI, use a generic response
+                if (!response) {
+                  response = `That's a great question! Let me search for the latest information about that for you.`;
+                }
+              } catch (err) {
+                console.error('[Ask Rev] AI response error:', err.message);
+                response = `That's a great question! Let me search for information about that for you.`;
+              }
+            }
+
+            return res.json({
+              success: true,
+              url: route.url,
+              website: route.website,
+              intent: AIIntentType.NAVIGATE_URL,
+              response: response || undefined,
+              context: route.query
+                ? `Searching ${route.website} for "${route.query}"...`
+                : `Opening ${route.website}...`,
+            });
+          }
+        }
+
+        // For navigation intents - return immediately, context is async
         if (intentResult.intent === AIIntentType.NAVIGATE_URL) {
           const route = websiteRouter.route(command);
-          console.log('[Ask Rev] Routing to:', route.website, 'URL:', route.url);
+          console.log(
+            '[Ask Rev] Routing to:',
+            route.website,
+            'URL:',
+            route.url
+          );
           if (route.query) {
             console.log('[Ask Rev] Search query:', route.query);
           }
 
-          // Return immediately - open browser window now, context async
+          // Return immediately - frontend navigates fast, context comes async
           return res.json({
             success: true,
             url: route.url,
             website: route.website,
             intent: intentResult.intent,
-            context: route.query 
+            context: route.query
               ? `Searching ${route.website} for "${route.query}"...`
               : `Opening ${route.website}...`,
           });
@@ -590,7 +771,7 @@ async function startServer() {
           modelsAvailable: [],
           modelTested: false,
           modelTestSuccess: false,
-          lastError: error instanceof Error ? error.message : 'Unknown error'
+          lastError: error instanceof Error ? error.message : 'Unknown error',
         });
       }
     });
@@ -602,29 +783,33 @@ async function startServer() {
         const result: RepairResult = await ollamaRepair.performRepair({
           autoRepair: true,
           allowReinstall: true,
-          modelToTest: process.env.OLLAMA_MODEL || 'llama3'
+          modelToTest: process.env.OLLAMA_MODEL || 'llama3',
         });
-        
+
         if (result.success) {
-          console.log('[API] Ollama repair successful:', result.actionsPerformed);
+          console.log(
+            '[API] Ollama repair successful:',
+            result.actionsPerformed
+          );
         } else {
           console.log('[API] Ollama repair failed:', result.userMessage);
         }
-        
+
         res.json({
           success: result.success,
           repairType: result.repairType,
           actions: result.actionsPerformed,
           userMessage: result.userMessage,
           requiresRestart: result.requiresRestart,
-          userActionRequired: result.userActionRequired
+          userActionRequired: result.userActionRequired,
         });
       } catch (error) {
         console.error('[API] Ollama repair error:', error);
         res.json({
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
-          userMessage: 'Repair failed. Please try restarting the app or reinstalling Ollama manually.'
+          userMessage:
+            'Repair failed. Please try restarting the app or reinstalling Ollama manually.',
         });
       }
     });
@@ -765,6 +950,171 @@ async function startServer() {
       } catch (error) {
         console.error('[News] Error summarizing article:', error);
         res.json({ success: false, error: 'Failed to summarize' });
+      }
+    });
+
+    // General text summarization endpoint (for browser content)
+    app.post('/api/summarize-text', async (req, res) => {
+      try {
+        const { text, url, title } = req.body;
+
+        if (!text || text.length < 50) {
+          return res.json({
+            success: false,
+            error: 'Not enough text content to summarize',
+            summary: 'Please browse to a page with more content.',
+          });
+        }
+
+        console.log('[Summarize] Text length:', text.length, 'Title:', title);
+
+        const provider = adapterFactory.getBestAvailableProvider();
+
+        if (!provider) {
+          // Return a truncated version of the content as summary
+          const truncatedSummary =
+            text.substring(0, 500) + (text.length > 500 ? '...' : '');
+          return res.json({
+            success: true,
+            summary: `📄 **Content Preview:**\n\n${truncatedSummary}\n\n(AI summarization unavailable - Ollama not running with models)`,
+            note: 'Ollama not available',
+          });
+        }
+
+        const adapter = adapterFactory.getAdapter(provider);
+        if (!adapter) {
+          return res.json({
+            success: false,
+            error: 'AI adapter not available',
+            summary: 'AI adapter not configured.',
+          });
+        }
+
+        const aiResponse = (await Promise.race([
+          adapter.complete({
+            provider,
+            prompt: `You are Rev, a helpful assistant. Summarize the following content in 2-3 sentences:\n\n${text.substring(0, 8000)}`,
+            systemPrompt:
+              'You are Rev, a helpful assistant that provides concise summaries.',
+            maxTokens: 256,
+            temperature: 0.5,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('AI timeout')), 10000)
+          ),
+        ])) as { content?: string };
+
+        const summary = aiResponse?.content || text.substring(0, 300) + '...';
+
+        res.json({
+          success: true,
+          summary: `📄 **Summary:**\n\n${summary}`,
+        });
+      } catch (error) {
+        console.error('[Summarize] Error:', error);
+        // Return a fallback summary
+        const fallbackText = req.body.text?.substring(0, 500) || '';
+        res.json({
+          success: true,
+          summary: `📄 **Content Preview:**\n\n${fallbackText}${fallbackText.length >= 500 ? '...' : ''}`,
+          error: error.message,
+        });
+      }
+    });
+
+    // Profile Picture Upload Endpoint
+    app.post('/api/profile/upload', async (req, res) => {
+      try {
+        const { imageBase64, userId, fileName } = req.body;
+
+        if (!imageBase64) {
+          return res
+            .status(400)
+            .json({ success: false, error: 'No image provided' });
+        }
+
+        // Extract base64 data (remove data:image/jpeg;base64, prefix if present)
+        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+
+        // Determine file extension from mime type in base64
+        let extension = 'jpg';
+        if (imageBase64.includes('image/png')) extension = 'png';
+        else if (imageBase64.includes('image/gif')) extension = 'gif';
+        else if (imageBase64.includes('image/webp')) extension = 'webp';
+
+        // Generate unique filename
+        const uniqueName = `${userId || 'user'}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${extension}`;
+        const filePath = path.join(uploadsProfilesDir, uniqueName);
+
+        // Save the file
+        fs.writeFileSync(filePath, imageBuffer);
+
+        // Return the URL
+        const imageUrl = `/uploads/profiles/${uniqueName}`;
+        console.log(`[Profile] Uploaded profile picture: ${imageUrl}`);
+
+        res.json({ success: true, imageUrl: imageUrl });
+      } catch (error) {
+        console.error('[Profile] Upload error:', error);
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // Async AI context endpoint - called after navigation
+    app.post('/api/ai-context', async (req, res) => {
+      try {
+        const { command } = req.body;
+
+        if (!command) {
+          return res.json({ success: false, context: null });
+        }
+
+        // Check if it's a question that needs AI response
+        const isQuestion =
+          /^(what|who|how|when|where|why|can|could|would|should|tell|explain|describe|define|search|find|show)/i.test(
+            command
+          );
+
+        if (!isQuestion) {
+          return res.json({ success: false, context: null });
+        }
+
+        console.log('[AI Context] Generating async response for:', command);
+
+        const provider =
+          adapterFactory.getBestAvailableProvider() || AIProvider.OPEN_SOURCE;
+        const adapter = adapterFactory.getAdapter(provider);
+
+        if (!adapter) {
+          return res.json({
+            success: false,
+            context: 'AI assistant is not available right now.',
+          });
+        }
+
+        const aiResponse = (await Promise.race([
+          adapter.complete({
+            provider,
+            prompt: `You are Rev, a helpful AI assistant. Answer this question briefly (2-3 sentences max): ${command}`,
+            systemPrompt: 'You are Rev, a helpful AI assistant.',
+            maxTokens: 256,
+            temperature: 0.7,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('AI timeout')), 15000)
+          ),
+        ])) as { content?: string };
+
+        if (aiResponse && aiResponse.content) {
+          console.log('[AI Context] Response generated');
+          res.json({ success: true, context: aiResponse.content });
+        } else {
+          res.json({ success: false, context: null });
+        }
+      } catch (error) {
+        console.error('[AI Context] Error:', error.message);
+        res.json({ success: false, context: null });
       }
     });
 

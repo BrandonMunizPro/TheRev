@@ -50,6 +50,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
     "@google/generative-ai": "^0.8.0",
+    "@lumen-labs-dev/whisper-node": "^0.4.1",
     "@pixiv/three-vrm": "^3.0.0",
     "@pixiv/three-vrm-animation": "^3.0.0",
     "@types/ioredis": "^4.28.10",

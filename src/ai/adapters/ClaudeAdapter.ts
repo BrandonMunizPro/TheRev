@@ -1,12 +1,14 @@
 import { AIProvider } from '../AIIntentTypes';
-import { 
-  BaseAIAdapter, 
-  AIAdapterConfig, 
+import {
+  BaseAIAdapter,
+  AIAdapterConfig,
   ProviderCapabilities,
   PROVIDER_CAPABILITY_PROFILES,
   AIRequest,
-  AIResponse 
+  AIResponse,
 } from './AIAdapter';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface ClaudeConfig extends AIAdapterConfig {
   apiKey: string;
@@ -29,37 +31,41 @@ export class ClaudeAdapter extends BaseAIAdapter {
     this.ensureInitialized();
 
     const response = await this.executeWithTimeout(
-      () => fetch(`${this.baseUrl}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: request.model || this.model,
-          messages: this.buildMessages(request),
-          max_tokens: request.maxTokens ?? 2000,
-          temperature: request.temperature ?? 0.7,
-          stream: false,
+      () =>
+        fetch(`${this.baseUrl}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': this.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: request.model || this.model,
+            messages: this.buildMessages(request),
+            max_tokens: request.maxTokens ?? 2000,
+            temperature: request.temperature ?? 0.7,
+            stream: false,
+          }),
         }),
-      }),
       request.maxTokens ? undefined : this.config.timeout
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Claude API error: ${response.status} - ${error.error?.message || response.statusText}`);
+      throw ErrorHandler.internalServerError(
+        `Claude API error: ${response.status} - ${error.error?.message || response.statusText}`,
+        { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+      );
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       id: string;
       content: Array<{ type: string; text: string }>;
       stop_reason: string;
       usage: { input_tokens: number; output_tokens: number };
     };
 
-    const textContent = data.content.find(c => c.type === 'text');
+    const textContent = data.content.find((c) => c.type === 'text');
     return {
       content: textContent?.text || '',
       provider: this.provider,
@@ -69,30 +75,37 @@ export class ClaudeAdapter extends BaseAIAdapter {
     };
   }
 
-  async stream(request: AIRequest, onChunk: (chunk: string) => void): Promise<AIResponse> {
+  async stream(
+    request: AIRequest,
+    onChunk: (chunk: string) => void
+  ): Promise<AIResponse> {
     this.ensureInitialized();
 
     const response = await this.executeWithTimeout(
-      () => fetch(`${this.baseUrl}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: request.model || this.model,
-          messages: this.buildMessages(request),
-          max_tokens: request.maxTokens ?? 2000,
-          temperature: request.temperature ?? 0.7,
-          stream: true,
+      () =>
+        fetch(`${this.baseUrl}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': this.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: request.model || this.model,
+            messages: this.buildMessages(request),
+            max_tokens: request.maxTokens ?? 2000,
+            temperature: request.temperature ?? 0.7,
+            stream: true,
+          }),
         }),
-      }),
       request.maxTokens ? undefined : this.config.timeout
     );
 
     if (!response.ok || !response.body) {
-      throw new Error(`Claude stream error: ${response.status}`);
+      throw ErrorHandler.internalServerError(
+        `Claude stream error: ${response.status}`,
+        { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+      );
     }
 
     const reader = response.body.getReader();
@@ -106,7 +119,9 @@ export class ClaudeAdapter extends BaseAIAdapter {
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+        const lines = chunk
+          .split('\n')
+          .filter((line) => line.startsWith('data: '));
 
         for (const line of lines) {
           const data = line.slice(6);
@@ -122,7 +137,8 @@ export class ClaudeAdapter extends BaseAIAdapter {
               }
             }
             if (parsed.usage) {
-              totalTokens = parsed.usage.input_tokens + parsed.usage.output_tokens;
+              totalTokens =
+                parsed.usage.input_tokens + parsed.usage.output_tokens;
             }
           } catch {}
         }
@@ -162,23 +178,31 @@ export class ClaudeAdapter extends BaseAIAdapter {
     return modelSizes[this.model] ?? 200000;
   }
 
-  private buildMessages(request: AIRequest): Array<{ role: string; content: string }> {
+  private buildMessages(
+    request: AIRequest
+  ): Array<{ role: string; content: string }> {
     const messages: Array<{ role: string; content: string }> = [];
-    
+
     if (request.systemPrompt) {
       messages.push({ role: 'user', content: request.systemPrompt });
     }
     messages.push({ role: 'user', content: request.prompt });
-    
+
     return messages;
   }
 
-  private mapFinishReason(reason?: string): 'stop' | 'length' | 'content_filter' | 'error' {
+  private mapFinishReason(
+    reason?: string
+  ): 'stop' | 'length' | 'content_filter' | 'error' {
     switch (reason) {
-      case 'end_turn': return 'stop';
-      case 'max_tokens': return 'length';
-      case 'content_filtered': return 'content_filter';
-      default: return 'error';
+      case 'end_turn':
+        return 'stop';
+      case 'max_tokens':
+        return 'length';
+      case 'content_filtered':
+        return 'content_filter';
+      default:
+        return 'error';
     }
   }
 
@@ -205,7 +229,9 @@ export class ClaudeAdapter extends BaseAIAdapter {
   }
 }
 
-export async function createClaudeAdapter(config: ClaudeConfig): Promise<ClaudeAdapter> {
+export async function createClaudeAdapter(
+  config: ClaudeConfig
+): Promise<ClaudeAdapter> {
   const adapter = new ClaudeAdapter();
   await adapter.initialize(config);
   return adapter;

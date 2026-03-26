@@ -25,6 +25,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startOllama: () => ipcRenderer.invoke('start-ollama'),
   openOllamaDownload: () => ipcRenderer.invoke('open-ollama-download'),
 
+  // Local STT Server (Whisper)
+  checkSTTStatus: () => ipcRenderer.invoke('stt:status'),
+  downloadSTTModel: () => ipcRenderer.invoke('stt:download'),
+  onSTTReady: (callback) => {
+    ipcRenderer.on('stt-ready', (event, data) => callback(data));
+  },
+  onSTTDownloadProgress: (callback) => {
+    ipcRenderer.on('stt-download-progress', (event, data) => callback(data));
+  },
+
   // Browser Automation
   launchBrowserAutomation: (config) =>
     ipcRenderer.invoke('browser-automation:launch', config),

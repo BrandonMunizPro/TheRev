@@ -17,6 +17,7 @@ import { RedisClusterManager } from './cache/redis/RedisClusterManager';
 import { adapterFactory } from './ai/adapters';
 import { AIProvider, TaskType } from './ai/AIIntentTypes';
 import { v4 as uuidv4 } from 'uuid';
+import { ErrorHandler } from './errors/ErrorHandler';
 
 interface WorkerConfig {
   workerId: string;
@@ -177,7 +178,7 @@ class AITaskWorker {
 
       const adapter = adapterFactory.getAdapter(provider);
       if (!adapter) {
-        throw new Error('No AI adapter available');
+        throw ErrorHandler.serviceUnavailable('No AI adapter available');
       }
 
       let result: string;

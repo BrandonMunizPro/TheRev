@@ -5,6 +5,7 @@ import { Post } from '../../entities/Post';
 import { UserRole } from '../../graphql/enums/UserRole';
 import { PostType } from '../../graphql/enums/PostType';
 import { AppDataSource } from '../../data-source';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export interface TestData {
   users: User[];
@@ -204,7 +205,7 @@ export const createTestThread = async (
 
   const user = await userRepository.findOne({ where: { id: userId } });
   if (!user) {
-    throw new Error('User not found');
+    throw ErrorHandler.userNotFound(userId);
   }
 
   const thread = threadRepository.create({
@@ -237,7 +238,7 @@ export const createTestPost = async (
   ]);
 
   if (!user || !thread) {
-    throw new Error('User or Thread not found');
+    throw ErrorHandler.operationNotAllowed('User or Thread not found');
   }
 
   const post = postRepository.create({

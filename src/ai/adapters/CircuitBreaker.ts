@@ -1,3 +1,5 @@
+import { ErrorHandler } from '../../errors/ErrorHandler';
+
 export enum CircuitState {
   CLOSED = 'CLOSED',
   OPEN = 'OPEN',
@@ -26,7 +28,11 @@ export class CircuitBreaker {
   private nextAttemptTime: Date | null = null;
 
   constructor(
-    private config: CircuitBreakerConfig = { failureThreshold: 5, successThreshold: 2, timeoutMs: 30000 }
+    private config: CircuitBreakerConfig = {
+      failureThreshold: 5,
+      successThreshold: 2,
+      timeoutMs: 30000,
+    }
   ) {}
 
   async execute<T>(operation: () => Promise<T>): Promise<T> {
@@ -35,7 +41,9 @@ export class CircuitBreaker {
         this.state = CircuitState.HALF_OPEN;
         this.successCount = 0;
       } else {
-        throw new Error(`Circuit breaker OPEN for provider`);
+        throw ErrorHandler.serviceUnavailable(
+          'Circuit breaker OPEN for provider'
+        );
       }
     }
 
@@ -51,7 +59,7 @@ export class CircuitBreaker {
 
   private onSuccess(): void {
     this.failureCount = 0;
-    
+
     if (this.state === CircuitState.HALF_OPEN) {
       this.successCount++;
       if (this.successCount >= this.config.successThreshold) {

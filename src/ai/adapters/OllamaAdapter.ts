@@ -1,13 +1,15 @@
 import { AIProvider } from '../AIIntentTypes';
-import { 
-  BaseAIAdapter, 
-  AIAdapterConfig, 
+import {
+  BaseAIAdapter,
+  AIAdapterConfig,
   ProviderCapabilities,
   PROVIDER_CAPABILITY_PROFILES,
   AIRequest,
-  AIResponse 
+  AIResponse,
 } from './AIAdapter';
 import { ollamaRepair, OllamaRepairOptions } from '../OllamaRepairService';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface OllamaConfig extends AIAdapterConfig {
   baseUrl?: string;
@@ -29,7 +31,7 @@ export class OllamaAdapter extends BaseAIAdapter {
   async complete(request: AIRequest): Promise<AIResponse> {
     this.ensureInitialized();
 
-    const prompt = request.systemPrompt 
+    const prompt = request.systemPrompt
       ? `${request.systemPrompt}\n\n${request.prompt}`
       : request.prompt;
 
@@ -55,10 +57,13 @@ export class OllamaAdapter extends BaseAIAdapter {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
+        throw ErrorHandler.internalServerError(
+          `Ollama request failed: ${response.status} ${response.statusText}`,
+          { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+        );
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         response: string;
         done: boolean;
         context?: number[];
@@ -81,32 +86,42 @@ export class OllamaAdapter extends BaseAIAdapter {
 
   private async handleOllamaError(error: unknown): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    
-    if (errorMessage.includes('CUDA error') || 
-        errorMessage.includes('runner process') ||
-        errorMessage.includes('GPU')) {
-      console.log('[OllamaAdapter] Detected Ollama issue, attempting repair...');
-      
+
+    if (
+      errorMessage.includes('CUDA error') ||
+      errorMessage.includes('runner process') ||
+      errorMessage.includes('GPU')
+    ) {
+      console.log(
+        '[OllamaAdapter] Detected Ollama issue, attempting repair...'
+      );
+
       const repairOptions: OllamaRepairOptions = {
         autoRepair: true,
         allowReinstall: true,
-        modelToTest: this.model
+        modelToTest: this.model,
       };
-      
+
       const result = await ollamaRepair.checkAndRepair(errorMessage);
-      
+
       if (result.success) {
-        console.log('[OllamaAdapter] Repair successful:', result.actionsPerformed);
+        console.log(
+          '[OllamaAdapter] Repair successful:',
+          result.actionsPerformed
+        );
       } else if (result.userMessage) {
         console.warn('[OllamaAdapter] Repair needed:', result.userMessage);
       }
     }
   }
 
-  async stream(request: AIRequest, onChunk: (chunk: string) => void): Promise<AIResponse> {
+  async stream(
+    request: AIRequest,
+    onChunk: (chunk: string) => void
+  ): Promise<AIResponse> {
     this.ensureInitialized();
 
-    const prompt = request.systemPrompt 
+    const prompt = request.systemPrompt
       ? `${request.systemPrompt}\n\n${request.prompt}`
       : request.prompt;
 
@@ -126,7 +141,10 @@ export class OllamaAdapter extends BaseAIAdapter {
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`Ollama stream failed: ${response.status}`);
+        throw ErrorHandler.internalServerError(
+          `Ollama stream failed: ${response.status}`,
+          { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+        );
       }
 
       const reader = response.body.getReader();
@@ -181,13 +199,13 @@ export class OllamaAdapter extends BaseAIAdapter {
 
   private getModelContextSize(): number {
     const modelContextSizes: Record<string, number> = {
-      'llama3': 8192,
-      'llama2': 4096,
-      'mistral': 8192,
-      'codellama': 16384,
-      'phi3': 4096,
-      'mixtral': 32768,
-      'gemma': 8192,
+      llama3: 8192,
+      llama2: 4096,
+      mistral: 8192,
+      codellama: 16384,
+      phi3: 4096,
+      mixtral: 32768,
+      gemma: 8192,
     };
     return modelContextSizes[this.model.toLowerCase()] ?? 8192;
   }
@@ -204,9 +222,13 @@ export class OllamaAdapter extends BaseAIAdapter {
     }
   }
 
-  async testModel(): Promise<{ success: boolean; error?: string; repairTriggered?: boolean }> {
+  async testModel(): Promise<{
+    success: boolean;
+    error?: string;
+    repairTriggered?: boolean;
+  }> {
     console.log(`[OllamaAdapter] Testing model: ${this.model}`);
-    
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 60000);
@@ -218,7 +240,7 @@ export class OllamaAdapter extends BaseAIAdapter {
           model: this.model,
           prompt: 'Hi',
           stream: false,
-          options: { num_predict: 5 }
+          options: { num_predict: 5 },
         }),
         signal: controller.signal,
       });
@@ -235,23 +257,23 @@ export class OllamaAdapter extends BaseAIAdapter {
       console.log('[OllamaAdapter] Model test failed:', errorText);
 
       const repairResult = await ollamaRepair.checkAndRepair(errorText);
-      
-      return { 
-        success: false, 
-        error: errorText,
-        repairTriggered: repairResult.actionsPerformed.length > 0
-      };
 
+      return {
+        success: false,
+        error: errorText,
+        repairTriggered: repairResult.actionsPerformed.length > 0,
+      };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       console.log('[OllamaAdapter] Model test error:', errorMessage);
 
       const repairResult = await ollamaRepair.checkAndRepair(errorMessage);
-      
-      return { 
-        success: false, 
+
+      return {
+        success: false,
         error: errorMessage,
-        repairTriggered: repairResult.actionsPerformed.length > 0
+        repairTriggered: repairResult.actionsPerformed.length > 0,
       };
     }
   }
@@ -270,7 +292,7 @@ export class OllamaAdapter extends BaseAIAdapter {
       modelsAvailable: [] as string[],
       modelTested: false,
       modelTestSuccess: false,
-      lastError: null as string | null
+      lastError: null as string | null,
     };
 
     try {
@@ -281,11 +303,14 @@ export class OllamaAdapter extends BaseAIAdapter {
 
       if (response.ok) {
         result.running = true;
-        const data = await response.json() as { models?: Array<{ name: string }> };
-        result.modelsAvailable = (data.models ?? []).map(m => m.name);
+        const data = (await response.json()) as {
+          models?: Array<{ name: string }>;
+        };
+        result.modelsAvailable = (data.models ?? []).map((m) => m.name);
       }
     } catch (error) {
-      result.lastError = error instanceof Error ? error.message : 'Connection failed';
+      result.lastError =
+        error instanceof Error ? error.message : 'Connection failed';
       return result;
     }
 

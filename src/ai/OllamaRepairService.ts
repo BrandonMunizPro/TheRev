@@ -4,7 +4,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 export interface OllamaCorruptionError {
-  type: 'cuda_error' | 'runner_crash' | 'model_load_failure' | 'gpu_state_corrupt' | 'unknown';
+  type:
+    | 'cuda_error'
+    | 'runner_crash'
+    | 'model_load_failure'
+    | 'gpu_state_corrupt'
+    | 'unknown';
   message: string;
   details: string | null;
   recoverable: boolean;
@@ -32,13 +37,17 @@ export class OllamaRepairService {
   private consecutiveFailures = 0;
   private lastErrorType: OllamaCorruptionError['type'] | null = null;
 
-  async detectCorruption(error: Error | string): Promise<OllamaCorruptionError> {
+  async detectCorruption(
+    error: Error | string
+  ): Promise<OllamaCorruptionError> {
     const errorMessage = typeof error === 'string' ? error : error.message;
     const errorString = errorMessage.toLowerCase();
 
-    if (errorString.includes('cuda error') || 
-        errorString.includes('cudaerror') ||
-        errorString.includes('gpu error')) {
+    if (
+      errorString.includes('cuda error') ||
+      errorString.includes('cudaerror') ||
+      errorString.includes('gpu error')
+    ) {
       return {
         type: 'cuda_error',
         message: 'CUDA/GPU error detected',
@@ -47,13 +56,15 @@ export class OllamaRepairService {
         recoverySteps: [
           'Restart Ollama with CPU mode',
           'Clear GPU state cache',
-          'Reinstall Ollama if restart fails'
-        ]
+          'Reinstall Ollama if restart fails',
+        ],
       };
     }
 
-    if (errorString.includes('runner process') && 
-        (errorString.includes('terminated') || errorString.includes('crashed'))) {
+    if (
+      errorString.includes('runner process') &&
+      (errorString.includes('terminated') || errorString.includes('crashed'))
+    ) {
       return {
         type: 'runner_crash',
         message: 'Ollama runner process crashed',
@@ -62,13 +73,15 @@ export class OllamaRepairService {
         recoverySteps: [
           'Kill all Ollama processes',
           'Clear Ollama model cache',
-          'Reinstall Ollama completely'
-        ]
+          'Reinstall Ollama completely',
+        ],
       };
     }
 
-    if (errorString.includes('model') && 
-        (errorString.includes('load') || errorString.includes('failed'))) {
+    if (
+      errorString.includes('model') &&
+      (errorString.includes('load') || errorString.includes('failed'))
+    ) {
       return {
         type: 'model_load_failure',
         message: 'Failed to load AI model',
@@ -77,8 +90,8 @@ export class OllamaRepairService {
         recoverySteps: [
           'Re-download the model',
           'Clear model cache',
-          'Try a different model'
-        ]
+          'Try a different model',
+        ],
       };
     }
 
@@ -91,8 +104,8 @@ export class OllamaRepairService {
         recoverySteps: [
           'Kill all Ollama processes',
           'Clear Ollama cache directory',
-          'Reinstall Ollama'
-        ]
+          'Reinstall Ollama',
+        ],
       };
     }
 
@@ -101,11 +114,13 @@ export class OllamaRepairService {
       message: 'Unknown error occurred',
       details: errorMessage,
       recoverable: true,
-      recoverySteps: ['Restart Ollama service', 'Check system resources']
+      recoverySteps: ['Restart Ollama service', 'Check system resources'],
     };
   }
 
-  async performRepair(options: OllamaRepairOptions = { autoRepair: true, allowReinstall: true }): Promise<RepairResult> {
+  async performRepair(
+    options: OllamaRepairOptions = { autoRepair: true, allowReinstall: true }
+  ): Promise<RepairResult> {
     const actions: string[] = [];
     const newIssues: OllamaCorruptionError[] = [];
 
@@ -120,11 +135,11 @@ export class OllamaRepairService {
     // Step 2: Try restarting with CPU mode
     console.log('[OllamaRepair] Step 2: Restarting with CPU mode...');
     const restartSuccess = await this.startOllamaCPU();
-    
+
     if (restartSuccess) {
       console.log('[OllamaRepair] CPU mode restart successful');
       actions.push('Restarted Ollama in CPU-only mode');
-      
+
       // Test if it works
       const testResult = await this.testOllama(options.modelToTest);
       if (testResult.success) {
@@ -135,7 +150,7 @@ export class OllamaRepairService {
           newIssues: [],
           requiresRestart: false,
           userActionRequired: false,
-          userMessage: null
+          userMessage: null,
         };
       } else {
         newIssues.push(testResult.error);
@@ -162,7 +177,7 @@ export class OllamaRepairService {
               newIssues: [],
               requiresRestart: false,
               userActionRequired: false,
-              userMessage: null
+              userMessage: null,
             };
           }
         }
@@ -183,13 +198,14 @@ export class OllamaRepairService {
       newIssues,
       requiresRestart: false,
       userActionRequired: true,
-      userMessage: 'Ollama needs to be reinstalled. Please restart the app or reinstall Ollama manually.'
+      userMessage:
+        'Ollama needs to be reinstalled. Please restart the app or reinstall Ollama manually.',
     };
   }
 
   private async killAllOllamaProcesses(): Promise<void> {
     const isWindows = os.platform() === 'win32';
-    
+
     return new Promise((resolve) => {
       if (isWindows) {
         exec('taskkill /F /IM ollama.exe 2>nul', () => {});
@@ -203,7 +219,7 @@ export class OllamaRepairService {
 
   private async startOllamaCPU(): Promise<boolean> {
     const isWindows = os.platform() === 'win32';
-    
+
     return new Promise((resolve) => {
       let command: string;
       let args: string[];
@@ -213,17 +229,26 @@ export class OllamaRepairService {
         args = ['/c', 'set OLLAMA_GPU_MODE=cpu&& start /b "" ollama serve'];
       } else {
         command = 'bash';
-        args = ['-c', 'OLLAMA_GPU_MODE=cpu nohup ollama serve > /dev/null 2>&1 &'];
+        args = [
+          '-c',
+          'OLLAMA_GPU_MODE=cpu nohup ollama serve > /dev/null 2>&1 &',
+        ];
       }
 
-      const proc = spawn(command, args, { shell: true, detached: true, stdio: 'ignore' });
-      
+      const proc = spawn(command, args, {
+        shell: true,
+        detached: true,
+        stdio: 'ignore',
+      });
+
       proc.on('error', () => resolve(false));
-      
+
       setTimeout(async () => {
         // Check if running
         try {
-          const response = await fetch(this.baseUrl, { signal: AbortSignal.timeout(3000) });
+          const response = await fetch(this.baseUrl, {
+            signal: AbortSignal.timeout(3000),
+          });
           resolve(response.ok);
         } catch {
           resolve(false);
@@ -232,9 +257,11 @@ export class OllamaRepairService {
     });
   }
 
-  private async testOllama(model?: string): Promise<{ success: boolean; error?: OllamaCorruptionError }> {
+  private async testOllama(
+    model?: string
+  ): Promise<{ success: boolean; error?: OllamaCorruptionError }> {
     const testModel = model || 'tinyllama:latest';
-    
+
     try {
       const response = await fetch(`${this.baseUrl}/api/generate`, {
         method: 'POST',
@@ -243,9 +270,9 @@ export class OllamaRepairService {
           model: testModel,
           prompt: 'Hi',
           stream: false,
-          options: { num_predict: 5 }
+          options: { num_predict: 5 },
         }),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(30000),
       });
 
       if (response.ok) {
@@ -255,7 +282,6 @@ export class OllamaRepairService {
       const errorText = await response.text();
       const corruption = await this.detectCorruption(errorText);
       return { success: false, error: corruption };
-
     } catch (err) {
       const corruption = await this.detectCorruption(err as Error);
       return { success: false, error: corruption };
@@ -309,7 +335,8 @@ export class OllamaRepairService {
         newIssues: [],
         requiresRestart: false,
         userActionRequired: true,
-        userMessage: 'Could not uninstall Ollama automatically. Please uninstall Ollama manually and restart the app.'
+        userMessage:
+          'Could not uninstall Ollama automatically. Please uninstall Ollama manually and restart the app.',
       };
     }
     actions.push('Uninstalled Ollama');
@@ -327,7 +354,8 @@ export class OllamaRepairService {
         newIssues: [],
         requiresRestart: false,
         userActionRequired: true,
-        userMessage: 'Could not install Ollama automatically. Please download from https://ollama.com and install it.'
+        userMessage:
+          'Could not install Ollama automatically. Please download from https://ollama.com and install it.',
       };
     }
     actions.push('Installed Ollama');
@@ -345,7 +373,8 @@ export class OllamaRepairService {
         newIssues: [],
         requiresRestart: true,
         userActionRequired: true,
-        userMessage: 'Ollama installed but could not start. Please restart the app.'
+        userMessage:
+          'Ollama installed but could not start. Please restart the app.',
       };
     }
     actions.push('Started Ollama service');
@@ -360,8 +389,22 @@ export class OllamaRepairService {
         newIssues: [testResult.error!],
         requiresRestart: false,
         userActionRequired: true,
-        userMessage: 'Ollama reinstalled but still having issues. Please restart the app.'
+        userMessage:
+          'Ollama reinstalled but still having issues. Please restart the app.',
       };
+    }
+
+    // Pull core models after reinstall
+    console.log('[OllamaRepair] Pulling core models after reinstall...');
+    const coreModels = ['mistral:latest', 'llama3.2:3b'];
+    for (const model of coreModels) {
+      try {
+        console.log(`[OllamaRepair] Pulling ${model}...`);
+        await this.pullModel(model);
+        actions.push(`Installed ${model}`);
+      } catch (err) {
+        console.error(`[OllamaRepair] Failed to pull ${model}:`, err);
+      }
     }
 
     return {
@@ -371,7 +414,7 @@ export class OllamaRepairService {
       newIssues: [],
       requiresRestart: false,
       userActionRequired: false,
-      userMessage: null
+      userMessage: 'Ollama reinstalled with models: mistral & llama3.2',
     };
   }
 
@@ -382,26 +425,38 @@ export class OllamaRepairService {
 
       if (platform === 'win32') {
         command = 'powershell';
-        args = ['-Command', 
+        args = [
+          '-Command',
           `winget uninstall Ollama.Ollama --silent --accept-source-agreements --force 2>&1 || 
            Start-Process ms-settings:appsfeatures -Wait;
-           exit 0`];
+           exit 0`,
+        ];
       } else if (platform === 'darwin') {
         command = 'bash';
         args = ['-c', 'brew uninstall ollama 2>/dev/null || true'];
       } else {
         command = 'bash';
-        args = ['-c', 'sudo apt remove ollama 2>/dev/null || sudo yum remove ollama 2>/dev/null || true'];
+        args = [
+          '-c',
+          'sudo apt remove ollama 2>/dev/null || sudo yum remove ollama 2>/dev/null || true',
+        ];
       }
 
       const proc = spawn(command, args, { shell: true, stdio: 'pipe' });
-      
+
       let output = '';
-      proc.stdout?.on('data', (data) => { output += data.toString(); });
-      proc.stderr?.on('data', (data) => { output += data.toString(); });
+      proc.stdout?.on('data', (data) => {
+        output += data.toString();
+      });
+      proc.stderr?.on('data', (data) => {
+        output += data.toString();
+      });
 
       setTimeout(() => {
-        console.log('[OllamaRepair] Uninstall output:', output.substring(0, 500));
+        console.log(
+          '[OllamaRepair] Uninstall output:',
+          output.substring(0, 500)
+        );
         resolve(true); // Assume success if no major errors
       }, 30000);
 
@@ -417,8 +472,10 @@ export class OllamaRepairService {
 
       if (platform === 'win32') {
         command = 'powershell';
-        args = ['-Command', 
-          'winget install Ollama.Ollama --silent --accept-source-agreements --accept-package-agreements'];
+        args = [
+          '-Command',
+          'winget install Ollama.Ollama --silent --accept-source-agreements --accept-package-agreements',
+        ];
       } else if (platform === 'darwin') {
         command = 'bash';
         args = ['-c', 'brew install ollama'];
@@ -430,13 +487,15 @@ export class OllamaRepairService {
       }
 
       const proc = spawn(command, args, { shell: true, stdio: 'pipe' });
-      
+
       let output = '';
-      proc.stdout?.on('data', (data) => { 
-        output += data.toString(); 
+      proc.stdout?.on('data', (data) => {
+        output += data.toString();
         console.log('[OllamaRepair Install]', data.toString().trim());
       });
-      proc.stderr?.on('data', (data) => { output += data.toString(); });
+      proc.stderr?.on('data', (data) => {
+        output += data.toString();
+      });
 
       setTimeout(() => {
         console.log('[OllamaRepair] Install completed');
@@ -453,7 +512,9 @@ export class OllamaRepairService {
       this.consecutiveFailures++;
       this.lastErrorType = corruption.type;
 
-      console.log(`[OllamaRepair] Detected issue: ${corruption.type} (failure #${this.consecutiveFailures})`);
+      console.log(
+        `[OllamaRepair] Detected issue: ${corruption.type} (failure #${this.consecutiveFailures})`
+      );
 
       // If same error 2+ times, repair
       if (this.consecutiveFailures >= 2 || !corruption.recoverable) {
@@ -469,7 +530,7 @@ export class OllamaRepairService {
       newIssues: [],
       requiresRestart: false,
       userActionRequired: false,
-      userMessage: null
+      userMessage: null,
     };
   }
 
@@ -479,7 +540,73 @@ export class OllamaRepairService {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async pullModel(modelName: string): Promise<boolean> {
+    console.log(`[OllamaRepair] Pulling model: ${modelName}`);
+
+    return new Promise((resolve) => {
+      const isWindows = os.platform() === 'win32';
+      let command: string;
+      let args: string[];
+
+      if (isWindows) {
+        command = 'cmd.exe';
+        args = ['/c', `ollama pull ${modelName}`];
+      } else {
+        command = 'bash';
+        args = ['-c', `ollama pull ${modelName}`];
+      }
+
+      const proc = spawn(command, args, { shell: true, stdio: 'pipe' });
+
+      let output = '';
+      proc.stdout?.on('data', (data) => {
+        output += data.toString();
+        console.log(`[Ollama pull ${modelName}]`, data.toString().trim());
+      });
+      proc.stderr?.on('data', (data) => {
+        output += data.toString();
+      });
+
+      // Timeout after 10 minutes (models can be large)
+      setTimeout(() => {
+        console.log(`[OllamaRepair] Pull ${modelName} timeout`);
+        proc.kill();
+        resolve(false);
+      }, 600000);
+
+      proc.on('error', (err) => {
+        console.error(`[OllamaRepair] Pull ${modelName} error:`, err);
+        resolve(false);
+      });
+
+      proc.on('close', (code) => {
+        console.log(
+          `[OllamaRepair] Pull ${modelName} completed with code ${code}`
+        );
+        resolve(code === 0);
+      });
+    });
+  }
+
+  async pullCoreModels(): Promise<string[]> {
+    const coreModels = ['mistral:latest', 'llama3.2:3b'];
+    const installed: string[] = [];
+
+    for (const model of coreModels) {
+      try {
+        const success = await this.pullModel(model);
+        if (success) {
+          installed.push(model);
+        }
+      } catch (err) {
+        console.error(`[OllamaRepair] Failed to pull ${model}:`, err);
+      }
+    }
+
+    return installed;
   }
 }
 

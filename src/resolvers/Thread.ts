@@ -6,6 +6,7 @@ import { User } from '../entities/User';
 import { Post } from '../entities/Post';
 import { GraphQLContext } from '../graphql/context';
 import { PostType } from '../graphql/enums/PostType';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 @InputType()
 export class CreateThreadInput {
@@ -84,7 +85,7 @@ export class ThreadResolver {
     @Ctx() ctx: GraphQLContext
   ) {
     if (!ctx.user) {
-      throw new Error('Not authenticated');
+      throw ErrorHandler.notAuthenticated();
     }
     return this.model.createThread(input, ctx.user.userId);
   }
@@ -114,7 +115,7 @@ export class ThreadResolver {
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThread[] | null> {
     if (!ctx.user) {
-      throw new Error('Not authenticated');
+      throw ErrorHandler.notAuthenticated();
     }
     return this.model.listThreadsByUser(data.authorId!, ctx.user.userId);
   }
@@ -136,7 +137,7 @@ export class ThreadResolver {
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThread> {
     if (!ctx.user) {
-      throw new Error('Not authenticated');
+      throw ErrorHandler.notAuthenticated();
     }
     return this.model.editThread(data, ctx.user.userId);
   }
@@ -147,7 +148,7 @@ export class ThreadResolver {
     @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
     if (!ctx.user) {
-      throw new Error('Not authenticated');
+      throw ErrorHandler.notAuthenticated();
     }
     return this.model.deleteThread(threadId, ctx.user.userId);
   }
@@ -157,7 +158,7 @@ export class ThreadResolver {
     @Arg('data') data: UpdateThreadPinOrLockInput,
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedThreadWithLockAndPins | null> {
-    if (!ctx.user) throw new Error('Not authenticated');
+    if (!ctx.user) throw ErrorHandler.notAuthenticated();
     return this.model.threadPinAndLockToggler(data, ctx.user.userId);
   }
 }

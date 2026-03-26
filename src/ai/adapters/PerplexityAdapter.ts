@@ -1,12 +1,14 @@
 import { AIProvider } from '../AIIntentTypes';
-import { 
-  BaseAIAdapter, 
-  AIAdapterConfig, 
+import {
+  BaseAIAdapter,
+  AIAdapterConfig,
   ProviderCapabilities,
   PROVIDER_CAPABILITY_PROFILES,
   AIRequest,
-  AIResponse 
+  AIResponse,
 } from './AIAdapter';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface PerplexityConfig extends AIAdapterConfig {
   apiKey: string;
@@ -29,32 +31,40 @@ export class PerplexityAdapter extends BaseAIAdapter {
     this.ensureInitialized();
 
     const response = await this.executeWithTimeout(
-      () => fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: request.model || this.model,
-          messages: this.buildMessages(request),
-          temperature: request.temperature ?? 0.7,
-          max_tokens: request.maxTokens ?? 2000,
-          stream: false,
+      () =>
+        fetch(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: request.model || this.model,
+            messages: this.buildMessages(request),
+            temperature: request.temperature ?? 0.7,
+            max_tokens: request.maxTokens ?? 2000,
+            stream: false,
+          }),
         }),
-      }),
       request.maxTokens ? undefined : this.config.timeout
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Perplexity API error: ${response.status} - ${error.error?.message || response.statusText}`);
+      throw ErrorHandler.internalServerError(
+        `Perplexity API error: ${response.status} - ${error.error?.message || response.statusText}`,
+        { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+      );
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       id: string;
       choices: Array<{ message: { content: string }; finish_reason: string }>;
-      usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+      usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      };
     };
 
     const choice = data.choices[0];
@@ -67,29 +77,36 @@ export class PerplexityAdapter extends BaseAIAdapter {
     };
   }
 
-  async stream(request: AIRequest, onChunk: (chunk: string) => void): Promise<AIResponse> {
+  async stream(
+    request: AIRequest,
+    onChunk: (chunk: string) => void
+  ): Promise<AIResponse> {
     this.ensureInitialized();
 
     const response = await this.executeWithTimeout(
-      () => fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: request.model || this.model,
-          messages: this.buildMessages(request),
-          temperature: request.temperature ?? 0.7,
-          max_tokens: request.maxTokens ?? 2000,
-          stream: true,
+      () =>
+        fetch(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: request.model || this.model,
+            messages: this.buildMessages(request),
+            temperature: request.temperature ?? 0.7,
+            max_tokens: request.maxTokens ?? 2000,
+            stream: true,
+          }),
         }),
-      }),
       request.maxTokens ? undefined : this.config.timeout
     );
 
     if (!response.ok || !response.body) {
-      throw new Error(`Perplexity stream error: ${response.status}`);
+      throw ErrorHandler.internalServerError(
+        `Perplexity stream error: ${response.status}`,
+        { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+      );
     }
 
     const reader = response.body.getReader();
@@ -103,7 +120,9 @@ export class PerplexityAdapter extends BaseAIAdapter {
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+        const lines = chunk
+          .split('\n')
+          .filter((line) => line.startsWith('data: '));
 
         for (const line of lines) {
           const data = line.slice(6);
@@ -155,23 +174,31 @@ export class PerplexityAdapter extends BaseAIAdapter {
     return modelSizes[this.model] ?? 128000;
   }
 
-  private buildMessages(request: AIRequest): Array<{ role: string; content: string }> {
+  private buildMessages(
+    request: AIRequest
+  ): Array<{ role: string; content: string }> {
     const messages: Array<{ role: string; content: string }> = [];
-    
+
     if (request.systemPrompt) {
       messages.push({ role: 'system', content: request.systemPrompt });
     }
     messages.push({ role: 'user', content: request.prompt });
-    
+
     return messages;
   }
 
-  private mapFinishReason(reason?: string): 'stop' | 'length' | 'content_filter' | 'error' {
+  private mapFinishReason(
+    reason?: string
+  ): 'stop' | 'length' | 'content_filter' | 'error' {
     switch (reason) {
-      case 'stop': return 'stop';
-      case 'length': return 'length';
-      case 'content_filter': return 'content_filter';
-      default: return 'error';
+      case 'stop':
+        return 'stop';
+      case 'length':
+        return 'length';
+      case 'content_filter':
+        return 'content_filter';
+      default:
+        return 'error';
     }
   }
 
@@ -181,7 +208,7 @@ export class PerplexityAdapter extends BaseAIAdapter {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model: this.model,
@@ -197,7 +224,9 @@ export class PerplexityAdapter extends BaseAIAdapter {
   }
 }
 
-export async function createPerplexityAdapter(config: PerplexityConfig): Promise<PerplexityAdapter> {
+export async function createPerplexityAdapter(
+  config: PerplexityConfig
+): Promise<PerplexityAdapter> {
   const adapter = new PerplexityAdapter();
   await adapter.initialize(config);
   return adapter;

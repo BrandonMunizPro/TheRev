@@ -5,6 +5,7 @@ import {
   SandboxSession,
   SandboxConfig,
 } from './BrowserSandbox';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export interface BrowserTab {
   id: string;
@@ -122,12 +123,12 @@ export class BrowserManager extends EventEmitter {
   ): Promise<BrowserTab> {
     const session = this.sandbox.getSession(sessionId);
     if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
+      throw ErrorHandler.operationNotAllowed(`Session not found: ${sessionId}`);
     }
 
     const check = this.sandbox.checkResourceLimits();
     if (!check.allowed) {
-      throw new Error(check.reason);
+      throw ErrorHandler.operationNotAllowed(check.reason);
     }
 
     const tab: BrowserTab = {
@@ -152,7 +153,7 @@ export class BrowserManager extends EventEmitter {
   async closeTab(tabId: string): Promise<void> {
     const tab = this.tabs.get(tabId);
     if (!tab) {
-      throw new Error(`Tab not found: ${tabId}`);
+      throw ErrorHandler.operationNotAllowed(`Tab not found: ${tabId}`);
     }
 
     const session = this.sandbox.getSession(tab.sessionId);
@@ -183,7 +184,7 @@ export class BrowserManager extends EventEmitter {
   ): Promise<void> {
     const tab = this.tabs.get(tabId);
     if (!tab) {
-      throw new Error(`Tab not found: ${tabId}`);
+      throw ErrorHandler.operationNotAllowed(`Tab not found: ${tabId}`);
     }
 
     tab.url = url;
@@ -261,7 +262,9 @@ export class BrowserManager extends EventEmitter {
           );
           break;
         default:
-          throw new Error(`Unknown action type: ${action.type}`);
+          throw ErrorHandler.invalidInput(
+            `Unknown action type: ${action.type}`
+          );
       }
 
       tab.status = TabStatus.READY;

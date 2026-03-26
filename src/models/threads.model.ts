@@ -11,6 +11,7 @@ import {
 import { UsersDao } from '../dao/users.dao';
 import { PostsDao } from '../dao/posts.dao';
 import { PermissionsService } from '../services/permissionsService';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export class ThreadsModel {
   private readonly dao: ThreadsDao;
@@ -27,7 +28,7 @@ export class ThreadsModel {
 
   async getThread(data: ThreadQueryInput): Promise<returnedThread | null> {
     if (!data.id) {
-      throw new Error('Please provide ThreadId');
+      throw ErrorHandler.missingRequiredField('id');
     }
 
     let thread: Thread | null = null;
@@ -47,7 +48,7 @@ export class ThreadsModel {
   async listAllThreads(userId: string): Promise<returnedThread[] | null> {
     const user = await this.usersDao.findById(userId);
     if (!user) {
-      throw new Error('User not found');
+      throw ErrorHandler.userNotFound(userId);
     }
     const threads = this.dao.findAllWithMetadata();
     return threads;
@@ -60,14 +61,12 @@ export class ThreadsModel {
     const user = await this.usersDao.findById(userIdContext);
 
     if (!user) {
-      throw new Error('User not found');
+      throw ErrorHandler.userNotFound(userIdContext);
     }
 
     const isAdmin = await this.permissionsService.checkGlobalAdmin(userId);
     if (!isAdmin || user.id !== userId) {
-      throw new Error(
-        'You do not have permission to see all threads listed by user.'
-      );
+      throw ErrorHandler.insufficientPermissions('list threads', 'user');
     }
 
     const threads = this.dao.findAllByUserId(userId);
@@ -116,7 +115,7 @@ export class ThreadsModel {
     authorId: string
   ): Promise<returnedThread> {
     const author = await this.usersDao.findById(authorId);
-    if (!author) throw new Error('User not found');
+    if (!author) throw ErrorHandler.userNotFound(authorId);
 
     const thread = await this.dao.createThread({
       title: input.title,
@@ -154,13 +153,13 @@ export class ThreadsModel {
     const thread = await this.dao.findById(id);
 
     if (!thread) {
-      throw new Error('Thread not found');
+      throw ErrorHandler.threadNotFound(id);
     }
 
     const user = await this.usersDao.findById(userId);
 
     if (!user) {
-      throw new Error('User not found');
+      throw ErrorHandler.userNotFound(userId);
     }
 
     const isOwner = thread.author.id === userId;
@@ -168,7 +167,7 @@ export class ThreadsModel {
       await this.permissionsService.checkAdminOrThreadAdmin(userId);
 
     if (!isAdmin && !isOwner) {
-      throw new Error('The user has no permission to delete this thread');
+      throw ErrorHandler.insufficientPermissions('delete', 'thread');
     }
 
     return this.dao.deleteThread(id);
@@ -181,13 +180,13 @@ export class ThreadsModel {
     const thread = await this.dao.findById(data.threadId);
 
     if (!thread) {
-      throw new Error('Thread not found');
+      throw ErrorHandler.threadNotFound(data.threadId);
     }
 
     const user = await this.usersDao.findById(userId);
 
     if (!user) {
-      throw new Error('User not found');
+      throw ErrorHandler.userNotFound(userId);
     }
 
     const isOwner = thread.author.id === userId;
@@ -195,7 +194,7 @@ export class ThreadsModel {
       await this.permissionsService.checkAdminOrThreadAdmin(userId);
 
     if (!isAdmin && !isOwner) {
-      throw new Error('The user has no permission to edit this thread');
+      throw ErrorHandler.insufficientPermissions('edit', 'thread');
     }
 
     return this.dao.updateThread(data.threadId, data);
@@ -208,13 +207,13 @@ export class ThreadsModel {
     const thread = await this.dao.findById(data.threadId);
 
     if (!thread) {
-      throw new Error('Thread not found');
+      throw ErrorHandler.threadNotFound(data.threadId);
     }
 
     const user = await this.usersDao.findById(userId);
 
     if (!user) {
-      throw new Error('User not found');
+      throw ErrorHandler.userNotFound(userId);
     }
 
     const isOwner = thread.author.id === userId;
@@ -222,11 +221,13 @@ export class ThreadsModel {
       await this.permissionsService.checkAdminOrThreadAdmin(userId);
 
     if (!isAdmin && !isOwner) {
-      throw new Error('The user has no permission to edit this thread');
+      throw ErrorHandler.insufficientPermissions('edit', 'thread');
     }
 
     if (!data.isLocked && !data.isPinned) {
-      throw new Error('Select either a thread or pin to update');
+      throw ErrorHandler.invalidInput(
+        'Select either a thread or pin to update'
+      );
     }
     const updatedThread = await this.dao.updateThread(data.threadId, data);
     return {

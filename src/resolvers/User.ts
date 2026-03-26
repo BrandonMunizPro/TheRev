@@ -4,6 +4,7 @@ import { User } from '../entities/User';
 import { UsersModel } from '../models/users.model';
 import { IsOptional, IsString, IsEmail } from 'class-validator';
 import { AppDataSource } from '../data-source';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 //WE NEED TO ADD ROLES TO USER AS WELL
 @InputType()
@@ -112,7 +113,7 @@ export class UserResolver {
   @Query(() => User, { nullable: true })
   async user(@Arg('data') data: GetUserInput): Promise<returnedUser | null> {
     if (!data.id && !data.userName && !data.email) {
-      throw new Error('Please provide either id, username, or email.');
+      throw ErrorHandler.missingRequiredFields(['id', 'username', 'email']);
     }
     return this.model.getUser(data);
   }
@@ -145,7 +146,7 @@ export class UserResolver {
     const user = await userRepo.findOne({ where: { id: userId } });
 
     if (!user) {
-      throw new Error('User not found');
+      throw ErrorHandler.userNotFound(userId);
     }
 
     if (avatarUrl !== undefined) {

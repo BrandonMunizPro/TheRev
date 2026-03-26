@@ -5,6 +5,7 @@ import {
   AutomationAction,
   ScreenshotOptions,
 } from './BrowserManager';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export interface AutomationTemplate {
   id: string;
@@ -247,7 +248,9 @@ export class AutomationRunner {
   ): Promise<AutomationExecution> {
     const template = this.templates.get(templateId);
     if (!template) {
-      throw new Error(`Template not found: ${templateId}`);
+      throw ErrorHandler.operationNotAllowed(
+        `Template not found: ${templateId}`
+      );
     }
 
     const execution: AutomationExecution = {

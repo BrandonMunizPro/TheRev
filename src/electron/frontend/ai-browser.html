@@ -123,7 +123,9 @@
       .main-container {
         flex: 1;
         display: flex;
-        overflow: hidden;
+        overflow: visible;
+        position: relative;
+        z-index: 1;
       }
 
       .browser-area {
@@ -145,14 +147,19 @@
         width: 100%;
         border: none;
         background: white;
+        pointer-events: auto;
       }
 
       .ai-chat-panel {
         width: 400px;
+        min-width: 400px;
         background: var(--surface);
         border-left: 1px solid #404040;
         display: flex;
         flex-direction: column;
+        overflow: visible;
+        position: relative;
+        z-index: 5;
       }
 
       .chat-avatar-section {
@@ -223,7 +230,8 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow: visible;
+        position: relative;
       }
 
       .chat-header {
@@ -269,6 +277,22 @@
         flex-direction: column;
         gap: 12px;
         min-height: 200px;
+        max-height: calc(100vh - 400px);
+        pointer-events: auto;
+        scroll-behavior: smooth;
+      }
+
+      .chat-messages::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .chat-messages::-webkit-scrollbar-track {
+        background: var(--bg);
+      }
+
+      .chat-messages::-webkit-scrollbar-thumb {
+        background: #555;
+        border-radius: 4px;
       }
 
       .message {
@@ -302,6 +326,11 @@
         border-top: 1px solid #404040;
         display: flex;
         gap: 10px;
+        align-items: center;
+        position: relative;
+        z-index: 100;
+        background: var(--surface);
+        margin-top: auto;
       }
 
       .chat-input {
@@ -315,6 +344,7 @@
         resize: none;
         min-height: 50px;
         max-height: 120px;
+        z-index: 10;
       }
 
       .chat-input:focus {
@@ -324,13 +354,103 @@
 
       .send-btn {
         background: var(--ai-blue);
-        border: none;
-        color: #000;
-        padding: 12px 18px;
+        border: 2px solid #ff6600;
+        color: white;
+        padding: 12px 24px;
         border-radius: 8px;
         cursor: pointer;
         font-weight: bold;
-        align-self: flex-end;
+        z-index: 1000;
+        flex-shrink: 0;
+        pointer-events: auto !important;
+        box-shadow: 0 0 10px #ff6600;
+      }
+
+      .voice-btn {
+        background: var(--surface);
+        border: 2px solid #818cf8;
+        color: var(--text);
+        padding: 8px 12px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 20px;
+        transition: all 0.2s;
+        position: relative;
+        z-index: 1000;
+        flex-shrink: 0;
+        pointer-events: auto !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        min-height: 44px;
+        width: 44px;
+        height: 44px;
+        box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+      }
+
+      .voice-btn:hover {
+        background: var(--primary);
+        border-color: var(--primary);
+      }
+
+      .voice-btn.listening {
+        background: var(--primary);
+        border-color: var(--primary);
+        animation: pulse 1s infinite;
+      }
+
+      .voice-btn.ready {
+        background: #ff9900;
+        border-color: #ff9900;
+        animation: readyPulse 0.5s infinite;
+      }
+
+      .voice-btn.voice-ready {
+        background: #2a9d2a;
+        border-color: #2a9d2a;
+      }
+
+      .voice-btn.voice-ready::after {
+        content: '';
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 8px;
+        height: 8px;
+        background: #00ff00;
+        border-radius: 50%;
+        animation: readyBlink 1s infinite;
+      }
+
+      @keyframes readyBlink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+
+      @keyframes readyPulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.05);
+        }
       }
 
       .send-btn:hover {
@@ -688,6 +808,28 @@
               id="chatInput"
               placeholder="Ask Rev about this page or what to do..."
             ></textarea>
+            <button
+              class="voice-btn"
+              id="voiceBtn"
+              title="Voice Command - Click to talk"
+              onclick="handleVoiceClick()"
+              style="
+                background: #6366f1 !important;
+                border: 2px solid #818cf8 !important;
+                box-shadow:
+                  0 0 10px rgba(99, 102, 241, 0.5),
+                  0 0 20px rgba(99, 102, 241, 0.3) !important;
+                cursor: pointer !important;
+                pointer-events: auto !important;
+                z-index: 9999 !important;
+                font-size: 24px;
+                min-width: 44px !important;
+                min-height: 44px !important;
+                padding: 8px !important;
+              "
+            >
+              🎤
+            </button>
             <button class="send-btn" id="sendBtn">Send</button>
           </div>
         </div>
@@ -705,13 +847,279 @@
       <div id="loadingText">Loading...</div>
     </div>
 
-    <script>
+    <script type="module">
+      // Try to import WhisperSpeech, fall back to inline if module import fails
+      let WhisperSpeech;
+
+      try {
+        const module = await import('./WhisperSpeech.js');
+        WhisperSpeech = module.WhisperSpeech;
+        console.log('[AIBrowser] WhisperSpeech imported successfully');
+      } catch (err) {
+        console.error(
+          '[AIBrowser] Failed to import WhisperSpeech module:',
+          err
+        );
+        // Define WhisperSpeech inline as fallback
+        WhisperSpeech = class WhisperSpeech {
+          constructor() {
+            this._serverUrl = 'http://127.0.0.1:3001';
+            this.isListening = false;
+            this._modelLoaded = false;
+            this.onResult = null;
+            this.onError = null;
+            this.onReady = null;
+            this.onProgress = null;
+            this._mediaStream = null;
+            this._audioChunks = [];
+            this._scriptProcessor = null;
+            this._audioContext = null;
+            this._silenceThreshold = 0.015;
+            this._silenceDuration = 1500;
+            this._lastSoundTime = 0;
+            this._recordingStartTime = 0;
+            this._minRecordingTime = 1000;
+            this._vadCheckInterval = null;
+          }
+
+          async _checkServer() {
+            try {
+              const response = await fetch(`${this._serverUrl}/health`, {
+                signal: AbortSignal.timeout(2000),
+              });
+              return (await response.json()).status === 'ok';
+            } catch {
+              return false;
+            }
+          }
+
+          async init() {
+            console.log('[Voice] Checking STT server...');
+            try {
+              const available = await this._checkServer();
+              if (!available) {
+                console.log('[Voice] STT server not available');
+                return false;
+              }
+              this._modelLoaded = true;
+              console.log('[Voice] STT ready!');
+              if (this.onReady) this.onReady();
+              return true;
+            } catch (err) {
+              console.error('[Voice] Init error:', err);
+              return false;
+            }
+          }
+
+          async start() {
+            if (this.isListening) return;
+            if (!this._modelLoaded) {
+              const ok = await this.init();
+              if (!ok) throw new Error('STT server not available');
+            }
+
+            this._audioChunks = [];
+            this._recordingStartTime = Date.now();
+            this._lastSoundTime = Date.now();
+
+            try {
+              this._mediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  sampleRate: 16000,
+                  channelCount: 1,
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                },
+              });
+
+              const AudioContextClass =
+                window.AudioContext || window.webkitAudioContext;
+              this._audioContext = new AudioContextClass({ sampleRate: 16000 });
+              const source = this._audioContext.createMediaStreamSource(
+                this._mediaStream
+              );
+
+              const scriptProcessor = this._audioContext.createScriptProcessor(
+                4096,
+                1,
+                1
+              );
+              const self = this;
+
+              scriptProcessor.onaudioprocess = (event) => {
+                if (!self.isListening) return;
+                const inputData = event.inputBuffer.getChannelData(0);
+                let energy = 0;
+                for (let i = 0; i < inputData.length; i++)
+                  energy += inputData[i] * inputData[i];
+                energy = Math.sqrt(energy / inputData.length);
+                if (energy > self._silenceThreshold)
+                  self._lastSoundTime = Date.now();
+
+                const pcmData = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                  const s = Math.max(-1, Math.min(1, inputData[i]));
+                  pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+                }
+                self._audioChunks.push(pcmData);
+              };
+
+              source.connect(scriptProcessor);
+              scriptProcessor.connect(this._audioContext.destination);
+              this._scriptProcessor = scriptProcessor;
+
+              this._startVADCheck();
+              this.isListening = true;
+              console.log('[Voice] Started listening');
+              return true;
+            } catch (err) {
+              console.error('[Voice] Start error:', err);
+              if (this.onError) this.onError(err);
+              throw err;
+            }
+          }
+
+          _startVADCheck() {
+            this._vadCheckInterval = setInterval(() => {
+              if (!this.isListening) return;
+              const silenceTime = Date.now() - this._lastSoundTime;
+              const recordingTime = Date.now() - this._recordingStartTime;
+              if (
+                silenceTime > this._silenceDuration &&
+                recordingTime > this._minRecordingTime
+              ) {
+                console.log('[Voice] Silence detected, stopping...');
+                this.stop();
+              }
+            }, 200);
+          }
+
+          async stop() {
+            if (!this.isListening) return;
+            this.isListening = false;
+
+            if (this._vadCheckInterval) {
+              clearInterval(this._vadCheckInterval);
+              this._vadCheckInterval = null;
+            }
+
+            try {
+              if (this._scriptProcessor) {
+                this._scriptProcessor.disconnect();
+                this._scriptProcessor = null;
+              }
+              if (this._audioContext) {
+                await this._audioContext.close();
+                this._audioContext = null;
+              }
+              if (this._mediaStream) {
+                this._mediaStream.getTracks().forEach((t) => t.stop());
+                this._mediaStream = null;
+              }
+
+              if (this._audioChunks.length > 0) {
+                await this._transcribeAudio();
+              }
+            } catch (err) {
+              console.error('[Voice] Stop error:', err);
+            }
+          }
+
+          async _transcribeAudio() {
+            if (this._audioChunks.length === 0) return;
+
+            try {
+              let totalLength = 0;
+              for (const chunk of this._audioChunks)
+                totalLength += chunk.length;
+
+              const combined = new Int16Array(totalLength);
+              let offset = 0;
+              for (const chunk of this._audioChunks) {
+                combined.set(chunk, offset);
+                offset += chunk.length;
+              }
+
+              const wavBuffer = this._createWav(combined, 16000);
+
+              const response = await fetch(`${this._serverUrl}/transcribe`, {
+                method: 'POST',
+                body: wavBuffer,
+                headers: { 'Content-Type': 'audio/wav' },
+                signal: AbortSignal.timeout(60000),
+              });
+
+              if (!response.ok)
+                throw new Error(`Server error: ${response.status}`);
+              const result = await response.json();
+
+              if (this.onResult)
+                this.onResult({
+                  transcript: result.text || '',
+                  isFinal: true,
+                  confidence: 0.9,
+                });
+              this._audioChunks = [];
+            } catch (err) {
+              console.error('[Voice] Transcription error:', err);
+              if (this.onError) this.onError(err);
+            }
+          }
+
+          _createWav(samples, sampleRate) {
+            const buffer = new ArrayBuffer(44 + samples.length * 2);
+            const view = new DataView(buffer);
+            const writeString = (v, o, s) => {
+              for (let i = 0; i < s.length; i++)
+                v.setUint8(o + i, s.charCodeAt(i));
+            };
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + samples.length * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, samples.length * 2, true);
+            for (let i = 0; i < samples.length; i++)
+              view.setInt16(44 + i * 2, samples[i], true);
+            return new Uint8Array(buffer);
+          }
+
+          isReady() {
+            return this._modelLoaded;
+          }
+          getProgress() {
+            return 100;
+          }
+          destroy() {
+            this.stop();
+            this._modelLoaded = false;
+          }
+          // Stub for onProgress (inline class doesn't use it but main class does)
+          triggerProgress(progress) {
+            if (this.onProgress) this.onProgress({ progress });
+          }
+        };
+      }
+
+      console.log(
+        '[AIBrowser] WhisperSpeech ready, type:',
+        typeof WhisperSpeech
+      );
+
       const urlInput = document.getElementById('urlInput');
       const goBtn = document.getElementById('goBtn');
       const browserFrame = document.getElementById('browserFrame');
       const pageInfo = document.getElementById('pageInfo');
       const chatInput = document.getElementById('chatInput');
       const sendBtn = document.getElementById('sendBtn');
+      const voiceBtn = document.getElementById('voiceBtn');
       const chatMessages = document.getElementById('chatMessages');
       const statusIndicator = document.getElementById('statusIndicator');
       const statusText = document.getElementById('statusText');
@@ -720,6 +1128,50 @@
       const loadingText = document.getElementById('loadingText');
 
       let currentUrl = 'about:blank';
+      let whisperSpeech = null;
+      let isListening = false;
+
+      // Make handleVoiceClick available globally for onclick handlers
+      window.handleVoiceClick = async function () {
+        console.log(
+          '[AIBrowser] Voice button clicked, isListening:',
+          isListening
+        );
+
+        if (isListening) {
+          console.log('[AIBrowser] Stopping...');
+          if (whisperSpeech) whisperSpeech.stop();
+          voiceBtn.classList.remove('listening');
+          voiceBtn.textContent = '🎤';
+          isListening = false;
+          statusText.textContent = 'Ready';
+        } else {
+          console.log('[AIBrowser] Starting...');
+          if (!whisperSpeech) {
+            await initVoice();
+          }
+          if (!whisperSpeech) {
+            console.error('[AIBrowser] WhisperSpeech not initialized');
+            statusText.textContent = 'Voice not available';
+            return;
+          }
+          try {
+            // Remove ready indicator while listening
+            voiceBtn.classList.remove('voice-ready');
+            await whisperSpeech.start();
+            voiceBtn.classList.add('listening');
+            voiceBtn.textContent = '🔴';
+            isListening = true;
+            statusText.textContent = 'Listening...';
+            console.log('[AIBrowser] Started successfully');
+          } catch (err) {
+            console.error('[AIBrowser] Error:', err);
+            voiceBtn.classList.remove('listening');
+            voiceBtn.textContent = '🎤';
+            statusText.textContent = 'Mic error: ' + err.message;
+          }
+        }
+      };
 
       // Set up webview event listeners
       browserFrame.addEventListener('did-start-loading', () => {
@@ -797,6 +1249,98 @@
         if (e.key === 'Enter') navigateTo(urlInput.value);
       });
 
+      // Initialize Whisper for voice recognition
+      async function initVoice() {
+        if (whisperSpeech) return;
+
+        try {
+          console.log('[AIBrowser] Initializing voice recognition...');
+          console.log('[AIBrowser] WhisperSpeech type:', typeof WhisperSpeech);
+          console.log(
+            '[AIBrowser] WhisperSpeech is class:',
+            WhisperSpeech && WhisperSpeech.toString().includes('class')
+          );
+
+          if (typeof WhisperSpeech !== 'function') {
+            throw new Error('WhisperSpeech not available');
+          }
+
+          statusText.textContent = 'Loading Whisper model...';
+
+          whisperSpeech = new WhisperSpeech();
+
+          if (!whisperSpeech) {
+            throw new Error('Failed to create WhisperSpeech instance');
+          }
+
+          console.log(
+            '[AIBrowser] WhisperSpeech instance created:',
+            whisperSpeech
+          );
+          console.log(
+            '[AIBrowser] electronAPI available:',
+            !!window.electronAPI
+          );
+
+          whisperSpeech.onResult = (result) => {
+            console.log('[AIBrowser] Voice result:', result);
+            // Reset button state
+            voiceBtn.classList.remove('listening');
+            voiceBtn.textContent = '🎤';
+            isListening = false;
+
+            if (
+              result.isFinal &&
+              result.transcript &&
+              result.transcript !== 'undefined'
+            ) {
+              chatInput.value = result.transcript;
+              // Auto-send the command
+              console.log(
+                '[AIBrowser] Auto-sending message:',
+                result.transcript
+              );
+              sendMessage();
+            }
+            // Restore ready indicator
+            if (whisperSpeech && whisperSpeech.isReady()) {
+              voiceBtn.classList.add('voice-ready');
+            }
+            statusText.textContent = 'Ready';
+          };
+          whisperSpeech.onError = (err) => {
+            console.error('[AIBrowser] Voice error:', err);
+            voiceBtn.classList.remove('listening', 'voice-ready');
+            voiceBtn.textContent = '🎤';
+            isListening = false;
+            statusText.textContent = 'Voice error: ' + err.message;
+          };
+          whisperSpeech.onReady = () => {
+            console.log('[AIBrowser] Voice ready');
+            voiceBtn.classList.add('voice-ready');
+            statusText.textContent = 'Voice ready - click mic to talk';
+          };
+          whisperSpeech.onProgress = (progress) => {
+            statusText.textContent = `Loading Whisper... ${progress.progress?.toFixed(0) || 0}%`;
+          };
+
+          const initResult = await whisperSpeech.init();
+          console.log('[AIBrowser] init() result:', initResult);
+
+          if (initResult === false) {
+            statusText.textContent = 'STT server not available';
+          } else {
+            statusText.textContent = 'Ready';
+          }
+        } catch (err) {
+          console.error('[AIBrowser] Failed to init voice:', err);
+          statusText.textContent = 'Voice init failed: ' + err.message;
+        }
+      }
+
+      // Initialize voice in background
+      initVoice();
+
       // Quick buttons
       document.querySelectorAll('.quick-btn').forEach((btn) => {
         if (btn.classList.contains('summarize-btn')) return; // Skip summarize button
@@ -864,10 +1408,8 @@
             console.log('[Summarize] Result:', result);
 
             if (result.success && result.summary) {
-              addMessage(
-                'ai',
-                '<strong>📝 Page Summary:</strong><br><br>' + result.summary
-              );
+              // Backend already formats with emojis and markdown
+              addMessage('ai', result.summary);
             } else {
               addMessage(
                 'ai',
@@ -1199,22 +1741,14 @@
               }, 500);
             }
           } else if (result.url) {
-            // Navigate to URL - IMMEDIATELY
+            // Navigate to URL - IMMEDIATELY (sync)
             browserFrame.loadURL(result.url);
-            addMessage('ai', `Navigating to ${result.url}`);
 
-            // Context loads ASYNC - pop up after
-            if (result.context) {
-              setTimeout(() => {
-                addMessage(
-                  'ai',
-                  '📚 <strong>Quick Context:</strong> ' + result.context
-                );
-              }, 1500);
-            } else {
-              // Try to get context async if not provided
-              fetchContextAsync(message);
-            }
+            // Show navigation message
+            addMessage('ai', result.context || `Navigating to ${result.url}`);
+
+            // Fetch AI context ASYNC (in background)
+            fetchContextAsync(message);
           } else if (result.response) {
             // Show AI response
             addMessage('ai', result.response);
@@ -1688,6 +2222,9 @@
 
       // Initialize avatar on load
       initChatAvatar();
+
+      // Voice control alias
+      const sendAIMessage = sendMessage;
     </script>
   </body>
 </html>

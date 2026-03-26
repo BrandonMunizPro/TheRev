@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from 'crypto';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export interface EncryptionConfig {
   algorithm: 'aes-256-gcm' | 'aes-128-cbc';
@@ -49,11 +55,17 @@ export class CredentialEncryptionService {
 
     if (this.config.algorithm === 'aes-256-gcm') {
       const cipher = createCipheriv('aes-256-gcm', key, iv);
-      ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+      ciphertext = Buffer.concat([
+        cipher.update(plaintext, 'utf8'),
+        cipher.final(),
+      ]);
       authTag = cipher.getAuthTag().toString('hex');
     } else {
       const cipher = createCipheriv('aes-128-cbc', key.slice(0, 16), iv);
-      ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+      ciphertext = Buffer.concat([
+        cipher.update(plaintext, 'utf8'),
+        cipher.final(),
+      ]);
     }
 
     return {
@@ -74,10 +86,16 @@ export class CredentialEncryptionService {
     if (encrypted.algorithm === 'aes-256-gcm' && encrypted.authTag) {
       const decipher = createDecipheriv('aes-256-gcm', key, iv);
       decipher.setAuthTag(Buffer.from(encrypted.authTag, 'hex'));
-      return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+      return Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final(),
+      ]).toString('utf8');
     } else {
       const decipher = createDecipheriv('aes-128-cbc', key.slice(0, 16), iv);
-      return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+      return Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final(),
+      ]).toString('utf8');
     }
   }
 
@@ -85,12 +103,17 @@ export class CredentialEncryptionService {
     return scryptSync(this.masterKey, salt, 32);
   }
 
-  encryptObject<T extends Record<string, unknown>>(obj: T): Record<string, EncryptedData | unknown> {
+  encryptObject<T extends Record<string, unknown>>(
+    obj: T
+  ): Record<string, EncryptedData | unknown> {
     const result: Record<string, EncryptedData | unknown> = {};
     const sensitiveFields = ['apiKey', 'password', 'secret', 'token', 'key'];
 
     for (const [key, value] of Object.entries(obj)) {
-      if (sensitiveFields.some(f => key.toLowerCase().includes(f)) && typeof value === 'string') {
+      if (
+        sensitiveFields.some((f) => key.toLowerCase().includes(f)) &&
+        typeof value === 'string'
+      ) {
         result[key] = this.encrypt(value);
       } else if (typeof value === 'object' && value !== null) {
         result[key] = this.encryptObject(value as Record<string, unknown>);
@@ -102,7 +125,9 @@ export class CredentialEncryptionService {
     return result;
   }
 
-  decryptObject<T extends Record<string, unknown>>(obj: Record<string, EncryptedData | unknown>): T {
+  decryptObject<T extends Record<string, unknown>>(
+    obj: Record<string, EncryptedData | unknown>
+  ): T {
     const result: Record<string, unknown> = {};
     const sensitiveFields = ['apiKey', 'password', 'secret', 'token', 'key'];
 
@@ -110,7 +135,9 @@ export class CredentialEncryptionService {
       if (this.isEncryptedData(value)) {
         result[key] = this.decrypt(value);
       } else if (typeof value === 'object' && value !== null) {
-        result[key] = this.decryptObject(value as Record<string, EncryptedData | unknown>);
+        result[key] = this.decryptObject(
+          value as Record<string, EncryptedData | unknown>
+        );
       } else {
         result[key] = value;
       }
@@ -129,7 +156,10 @@ export class CredentialEncryptionService {
     );
   }
 
-  rotateKey(newMasterKey: string, _reEncryptFn: (field: string, ciphertext: string) => Promise<string>): void {
+  rotateKey(
+    newMasterKey: string,
+    _reEncryptFn: (field: string, ciphertext: string) => Promise<string>
+  ): void {
     console.log('[Encryption] Key rotation initiated');
     this.masterKey = this.deriveKey(newMasterKey);
     console.log('[Encryption] Master key rotated');
@@ -138,14 +168,22 @@ export class CredentialEncryptionService {
 
 let encryptionServiceInstance: CredentialEncryptionService | null = null;
 
-export function initializeEncryptionService(masterKey: string, config?: Partial<EncryptionConfig>): CredentialEncryptionService {
-  encryptionServiceInstance = new CredentialEncryptionService(masterKey, config);
+export function initializeEncryptionService(
+  masterKey: string,
+  config?: Partial<EncryptionConfig>
+): CredentialEncryptionService {
+  encryptionServiceInstance = new CredentialEncryptionService(
+    masterKey,
+    config
+  );
   return encryptionServiceInstance;
 }
 
 export function getEncryptionService(): CredentialEncryptionService {
   if (!encryptionServiceInstance) {
-    throw new Error('Encryption service not initialized. Call initializeEncryptionService first.');
+    throw ErrorHandler.serviceUnavailable(
+      'Encryption service not initialized. Call initializeEncryptionService first.'
+    );
   }
   return encryptionServiceInstance;
 }

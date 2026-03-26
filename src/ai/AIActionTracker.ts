@@ -13,6 +13,7 @@ import {
   ApprovalRequest,
 } from './AIActionTypes';
 import { AuditService } from './AuditService';
+import { ErrorHandler } from '../errors/ErrorHandler';
 import { AuditEventType } from './AuditTypes';
 
 export interface IAIActionRepository {
@@ -22,7 +23,11 @@ export interface IAIActionRepository {
   findByFilter(filter: AIActionFilter): Promise<AIAction[]>;
   getVersions(actionId: string): Promise<ActionVersion[]>;
   saveVersion(version: ActionVersion): Promise<void>;
-  updateStatus(id: string, status: AIActionStatus, metadata?: Record<string, unknown>): Promise<void>;
+  updateStatus(
+    id: string,
+    status: AIActionStatus,
+    metadata?: Record<string, unknown>
+  ): Promise<void>;
   getMetrics(filter?: AIActionFilter): Promise<AIActionMetrics>;
 }
 
@@ -44,7 +49,10 @@ export class AIActionTracker extends EventEmitter {
     actionType: AIActionType,
     targetType: AIAction['targetType'],
     targetId: string,
-    input: { previousState?: Record<string, unknown>; newState?: Record<string, unknown> },
+    input: {
+      previousState?: Record<string, unknown>;
+      newState?: Record<string, unknown>;
+    },
     options: {
       provider: string;
       model?: string;
@@ -95,7 +103,9 @@ export class AIActionTracker extends EventEmitter {
       metadata?: Record<string, unknown>;
     }
   ): Promise<AIAction | null> {
-    const action = this.pendingActions.get(actionId) || await this.repository.findById(actionId);
+    const action =
+      this.pendingActions.get(actionId) ||
+      (await this.repository.findById(actionId));
     if (!action) return null;
 
     action.status = AIActionStatus.COMPLETED;
@@ -119,10 +129,16 @@ export class AIActionTracker extends EventEmitter {
 
     this.pendingActions.delete(actionId);
 
-    await this.auditService?.logTaskCompleted(action.taskId, action.userId, action.provider, {
-      tokensUsed: output.tokensUsed,
-      finishReason: output.finishReason || 'complete',
-    }, { actionId, cost: output.cost });
+    await this.auditService?.logTaskCompleted(
+      action.taskId,
+      action.userId,
+      action.provider,
+      {
+        tokensUsed: output.tokensUsed,
+        finishReason: output.finishReason || 'complete',
+      },
+      { actionId, cost: output.cost }
+    );
 
     this.emit('action:completed', action);
     return action;
@@ -133,7 +149,9 @@ export class AIActionTracker extends EventEmitter {
     error: string,
     metadata?: Record<string, unknown>
   ): Promise<AIAction | null> {
-    const action = this.pendingActions.get(actionId) || await this.repository.findById(actionId);
+    const action =
+      this.pendingActions.get(actionId) ||
+      (await this.repository.findById(actionId));
     if (!action) return null;
 
     action.status = AIActionStatus.FAILED;
@@ -148,18 +166,32 @@ export class AIActionTracker extends EventEmitter {
 
     this.pendingActions.delete(actionId);
 
-    await this.auditService?.logTaskFailed(action.taskId, action.userId, action.provider, error, { actionId });
+    await this.auditService?.logTaskFailed(
+      action.taskId,
+      action.userId,
+      action.provider,
+      error,
+      { actionId }
+    );
 
     this.emit('action:failed', action);
     return action;
   }
 
-  async cancelAction(actionId: string, reason?: string): Promise<AIAction | null> {
+  async cancelAction(
+    actionId: string,
+    reason?: string
+  ): Promise<AIAction | null> {
     const action = await this.repository.findById(actionId);
     if (!action) return null;
 
-    if (action.status === AIActionStatus.COMPLETED || action.status === AIActionStatus.ROLLED_BACK) {
-      throw new Error(`Cannot cancel action in status: ${action.status}`);
+    if (
+      action.status === AIActionStatus.COMPLETED ||
+      action.status === AIActionStatus.ROLLED_BACK
+    ) {
+      throw ErrorHandler.operationNotAllowed(
+        `Cannot cancel action in status: ${action.status}`
+      );
     }
 
     action.status = AIActionStatus.CANCELLED;
@@ -201,7 +233,11 @@ export class AIActionTracker extends EventEmitter {
       }
     }
 
-    if (Object.keys(added).length === 0 && Object.keys(removed).length === 0 && Object.keys(modified).length === 0) {
+    if (
+      Object.keys(added).length === 0 &&
+      Object.keys(removed).length === 0 &&
+      Object.keys(modified).length === 0
+    ) {
       return undefined;
     }
 
@@ -215,7 +251,9 @@ export class AIActionTracker extends EventEmitter {
     if (versionNumber > this.maxVersionsPerAction) {
       const oldest = versions.sort((a, b) => a.version - b.version)[0];
       if (oldest) {
-        console.log(`[AIAction] Pruning old version ${oldest.version} for action ${action.id}`);
+        console.log(
+          `[AIAction] Pruning old version ${oldest.version} for action ${action.id}`
+        );
       }
     }
 
@@ -308,7 +346,10 @@ export class AIRollbackService extends EventEmitter {
       estimatedImpact: relatedActions.length + 1,
       dependencies,
       canExecute: steps.length <= this.maxRollbackDepth,
-      reasons: steps.length <= this.maxRollbackDepth ? [] : ['Rollback depth exceeds maximum'],
+      reasons:
+        steps.length <= this.maxRollbackDepth
+          ? []
+          : ['Rollback depth exceeds maximum'],
     };
   }
 
@@ -321,10 +362,15 @@ export class AIRollbackService extends EventEmitter {
     };
 
     const actions = await this.actionTracker.getActionHistory(filter);
-    return actions.filter(a => a.id !== action.id && a.status === AIActionStatus.COMPLETED);
+    return actions.filter(
+      (a) => a.id !== action.id && a.status === AIActionStatus.COMPLETED
+    );
   }
 
-  private buildRollbackSteps(action: AIAction, relatedActions: AIAction[]): RollbackStep[] {
+  private buildRollbackSteps(
+    action: AIAction,
+    relatedActions: AIAction[]
+  ): RollbackStep[] {
     const steps: RollbackStep[] = [];
 
     for (const related of relatedActions.reverse()) {
@@ -368,7 +414,10 @@ export class AIRollbackService extends EventEmitter {
     return [];
   }
 
-  async executeRollback(plan: RollbackPlan, userId: string): Promise<RollbackResult> {
+  async executeRollback(
+    plan: RollbackPlan,
+    userId: string
+  ): Promise<RollbackResult> {
     const result: RollbackResult = {
       success: false,
       actionId: plan.actionId,
@@ -398,26 +447,37 @@ export class AIRollbackService extends EventEmitter {
 
     const action = await this.actionTracker.getAction(plan.actionId);
     if (action && result.failedSteps === 0) {
-      await this.actionTracker['repository'].updateStatus(plan.actionId, AIActionStatus.ROLLED_BACK, {
-        rolledBackAt: result.completedAt,
-        rolledBackBy: userId,
-        rolledBackSteps: result.rolledBackSteps,
-      });
+      await this.actionTracker['repository'].updateStatus(
+        plan.actionId,
+        AIActionStatus.ROLLED_BACK,
+        {
+          rolledBackAt: result.completedAt,
+          rolledBackBy: userId,
+          rolledBackSteps: result.rolledBackSteps,
+        }
+      );
       result.success = true;
     } else if (action && result.rolledBackSteps > 0) {
-      await this.actionTracker['repository'].updateStatus(plan.actionId, AIActionStatus.PARTIALLY_ROLLED_BACK, {
-        rolledBackAt: result.completedAt,
-        rolledBackBy: userId,
-        rolledBackSteps: result.rolledBackSteps,
-        failedSteps: result.failedSteps,
-      });
+      await this.actionTracker['repository'].updateStatus(
+        plan.actionId,
+        AIActionStatus.PARTIALLY_ROLLED_BACK,
+        {
+          rolledBackAt: result.completedAt,
+          rolledBackBy: userId,
+          rolledBackSteps: result.rolledBackSteps,
+          failedSteps: result.failedSteps,
+        }
+      );
     }
 
     this.emit('rollback:completed', result);
     return result;
   }
 
-  private async executeRollbackStep(step: RollbackStep, userId: string): Promise<void> {
+  private async executeRollbackStep(
+    step: RollbackStep,
+    userId: string
+  ): Promise<void> {
     switch (step.rollbackAction) {
       case 'restore':
         await this.restoreState(step, userId);
@@ -431,22 +491,36 @@ export class AIRollbackService extends EventEmitter {
     }
   }
 
-  private async restoreState(step: RollbackStep, userId: string): Promise<void> {
-    console.log(`[Rollback] Restoring ${step.targetType}:${step.targetId} to previous state`);
+  private async restoreState(
+    step: RollbackStep,
+    userId: string
+  ): Promise<void> {
+    console.log(
+      `[Rollback] Restoring ${step.targetType}:${step.targetId} to previous state`
+    );
     this.emit('rollback:restore', { step, userId });
   }
 
-  private async deleteResource(step: RollbackStep, userId: string): Promise<void> {
+  private async deleteResource(
+    step: RollbackStep,
+    userId: string
+  ): Promise<void> {
     console.log(`[Rollback] Deleting ${step.targetType}:${step.targetId}`);
     this.emit('rollback:delete', { step, userId });
   }
 
   private async notifyUser(step: RollbackStep, userId: string): Promise<void> {
-    console.log(`[Rollback] Notifying user ${userId} about rollback of ${step.targetType}:${step.targetId}`);
+    console.log(
+      `[Rollback] Notifying user ${userId} about rollback of ${step.targetType}:${step.targetId}`
+    );
     this.emit('rollback:notify', { step, userId });
   }
 
-  async requestApproval(actionId: string, userId: string, approverRole?: string): Promise<ApprovalRequest> {
+  async requestApproval(
+    actionId: string,
+    userId: string,
+    approverRole?: string
+  ): Promise<ApprovalRequest> {
     const request: ApprovalRequest = {
       id: this.generateId(),
       actionId,
@@ -460,11 +534,19 @@ export class AIRollbackService extends EventEmitter {
     return request;
   }
 
-  async approveRequest(requestId: string, reviewerId: string, reason?: string): Promise<void> {
+  async approveRequest(
+    requestId: string,
+    reviewerId: string,
+    reason?: string
+  ): Promise<void> {
     this.emit('approval:approved', { requestId, reviewerId, reason });
   }
 
-  async rejectRequest(requestId: string, reviewerId: string, reason: string): Promise<void> {
+  async rejectRequest(
+    requestId: string,
+    reviewerId: string,
+    reason: string
+  ): Promise<void> {
     this.emit('approval:rejected', { requestId, reviewerId, reason });
   }
 

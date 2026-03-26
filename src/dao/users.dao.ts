@@ -1,6 +1,7 @@
 import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
 import { DeepPartial, Repository } from 'typeorm';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export class UsersDao {
   private get repo(): Repository<User> {
@@ -33,7 +34,7 @@ export class UsersDao {
     const updated = await this.repo.findOne({ where: { id } });
 
     if (!updated) {
-      throw new Error(`User with id ${id} not found`);
+      throw ErrorHandler.userNotFound(id);
     }
     return updated;
   }
@@ -44,7 +45,7 @@ export class UsersDao {
   ): Promise<void> {
     const user = await this.repo.findOne({ where: { userName } });
     if (!user) {
-      throw new Error(`User ${userName} not found`);
+      throw ErrorHandler.userNotFound(userName);
     }
 
     user.password = hashedPassword;

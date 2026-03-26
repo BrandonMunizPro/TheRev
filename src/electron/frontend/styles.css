@@ -3636,7 +3636,6 @@ input:checked + .slider:before {
   }
 }
 
-
 /* Voice Control Styles */
 #voice-btn {
   background: var(--surface-color);
@@ -3656,14 +3655,30 @@ input:checked + .slider:before {
   animation: voicePulse 1s infinite;
 }
 
+#voice-btn.voice-ready {
+  background: #ff9900;
+  animation: voiceReadyPulse 0.5s infinite;
+}
+
 @keyframes voicePulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.4);
   }
   50% {
     transform: scale(1.1);
     box-shadow: 0 0 0 10px rgba(255, 68, 68, 0);
+  }
+}
+
+@keyframes voiceReadyPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
   }
 }
 
@@ -3743,4 +3758,111 @@ input:checked + .slider:before {
 
 .anim-icon {
   font-size: 20px;
+}
+
+/* Voice Settings Modal */
+#voice-settings-modal .modal-content {
+  background: #1a1a2e;
+  border: 1px solid #00ccff;
+  border-radius: 15px;
+  box-shadow: 0 0 30px rgba(0, 204, 255, 0.3);
+}
+
+#voice-settings-modal .modal-header {
+  background: linear-gradient(135deg, #0f3460, #16213e);
+  border-bottom: 1px solid #00ccff;
+  border-radius: 15px 15px 0 0;
+  padding: 20px;
+}
+
+#voice-settings-modal .modal-header h2 {
+  margin: 0;
+  color: #00ccff;
+  font-size: 20px;
+}
+
+#voice-settings-modal .modal-body {
+  background: #16213e;
+}
+
+#voice-settings-modal .modal-footer {
+  background: #0f3460;
+  border-top: 1px solid #333;
+  border-radius: 0 0 15px 15px;
+  padding: 15px 20px;
+}
+
+/* Mic Status Styles */
+#mic-status-icon.success {
+  color: #00ff00;
+}
+#mic-status-icon.error {
+  color: #ff4444;
+}
+#mic-status-icon.warning {
+  color: #ffaa00;
+}
+#mic-status-icon.checking {
+  color: #00ccff;
+}
+
+/* Wave Animation */
+@keyframes wave {
+  0%,
+  100% {
+    height: 10px;
+  }
+  50% {
+    height: 30px;
+  }
+}
+
+.wave-bar {
+  animation: wave 0.5s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(1) {
+  animation-delay: 0s;
+}
+.wave-bar:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.wave-bar:nth-child(3) {
+  animation-delay: 0.2s;
+}
+.wave-bar:nth-child(4) {
+  animation-delay: 0.3s;
+}
+.wave-bar:nth-child(5) {
+  animation-delay: 0.4s;
+}
+
+#mic-test-wave.recording .wave-bar {
+  animation-duration: 0.3s;
+}
+
+#mic-test-wave.success .wave-bar {
+  background: #00ff00 !important;
+  animation: wave 0.5s ease-in-out infinite;
+}
+
+#mic-test-wave.error .wave-bar {
+  background: #ff4444 !important;
+  animation: none;
+  height: 10px !important;
+}
+
+/* Voice Listening Indicator */
+.voice-listening {
+  animation: voice-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 204, 255, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(0, 204, 255, 0);
+  }
 }

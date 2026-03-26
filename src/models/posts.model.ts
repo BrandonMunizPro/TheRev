@@ -11,6 +11,7 @@ import {
   UpdatePostPinnedInput,
 } from '../resolvers/Post';
 import { PermissionsService } from '../services/permissionsService';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export class PostsModel {
   private dao = new PostsDao();
@@ -23,12 +24,11 @@ export class PostsModel {
     userId: string
   ): Promise<returnedPost> {
     const user = await this.usersDao.findById(userId);
-    if (!user) throw new Error('User not found');
+    if (!user) throw ErrorHandler.userNotFound(userId);
 
     const thread = await this.threadsDao.findById(data.threadId);
-    if (!thread) throw new Error('Thread not found');
-    if (thread.isLocked)
-      throw new Error('Thread Admin has locked anyone else from interacting');
+    if (!thread) throw ErrorHandler.threadNotFound(data.threadId);
+    if (thread.isLocked) throw ErrorHandler.threadLocked();
 
     const newDate = new Date();
 
@@ -79,7 +79,9 @@ export class PostsModel {
 
   async getPost(data: PostQueryInput): Promise<returnedPost | null> {
     if (!data) {
-      throw new Error("Please provide ThreadId or Author's UserId");
+      throw ErrorHandler.invalidInput(
+        "Please provide ThreadId or Author's UserId"
+      );
     }
 
     let post: Post | null = null;
@@ -103,7 +105,7 @@ export class PostsModel {
 
   async listPostsByThread(data: PostQueryInput): Promise<returnedPost[]> {
     if (!data?.threadId) {
-      throw new Error('threadId is required');
+      throw ErrorHandler.missingRequiredField('threadId');
     }
     const posts = this.dao.findAllByThreadId(data.threadId);
     const allPosts = await posts;
@@ -138,7 +140,7 @@ export class PostsModel {
     postId: string
   ): Promise<returnedPost> {
     const post = await this.dao.findById(postId);
-    if (!post) throw new Error('Post not found');
+    if (!post) throw ErrorHandler.postNotFound(postId);
 
     await this.permissionsService.checkThreadPermissions(
       post.thread.id,
@@ -167,7 +169,7 @@ export class PostsModel {
 
   async deletePost(postId: string, userId: string): Promise<boolean> {
     const post = await this.dao.findById(postId);
-    if (!post) throw new Error('Post not found');
+    if (!post) throw ErrorHandler.postNotFound(postId);
 
     await this.permissionsService.checkThreadPermissions(
       post.thread.id,
@@ -183,12 +185,12 @@ export class PostsModel {
     userId: string
   ): Promise<returnedPost> {
     const post = await this.dao.findById(data.postId);
-    if (!post) throw new Error('Post not found');
+    if (!post) throw ErrorHandler.postNotFound(data.postId);
 
     const thread = await this.dao.findById(post.thread.id);
 
     if (!thread) {
-      throw new Error('Thread not found');
+      throw ErrorHandler.threadNotFound(post.thread.id);
     }
     await this.permissionsService.checkThreadPermissions(
       post.thread.id,
@@ -197,7 +199,7 @@ export class PostsModel {
     );
 
     if (!data.isPinned) {
-      throw new Error('Select pin to update');
+      throw ErrorHandler.invalidInput('Select pin to update');
     }
     const updatedPost = await this.dao.updatePost(post.id, data);
 

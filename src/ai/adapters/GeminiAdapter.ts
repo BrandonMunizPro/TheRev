@@ -1,12 +1,14 @@
 import { AIProvider } from '../AIIntentTypes';
-import { 
-  BaseAIAdapter, 
-  AIAdapterConfig, 
+import {
+  BaseAIAdapter,
+  AIAdapterConfig,
   ProviderCapabilities,
   PROVIDER_CAPABILITY_PROFILES,
   AIRequest,
-  AIResponse 
+  AIResponse,
 } from './AIAdapter';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface GeminiConfig extends AIAdapterConfig {
   apiKey: string;
@@ -32,42 +34,54 @@ export class GeminiAdapter extends BaseAIAdapter {
     const url = `${this.baseUrl}/${modelName}:generateContent?key=${this.apiKey}`;
 
     const response = await this.executeWithTimeout(
-      () => fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: request.systemPrompt 
-                ? `${request.systemPrompt}\n\n${request.prompt}`
-                : request.prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: request.temperature ?? 0.7,
-            maxOutputTokens: request.maxTokens ?? 2000,
-            topP: 0.95,
-            topK: 40,
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: request.systemPrompt
+                      ? `${request.systemPrompt}\n\n${request.prompt}`
+                      : request.prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: request.temperature ?? 0.7,
+              maxOutputTokens: request.maxTokens ?? 2000,
+              topP: 0.95,
+              topK: 40,
+            },
+          }),
         }),
-      }),
       request.maxTokens ? undefined : this.config.timeout
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Gemini API error: ${response.status} - ${error.error?.message || response.statusText}`);
+      throw ErrorHandler.internalServerError(
+        `Gemini API error: ${response.status} - ${error.error?.message || response.statusText}`,
+        { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+      );
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       candidates?: Array<{
         content?: { parts?: Array<{ text?: string }> };
         finishReason?: string;
         safetyRatings?: Array<{ category: string; probability: string }>;
       }>;
-      usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number };
+      usageMetadata?: {
+        promptTokenCount: number;
+        candidatesTokenCount: number;
+        totalTokenCount: number;
+      };
     };
 
     const candidate = data.candidates?.[0];
@@ -82,40 +96,51 @@ export class GeminiAdapter extends BaseAIAdapter {
     };
   }
 
-  async stream(request: AIRequest, onChunk: (chunk: string) => void): Promise<AIResponse> {
+  async stream(
+    request: AIRequest,
+    onChunk: (chunk: string) => void
+  ): Promise<AIResponse> {
     this.ensureInitialized();
 
     const modelName = `models/${request.model || this.model}:streamGenerateContent?key=${this.apiKey}`;
     const url = `${this.baseUrl}/${modelName}`;
 
     const response = await this.executeWithTimeout(
-      () => fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: request.systemPrompt 
-                ? `${request.systemPrompt}\n\n${request.prompt}`
-                : request.prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: request.temperature ?? 0.7,
-            maxOutputTokens: request.maxTokens ?? 2000,
-            topP: 0.95,
-            topK: 40,
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-          stream: true,
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: request.systemPrompt
+                      ? `${request.systemPrompt}\n\n${request.prompt}`
+                      : request.prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: request.temperature ?? 0.7,
+              maxOutputTokens: request.maxTokens ?? 2000,
+              topP: 0.95,
+              topK: 40,
+            },
+            stream: true,
+          }),
         }),
-      }),
       request.maxTokens ? undefined : this.config.timeout
     );
 
     if (!response.ok || !response.body) {
-      throw new Error(`Gemini stream error: ${response.status}`);
+      throw ErrorHandler.internalServerError(
+        `Gemini stream error: ${response.status}`,
+        { errorCode: String(ErrorCode.AI_PROVIDER_ERROR) }
+      );
     }
 
     const reader = response.body.getReader();
@@ -129,7 +154,9 @@ export class GeminiAdapter extends BaseAIAdapter {
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+        const lines = chunk
+          .split('\n')
+          .filter((line) => line.startsWith('data: '));
 
         for (const line of lines) {
           const data = line.slice(6);
@@ -179,14 +206,22 @@ export class GeminiAdapter extends BaseAIAdapter {
     return modelSizes[this.model] ?? 1000000;
   }
 
-  private mapFinishReason(reason?: string): 'stop' | 'length' | 'content_filter' | 'error' {
+  private mapFinishReason(
+    reason?: string
+  ): 'stop' | 'length' | 'content_filter' | 'error' {
     switch (reason) {
-      case 'STOP': return 'stop';
-      case 'MAX_TOKENS': return 'length';
-      case 'SAFETY': return 'content_filter';
-      case 'RECITATION': return 'content_filter';
-      case 'OTHER': return 'error';
-      default: return 'error';
+      case 'STOP':
+        return 'stop';
+      case 'MAX_TOKENS':
+        return 'length';
+      case 'SAFETY':
+        return 'content_filter';
+      case 'RECITATION':
+        return 'content_filter';
+      case 'OTHER':
+        return 'error';
+      default:
+        return 'error';
     }
   }
 
@@ -205,7 +240,9 @@ export class GeminiAdapter extends BaseAIAdapter {
   }
 }
 
-export async function createGeminiAdapter(config: GeminiConfig): Promise<GeminiAdapter> {
+export async function createGeminiAdapter(
+  config: GeminiConfig
+): Promise<GeminiAdapter> {
   const adapter = new GeminiAdapter();
   await adapter.initialize(config);
   return adapter;

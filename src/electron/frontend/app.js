@@ -6,6 +6,7 @@ import {
   VRMAnimationLoaderPlugin,
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
+import { WhisperSpeech } from './WhisperSpeech.js';
 
 class TheRevApp {
   constructor() {
@@ -42,9 +43,15 @@ class TheRevApp {
     this._avatarAnimatingPaused = false;
 
     // Voice control state
-    this._voiceRecognition = null;
+    this._whisperSpeech = null;
     this._isListening = false;
     this._voiceTranscript = '';
+    this._isRestarting = false;
+    this._networkErrorCount = 0;
+    this._voiceEnabled = localStorage.getItem('voice_enabled') !== 'false';
+    this._voiceLanguage = localStorage.getItem('voice_language') || 'en-US';
+    this._micAvailable = null;
+    this._whisperReady = false;
 
     // Tab cache for instant switching
     this._tabCache = {
@@ -73,6 +80,14 @@ class TheRevApp {
     this.loadInitialContent();
     this.setupWebviewListeners();
     this.setupVoiceControl();
+
+    // Voice settings button
+    document
+      .getElementById('voice-settings-btn')
+      ?.addEventListener('click', () => {
+        console.log('[VoiceControl] Settings button clicked');
+        this.openVoiceSettings();
+      });
 
     // Handle deep links from Electron
     this.handleDeepLinks();
@@ -503,21 +518,31 @@ class TheRevApp {
   }
 
   showStartupNotification() {
-    // Create startup toast notification
-    const toast = document.createElement('div');
-    toast.id = 'startup-toast';
-    toast.className = 'startup-toast';
-    toast.innerHTML = `
-      <div class="startup-content">
-        <span class="startup-icon">🔥</span>
-        <span class="startup-text">Revving up your engine...</span>
-      </div>
-    `;
-    document.body.appendChild(toast);
+    // Update init screen status
+    this.updateInitScreen(
+      'Checking AI systems...',
+      10,
+      'Connecting to services'
+    );
 
     // Listen for Ollama ready
     if (window.electronAPI?.onOllamaReady) {
       window.electronAPI.onOllamaReady((data) => {
+        console.log('[TheRevApp] Ollama ready:', data);
+
+        // Update init screen
+        this.updateInitScreen(
+          'AI Ready!',
+          100,
+          `Model: ${data.model || 'loaded'}`
+        );
+
+        // Hide init screen after short delay
+        setTimeout(() => {
+          this.hideInitScreen();
+        }, 1500);
+
+        // Update toast notification if it exists
         const toast = document.getElementById('startup-toast');
         if (toast) {
           toast.innerHTML = `
@@ -531,8 +556,26 @@ class TheRevApp {
       });
     }
 
-    // Auto-remove after 10 seconds if no response
+    // Listen for STT ready
+    if (window.electronAPI?.onSTTReady) {
+      window.electronAPI.onSTTReady((ready) => {
+        if (ready) {
+          this.updateInitScreen(
+            'Voice recognition ready',
+            60,
+            'Microphone loaded'
+          );
+        }
+      });
+    }
+
+    // Check Ollama status periodically to show progress
+    this.checkOllamaStatusProgress();
+
+    // Auto-hide init screen after 30 seconds max
     setTimeout(() => {
+      this.hideInitScreen();
+      // Show warning toast if not ready
       const toast = document.getElementById('startup-toast');
       if (toast) {
         toast.innerHTML = `
@@ -543,7 +586,76 @@ class TheRevApp {
         `;
         setTimeout(() => toast.remove(), 3000);
       }
-    }, 10000);
+    }, 30000);
+  }
+
+  async checkOllamaStatusProgress() {
+    try {
+      if (window.electronAPI?.checkOllamaStatus) {
+        const status = await window.electronAPI.checkOllamaStatus();
+
+        if (status.models && status.models.length > 0) {
+          this.updateInitScreen(
+            'AI Models Ready',
+            90,
+            `Loaded: ${status.models.join(', ')}`
+          );
+        } else if (status.running) {
+          this.updateInitScreen(
+            'Installing AI models...',
+            40,
+            'Downloading mistral & llama3 (may take a few minutes)'
+          );
+        } else {
+          this.updateInitScreen(
+            'Starting Ollama...',
+            20,
+            'Initializing AI runtime'
+          );
+        }
+      }
+    } catch (err) {
+      console.log('[Init] Status check error:', err.message);
+    }
+
+    // Check again in 5 seconds if not ready
+    if (!this._initScreenHidden) {
+      setTimeout(() => this.checkOllamaStatusProgress(), 5000);
+    }
+  }
+
+  updateInitScreen(status, progress, detail) {
+    const statusEl = document.getElementById('init-status');
+    const progressEl = document.getElementById('init-progress');
+    const detailEl = document.getElementById('init-detail');
+
+    if (statusEl) statusEl.textContent = status;
+    if (progressEl) progressEl.style.width = progress + '%';
+    if (detailEl) detailEl.textContent = detail;
+  }
+
+  hideInitScreen() {
+    const initScreen = document.getElementById('init-screen');
+    if (initScreen) {
+      initScreen.style.opacity = '0';
+      initScreen.style.transition = 'opacity 0.5s ease';
+      setTimeout(() => {
+        initScreen.style.display = 'none';
+      }, 500);
+    }
+    this._initScreenHidden = true;
+
+    // Create startup toast notification (only after init screen is gone)
+    const toast = document.createElement('div');
+    toast.id = 'startup-toast';
+    toast.className = 'startup-toast';
+    toast.innerHTML = `
+      <div class="startup-content">
+        <span class="startup-icon">🔥</span>
+        <span class="startup-text">Revving up your engine...</span>
+      </div>
+    `;
+    document.body.appendChild(toast);
   }
 
   setupWebviewListeners() {
@@ -580,119 +692,296 @@ class TheRevApp {
     const voiceBtn = document.getElementById('voice-btn');
     if (!voiceBtn) return;
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.log('[VoiceControl] Speech recognition not supported');
-      voiceBtn.style.display = 'none';
+    // Check if voice is enabled in settings
+    if (!this._voiceEnabled) {
+      console.log('[VoiceControl] Voice disabled in settings');
+      voiceBtn.title = 'Voice disabled - click settings to enable';
+      voiceBtn.addEventListener('click', () => {
+        this.openVoiceSettings();
+      });
       return;
     }
 
-    this._voiceRecognition = new SpeechRecognition();
-    this._voiceRecognition.continuous = true;
-    this._voiceRecognition.interimResults = true;
-    this._voiceRecognition.lang = 'en-US';
+    // Initialize Whisper offline speech recognition
+    this._whisperSpeech = new WhisperSpeech();
+    this._isRestarting = false;
+    this._networkErrorCount = 0;
+
+    // Listen for STT ready event from main process
+    if (window.electronAPI && window.electronAPI.onSTTReady) {
+      window.electronAPI.onSTTReady((ready) => {
+        console.log('[VoiceControl] STT server ready:', ready);
+        if (ready) {
+          this._initWhisper();
+        }
+      });
+    }
+
+    // Listen for STT download progress
+    if (window.electronAPI && window.electronAPI.onSTTDownloadProgress) {
+      window.electronAPI.onSTTDownloadProgress((progress) => {
+        console.log('[VoiceControl] STT download progress:', progress);
+        this.updateWhisperProgress({
+          progress: progress.status === 'done' ? 100 : 50,
+        });
+      });
+    }
+
+    // Initialize Whisper model
+    this._initWhisper();
+
+    // Voice button click handler - single click to start
+    let voiceLastClick = 0;
 
     voiceBtn.addEventListener('click', () => {
+      // Prevent double-fire (300ms debounce)
+      const now = Date.now();
+      if (now - voiceLastClick < 300) {
+        console.log('[VoiceControl] Ignoring rapid click');
+        return;
+      }
+      voiceLastClick = now;
+
       if (this._isListening) {
         this.stopListening(true);
       } else {
-        this.startListening();
+        // Always try Whisper first, fallback to text input if not ready
+        if (this._whisperSpeech && this._whisperSpeech.isReady()) {
+          this.startListening();
+        } else {
+          console.log('[VoiceControl] Whisper not ready, opening text input');
+          this.openVoiceCommandModal();
+        }
       }
     });
 
-    this._voiceRecognition.onresult = (event) => {
-      const result = event.results[event.results.length - 1];
-      const transcript = result[0].transcript;
-      const isFinal = result.isFinal;
-      
-      this._voiceTranscript = transcript;
-      
-      const transcriptEl = document.getElementById('voice-transcript');
-      if (transcriptEl) {
-        transcriptEl.textContent = `"${transcript}"`;
+    // Set up Whisper callbacks
+    this._whisperSpeech.onResult = (result) => {
+      console.log('[VoiceControl] Whisper result:', result.transcript);
+      this._voiceTranscript = result.transcript;
+
+      // Populate the AI command input with the recognized text
+      const aiInput = document.getElementById('ai-command-input');
+      if (aiInput) {
+        aiInput.value = result.transcript;
       }
 
-      const input = document.getElementById('ai-command-input');
-      if (input && isFinal && transcript.trim()) {
-        input.value = transcript;
+      const transcriptEl = document.getElementById('voice-transcript');
+      if (transcriptEl) transcriptEl.textContent = result.transcript;
+
+      if (result.isFinal) {
         this.stopListening(true);
         this.executeAICommand();
       }
     };
 
-    this._voiceRecognition.onerror = (event) => {
-      console.error('[VoiceControl] Error:', event.error);
+    this._whisperSpeech.onError = (err) => {
+      console.error('[VoiceControl] Whisper error:', err);
       this.stopListening(false);
-      if (event.error === 'not-allowed') {
-        alert('Microphone access denied. Please allow microphone access.');
-      }
     };
 
-    this._voiceRecognition.onend = () => {
-      if (this._isListening) {
-        try {
-          this._voiceRecognition.start();
-        } catch (e) {}
-      }
+    this._whisperSpeech.onReady = () => {
+      console.log('[VoiceControl] Whisper ready for speech recognition');
+      this._whisperReady = true;
     };
 
-    console.log('[VoiceControl] Voice control initialized');
+    this._whisperSpeech.onProgress = (progress) => {
+      console.log(
+        '[VoiceControl] Whisper loading:',
+        progress.progress?.toFixed(1) || 0,
+        '%'
+      );
+      this.updateWhisperProgress(progress);
+    };
+
+    console.log(
+      '[VoiceControl] Voice control initialized (Whisper offline mode)'
+    );
+  }
+
+  async _initWhisper() {
+    try {
+      console.log('[VoiceControl] Checking STT server status...');
+
+      // Check if Electron API is available
+      if (window.electronAPI && window.electronAPI.checkSTTStatus) {
+        const status = await window.electronAPI.checkSTTStatus();
+        console.log('[VoiceControl] STT status:', status);
+
+        // Update UI based on status
+        const sttIcon = document.getElementById('stt-model-status-icon');
+        const sttText = document.getElementById('stt-model-status-text');
+
+        if (status.available) {
+          if (status.modelLoaded) {
+            if (sttIcon) {
+              sttIcon.textContent = '✅';
+              sttIcon.className = 'success';
+            }
+            if (sttText) {
+              sttText.textContent = 'Whisper model ready!';
+            }
+            this._whisperSpeech._modelLoaded = true;
+            console.log('[VoiceControl] Whisper model ready!');
+
+            // Warm up the model for faster first transcription
+            setTimeout(async () => {
+              try {
+                await fetch('http://localhost:3001/warmup');
+                console.log('[VoiceControl] STT model warmed up!');
+              } catch (err) {
+                console.log('[VoiceControl] STT warmup skipped');
+              }
+            }, 1000);
+          } else {
+            // Model downloading
+            if (sttIcon) {
+              sttIcon.textContent = '🔄';
+              sttIcon.className = 'checking';
+            }
+            if (sttText) {
+              sttText.textContent =
+                status.downloadProgress?.status === 'downloading'
+                  ? 'Downloading model...'
+                  : 'Preparing model...';
+            }
+            console.log('[VoiceControl] Model downloading...');
+          }
+        } else {
+          if (sttIcon) {
+            sttIcon.textContent = '❌';
+            sttIcon.className = 'error';
+          }
+          if (sttText) {
+            sttText.textContent = 'STT server not available';
+          }
+        }
+      } else {
+        // Not in Electron, try direct initialization
+        await this._whisperSpeech.init();
+        console.log('[VoiceControl] Whisper model loaded successfully!');
+      }
+    } catch (err) {
+      console.error('[VoiceControl] Failed to load Whisper model:', err);
+    }
+  }
+
+  updateWhisperProgress(progress) {
+    const sttIcon = document.getElementById('stt-model-status-icon');
+    const sttText = document.getElementById('stt-model-status-text');
+
+    if (sttIcon && sttText) {
+      sttIcon.textContent = '🔄';
+      sttIcon.className = 'checking';
+      sttText.textContent = `Downloading Whisper... ${progress.progress?.toFixed(0) || 0}%`;
+    }
+  }
+
+  openVoiceCommandModal() {
+    const modal = document.getElementById('voice-command-modal');
+    const input = document.getElementById('voice-command-input');
+
+    if (modal) {
+      modal.style.display = 'flex';
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+    }
+  }
+
+  closeVoiceCommandModal() {
+    const modal = document.getElementById('voice-command-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+  }
+
+  executeVoiceCommand() {
+    const input = document.getElementById('voice-command-input');
+    if (!input || !input.value.trim()) {
+      return;
+    }
+
+    const command = input.value.trim();
+    console.log('[VoiceControl] Executing text command:', command);
+
+    // Put command in the AI input and execute
+    const aiInput = document.getElementById('ai-command-input');
+    if (aiInput) {
+      aiInput.value = command;
+    }
+
+    this.closeVoiceCommandModal();
+    this.executeAICommand();
   }
 
   startListening() {
-    if (!this._voiceRecognition || this._isListening) return;
+    if (!this._whisperSpeech || this._isListening) return;
+
+    this._networkErrorCount = 0;
 
     try {
-      this._voiceRecognition.start();
       this._isListening = true;
       this._voiceTranscript = '';
+      this._whisperSpeech.start();
 
-      // Update UI
-      const voiceBtn = document.getElementById('voice-btn');
-      const voiceIndicator = document.getElementById('voice-indicator');
-      const transcriptEl = document.getElementById('voice-transcript');
-      
-      if (voiceBtn) {
-        voiceBtn.classList.add('listening');
-        voiceBtn.textContent = '🔴';
-      }
-      if (voiceIndicator) {
-        voiceIndicator.style.display = 'block';
-      }
-      if (transcriptEl) {
-        transcriptEl.textContent = '';
-      }
+      console.log('[VoiceControl] start() called successfully');
+      this.updateVoiceUI(true);
 
-      console.log('[VoiceControl] Started listening');
+      console.log('[VoiceControl] Started listening (Whisper)');
     } catch (error) {
       console.error('[VoiceControl] Failed to start:', error);
+      this._isListening = false;
+      this.updateVoiceUI(false);
+      // Fallback to text input
+      this.openVoiceCommandModal();
+    }
+  }
+
+  updateVoiceUI(isListening) {
+    const voiceBtn = document.getElementById('voice-btn');
+    const voiceIndicator = document.getElementById('voice-indicator');
+    const transcriptEl = document.getElementById('voice-transcript');
+
+    if (voiceBtn) {
+      voiceBtn.classList.remove('voice-ready');
+      if (isListening) {
+        voiceBtn.classList.add('listening');
+        voiceBtn.textContent = '🔴';
+        voiceBtn.title = 'Click to stop';
+      } else {
+        voiceBtn.classList.remove('listening');
+        voiceBtn.textContent = '🎤';
+        voiceBtn.title = 'Voice Command';
+      }
+    }
+    if (voiceIndicator) {
+      voiceIndicator.style.display = isListening ? 'block' : 'none';
+    }
+    if (transcriptEl && !isListening) {
+      transcriptEl.textContent = '';
     }
   }
 
   stopListening(clearTranscript = true) {
-    if (!this._voiceRecognition) return;
+    if (!this._whisperSpeech) return;
 
     this._isListening = false;
 
     try {
-      this._voiceRecognition.stop();
-    } catch (e) {}
+      this._whisperSpeech.stop();
+    } catch (e) {
+      console.log('[VoiceControl] stop() exception:', e.message);
+    }
 
-    const voiceBtn = document.getElementById('voice-btn');
-    const voiceIndicator = document.getElementById('voice-indicator');
-    const transcriptEl = document.getElementById('voice-transcript');
-    
-    if (voiceBtn) {
-      voiceBtn.classList.remove('listening');
-      voiceBtn.textContent = '🎤';
-    }
-    if (voiceIndicator) {
-      voiceIndicator.style.display = 'none';
-    }
-    if (transcriptEl && !clearTranscript) {
-      // Keep the transcript if we're stopping due to error
-    } else if (transcriptEl) {
-      transcriptEl.textContent = '';
+    this.updateVoiceUI(false);
+
+    if (!clearTranscript) {
+      const transcriptEl = document.getElementById('voice-transcript');
+      if (transcriptEl) {
+        transcriptEl.textContent = '';
+      }
     }
 
     console.log('[VoiceControl] Stopped listening');
@@ -708,16 +997,281 @@ class TheRevApp {
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
-    
+
     // Try to find a good English voice
     const voices = speechSynthesis.getVoices();
-    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Natural')) ||
-                        voices.find(v => v.lang.startsWith('en'));
+    const englishVoice =
+      voices.find(
+        (v) => v.lang.startsWith('en') && v.name.includes('Natural')
+      ) || voices.find((v) => v.lang.startsWith('en'));
     if (englishVoice) {
       utterance.voice = englishVoice;
     }
 
     window.speechSynthesis.speak(utterance);
+  }
+
+  // Voice Settings Methods
+  openVoiceSettings() {
+    const modal = document.getElementById('voice-settings-modal');
+    if (modal) {
+      modal.style.display = 'flex';
+      this.checkMicrophoneStatus();
+      this.loadVoiceSettings();
+    }
+  }
+
+  closeVoiceSettings() {
+    const modal = document.getElementById('voice-settings-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+  }
+
+  async checkMicrophoneStatus() {
+    const micIcon = document.getElementById('mic-status-icon');
+    const micText = document.getElementById('mic-status-text');
+    const sttIcon = document.getElementById('stt-model-status-icon');
+    const sttText = document.getElementById('stt-model-status-text');
+    const settingsIcon = document.getElementById('voice-settings-icon');
+    const settingsStatus = document.getElementById('voice-settings-status');
+
+    if (!micIcon || !micText) return;
+
+    // Check Whisper model status
+    if (sttIcon && sttText) {
+      if (this._whisperSpeech && this._whisperSpeech.isReady()) {
+        sttIcon.textContent = '✅';
+        sttIcon.className = 'success';
+        sttText.textContent = 'Whisper model loaded - Ready!';
+      } else {
+        sttIcon.textContent = '🔄';
+        sttIcon.className = 'checking';
+        sttText.textContent = 'Loading Whisper model...';
+
+        // Poll for Whisper ready
+        const checkWhisper = setInterval(() => {
+          if (this._whisperSpeech && this._whisperSpeech.isReady()) {
+            clearInterval(checkWhisper);
+            if (sttIcon) {
+              sttIcon.textContent = '✅';
+              sttIcon.className = 'success';
+            }
+            if (sttText) {
+              sttText.textContent = 'Whisper model loaded - Ready!';
+            }
+          }
+        }, 1000);
+      }
+    }
+
+    // Update UI to checking state
+    micIcon.textContent = '⏳';
+    micIcon.className = 'checking';
+    micText.textContent = 'Checking microphone...';
+
+    if (settingsIcon) settingsIcon.textContent = '⏳';
+    if (settingsStatus) settingsStatus.textContent = 'Checking microphone...';
+
+    try {
+      // Try to get audio tracks
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Success - we have microphone access
+      micIcon.textContent = '✅';
+      micIcon.className = 'success';
+      micText.textContent = 'Microphone is ready!';
+      if (settingsIcon) settingsIcon.textContent = '🎤';
+      if (settingsStatus) settingsStatus.textContent = 'Microphone is ready!';
+
+      // Store available devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter((d) => d.kind === 'audioinput');
+      console.log('[VoiceControl] Available microphones:', mics);
+
+      // Stop the stream tracks
+      stream.getTracks().forEach((track) => track.stop());
+
+      this._micAvailable = true;
+      return true;
+    } catch (err) {
+      console.log('[VoiceControl] Microphone error:', err.name, err.message);
+
+      if (
+        err.name === 'NotAllowedError' ||
+        err.name === 'PermissionDeniedError'
+      ) {
+        statusIcon.textContent = '❌';
+        statusIcon.className = 'error';
+        statusText.textContent = 'Permission denied. Click to allow access.';
+        settingsIcon.textContent = '🔒';
+        settingsStatus.textContent =
+          'Permission denied - click "Test Microphone" to allow';
+        this._micAvailable = false;
+
+        // Add click handler to status for permission request
+        const statusEl = document.getElementById('mic-status');
+        if (statusEl) {
+          statusEl.style.cursor = 'pointer';
+          statusEl.onclick = () => this.testMicrophone();
+        }
+      } else if (
+        err.name === 'NotFoundError' ||
+        err.name === 'DevicesNotFoundError'
+      ) {
+        statusIcon.textContent = '❌';
+        statusIcon.className = 'error';
+        statusText.textContent =
+          'No microphone found. Please connect a microphone.';
+        settingsIcon.textContent = '🎙️';
+        settingsStatus.textContent = 'No microphone detected';
+        this._micAvailable = false;
+      } else if (
+        err.name === 'NotReadableError' ||
+        err.name === 'TrackStartError'
+      ) {
+        statusIcon.textContent = '⚠️';
+        statusIcon.className = 'warning';
+        statusText.textContent = 'Microphone is in use by another application.';
+        settingsIcon.textContent = '🔄';
+        settingsStatus.textContent = 'Microphone in use by another app';
+        this._micAvailable = false;
+      } else {
+        statusIcon.textContent = '❌';
+        statusIcon.className = 'error';
+        statusText.textContent = 'Microphone error: ' + err.message;
+        settingsIcon.textContent = '❌';
+        settingsStatus.textContent = 'Microphone error';
+        this._micAvailable = false;
+      }
+
+      return false;
+    }
+  }
+
+  async testMicrophone() {
+    const testResult = document.getElementById('mic-test-result');
+    const testWave = document.getElementById('mic-test-wave');
+    const testText = document.getElementById('mic-test-text');
+    const testBtn = document.getElementById('test-mic-btn');
+
+    if (!testResult) return;
+
+    testResult.style.display = 'block';
+    testWave.className = 'recording';
+    testText.textContent = 'Listening... Speak now!';
+    testBtn.disabled = true;
+    testBtn.textContent = '🔊 Testing...';
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new (
+        window.AudioContext || window.webkitAudioContext
+      )();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(analyser);
+
+      analyser.fftSize = 256;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      let voiceDetected = false;
+      let maxLevel = 0;
+
+      const checkAudio = () => {
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        maxLevel = Math.max(maxLevel, average);
+
+        if (average > 20) {
+          voiceDetected = true;
+        }
+
+        if (average > 10) {
+          testWave.style.height = Math.min(30 + average, 40) + 'px';
+        }
+
+        requestAnimationFrame(checkAudio);
+      };
+
+      checkAudio();
+
+      // Wait for test duration
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      stream.getTracks().forEach((track) => track.stop());
+      audioContext.close();
+
+      if (voiceDetected) {
+        testWave.className = 'success';
+        testText.textContent =
+          '✅ Voice detected! Microphone is working great!';
+        testText.style.color = '#00ff00';
+      } else {
+        testWave.className = 'success';
+        testText.textContent =
+          '✅ Microphone is working! Speak louder to test voice detection.';
+        testText.style.color = '#00ff00';
+      }
+
+      this._micAvailable = true;
+      this.checkMicrophoneStatus();
+    } catch (err) {
+      console.error('[VoiceControl] Test failed:', err);
+      testWave.className = 'error';
+      testText.textContent = '❌ Test failed: ' + err.message;
+      testText.style.color = '#ff4444';
+      this._micAvailable = false;
+    }
+
+    testBtn.disabled = false;
+    testBtn.textContent = '🔊 Test Microphone';
+  }
+
+  loadVoiceSettings() {
+    const enabled = localStorage.getItem('voice_enabled') !== 'false';
+    const language = localStorage.getItem('voice_language') || 'en-US';
+
+    const enabledEl = document.getElementById('voice-enabled');
+    const languageEl = document.getElementById('voice-language');
+
+    if (enabledEl) enabledEl.checked = enabled;
+    if (languageEl) languageEl.value = language;
+  }
+
+  saveVoiceSettings() {
+    const enabledEl = document.getElementById('voice-enabled');
+    const languageEl = document.getElementById('voice-language');
+
+    if (enabledEl) {
+      localStorage.setItem('voice_enabled', enabledEl.checked);
+      this._voiceEnabled = enabledEl.checked;
+    }
+
+    if (languageEl) {
+      localStorage.setItem('voice_language', languageEl.value);
+      this._voiceLanguage = languageEl.value;
+    }
+
+    // Update voice recognition language if it exists
+    if (this._voiceRecognition) {
+      this._voiceRecognition.lang = languageEl?.value || 'en-US';
+    }
+
+    this.closeVoiceSettings();
+
+    // Show confirmation
+    const voiceBtn = document.getElementById('voice-btn');
+    if (voiceBtn && enabledEl?.checked) {
+      voiceBtn.style.display = 'inline-block';
+      voiceBtn.title = 'Voice Command (Click to start)';
+    } else if (voiceBtn) {
+      voiceBtn.style.display = enabledEl?.checked ? 'inline-block' : 'none';
+    }
+  }
+
+  isVoiceEnabled() {
+    return this._voiceEnabled !== false && this._micAvailable !== false;
   }
 
   setupEventListeners() {
@@ -834,8 +1388,12 @@ class TheRevApp {
     document.addEventListener('click', (e) => {
       const panel = document.getElementById('animations-panel');
       const btn = document.getElementById('animations-btn');
-      if (panel && panel.classList.contains('active') && 
-          !panel.contains(e.target) && !btn.contains(e.target)) {
+      if (
+        panel &&
+        panel.classList.contains('active') &&
+        !panel.contains(e.target) &&
+        !btn.contains(e.target)
+      ) {
         this.closeAnimationsModal();
       }
     });
@@ -1135,7 +1693,11 @@ class TheRevApp {
         window.electronAPI.onBrowserWindowClosed(() => {
           this._browserWindowOpen = false;
           // Resume avatar when browser window closes (if on avatar or profile section)
-          if ((this.currentSection === 'avatar' || this.currentSection === 'profile') && this._avatarSceneReady) {
+          if (
+            (this.currentSection === 'avatar' ||
+              this.currentSection === 'profile') &&
+            this._avatarSceneReady
+          ) {
             this._avatarAnimatingPaused = false;
             if (this._avatarRenderer?.domElement) {
               this._avatarRenderer.domElement.style.display = 'block';
@@ -1148,7 +1710,12 @@ class TheRevApp {
   }
 
   switchSection(section, forceRefresh = false) {
-    console.log('[switchSection] Switching to:', section, 'forceRefresh:', forceRefresh);
+    console.log(
+      '[switchSection] Switching to:',
+      section,
+      'forceRefresh:',
+      forceRefresh
+    );
 
     // Update navigation
     document
@@ -1170,7 +1737,11 @@ class TheRevApp {
     this.currentSection = section;
 
     // Resume avatar for avatar and profile sections, pause for others
-    if ((section === 'avatar' || section === 'profile') && this._avatarSceneReady && !this._browserWindowOpen) {
+    if (
+      (section === 'avatar' || section === 'profile') &&
+      this._avatarSceneReady &&
+      !this._browserWindowOpen
+    ) {
       this._avatarAnimatingPaused = false;
       if (this._avatarRenderer?.domElement) {
         this._avatarRenderer.domElement.style.display = 'block';
@@ -1185,7 +1756,8 @@ class TheRevApp {
 
     // Check cache first (unless force refresh)
     const cache = this._tabCache[section];
-    const isCacheValid = cache?.data && (Date.now() - cache.timestamp < this._cacheTimeout);
+    const isCacheValid =
+      cache?.data && Date.now() - cache.timestamp < this._cacheTimeout;
 
     // Load section-specific data
     switch (section) {
@@ -1240,7 +1812,7 @@ class TheRevApp {
     }
 
     const container = document.querySelector('.threads-container');
-    
+
     // Check cache first
     if (useCache && this._tabCache.threads.data) {
       if (container) container.innerHTML = this._tabCache.threads.data;
@@ -1425,11 +1997,11 @@ class TheRevApp {
               });
             });
         }
-        
+
         // Save to cache
         this._tabCache.threads = {
           data: container?.innerHTML || '',
-          timestamp: Date.now()
+          timestamp: Date.now(),
         };
       }
     } catch (error) {
@@ -1440,14 +2012,16 @@ class TheRevApp {
   bindThreadsClickHandlers() {
     const container = document.querySelector('.threads-container');
     if (!container) return;
-    
-    container.querySelectorAll('.url-link.clickable, .post-media.video.clickable').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const url = el.dataset.url;
-        if (url) this.showOpenModeModal(url, '', 'Link');
+
+    container
+      .querySelectorAll('.url-link.clickable, .post-media.video.clickable')
+      .forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const url = el.dataset.url;
+          if (url) this.showOpenModeModal(url, '', 'Link');
+        });
       });
-    });
   }
 
   async loadProfile() {
@@ -1502,9 +2076,14 @@ class TheRevApp {
       // Use cached VRM if available
       if (this._tabCache.avatar.loaded && this._tabCache.avatar.vrmDataUrl) {
         this._savedVrmDataUrl = this._tabCache.avatar.vrmDataUrl;
-        this.renderAvatar3D(this._tabCache.avatar.vrmDataUrl, 'profile-avatar-3d-container');
-        
-        const profilePlaceholder = document.getElementById('profile-avatar-placeholder');
+        this.renderAvatar3D(
+          this._tabCache.avatar.vrmDataUrl,
+          'profile-avatar-3d-container'
+        );
+
+        const profilePlaceholder = document.getElementById(
+          'profile-avatar-placeholder'
+        );
         if (profilePlaceholder) {
           profilePlaceholder.innerHTML = '';
         }
@@ -1512,19 +2091,26 @@ class TheRevApp {
         // Load from disk if not cached
         const savedAvatar = await window.electronAPI.getAvatarData();
         if (savedAvatar && savedAvatar.fileName) {
-          const vrmResult = await window.electronAPI.loadVrmFile(savedAvatar.fileName);
+          const vrmResult = await window.electronAPI.loadVrmFile(
+            savedAvatar.fileName
+          );
           if (vrmResult.success && vrmResult.dataUrl) {
             // Cache it
             this._tabCache.avatar = {
               loaded: true,
               vrmDataUrl: vrmResult.dataUrl,
-              fileName: savedAvatar.fileName
+              fileName: savedAvatar.fileName,
             };
-            
+
             this._savedVrmDataUrl = vrmResult.dataUrl;
-            this.renderAvatar3D(vrmResult.dataUrl, 'profile-avatar-3d-container');
-            
-            const profilePlaceholder = document.getElementById('profile-avatar-placeholder');
+            this.renderAvatar3D(
+              vrmResult.dataUrl,
+              'profile-avatar-3d-container'
+            );
+
+            const profilePlaceholder = document.getElementById(
+              'profile-avatar-placeholder'
+            );
             if (profilePlaceholder) {
               profilePlaceholder.innerHTML = '';
             }
@@ -1597,7 +2183,7 @@ class TheRevApp {
       console.log('[Avatar] Using cached VRM');
       this._savedVrmDataUrl = this._tabCache.avatar.vrmDataUrl;
       this.renderAvatar3D(this._tabCache.avatar.vrmDataUrl);
-      
+
       // Update placeholder
       const placeholder = document.getElementById('avatar-placeholder');
       if (placeholder && this._tabCache.avatar.fileName) {
@@ -1607,7 +2193,7 @@ class TheRevApp {
           </div>
         `;
       }
-      
+
       // Skip reloading, just setup UI elements
       this.setupAvatarUI();
       return;
@@ -1631,7 +2217,7 @@ class TheRevApp {
           this._tabCache.avatar = {
             loaded: true,
             vrmDataUrl: vrmResult.dataUrl,
-            fileName: savedAvatar.fileName
+            fileName: savedAvatar.fileName,
           };
 
           // Store VRM data URL for browser avatar
@@ -1660,7 +2246,7 @@ class TheRevApp {
     // Check if VRoid Studio is installed
     const vroidStatus = document.getElementById('vroid-status');
     if (window.electronAPI) {
-      window.electronAPI.checkVroidStudio().then(vroidInfo => {
+      window.electronAPI.checkVroidStudio().then((vroidInfo) => {
         console.log('[Avatar] VRoid Studio status:', vroidInfo);
 
         if (vroidStatus) {
@@ -1734,7 +2320,9 @@ class TheRevApp {
   }
 
   renderAnimationButtons() {
-    const container = document.getElementById('animation-grid') || document.getElementById('animation-list');
+    const container =
+      document.getElementById('animation-grid') ||
+      document.getElementById('animation-list');
     if (!container) return;
 
     container.innerHTML = '';
@@ -1833,7 +2421,11 @@ class TheRevApp {
   startProfileAnimationCycle() {
     this.stopProfileAnimationCycle();
 
-    if (!this._avatarSettings.enabled || !this._animationNames || this._animationNames.length === 0) {
+    if (
+      !this._avatarSettings.enabled ||
+      !this._animationNames ||
+      this._animationNames.length === 0
+    ) {
       return;
     }
 
@@ -1841,7 +2433,9 @@ class TheRevApp {
       if (!this._avatarSettings.enabled) return;
 
       const animation =
-        this._animationNames[this._profileCurrentIndex % this._animationNames.length];
+        this._animationNames[
+          this._profileCurrentIndex % this._animationNames.length
+        ];
       console.log('[Profile Avatar] Cycling to:', animation);
 
       if (this._avatarActions[animation]) {
@@ -1878,7 +2472,11 @@ class TheRevApp {
   }
 
   playRandomChatAnimation() {
-    if (!this._avatarSettings.enabled || !this._animationNames || this._animationNames.length === 0) {
+    if (
+      !this._avatarSettings.enabled ||
+      !this._animationNames ||
+      this._animationNames.length === 0
+    ) {
       return;
     }
 
@@ -1944,32 +2542,39 @@ class TheRevApp {
     }
 
     // Check if scene already exists AND animations are loaded - if so, just show it
-    if (this._avatarSceneReady && this._avatarAnimationsReady && 
-        this._avatarRenderer && this._avatarRenderer.domElement && 
-        Object.keys(this._avatarActions).length > 0) {
-      console.log('[Avatar 3D] Using cached scene, animations loaded:', Object.keys(this._avatarActions).length);
-      
+    if (
+      this._avatarSceneReady &&
+      this._avatarAnimationsReady &&
+      this._avatarRenderer &&
+      this._avatarRenderer.domElement &&
+      Object.keys(this._avatarActions).length > 0
+    ) {
+      console.log(
+        '[Avatar 3D] Using cached scene, animations loaded:',
+        Object.keys(this._avatarActions).length
+      );
+
       // Move renderer to new container if different
       if (container !== this._avatarRenderer.domElement.parentElement) {
         container.innerHTML = '';
         container.appendChild(this._avatarRenderer.domElement);
       }
-      
+
       // Make sure renderer is visible
       this._avatarRenderer.domElement.style.display = 'block';
-      
+
       // Ensure an animation is playing
       if (!this._currentAvatarAction && this._avatarActions['Standard Idle']) {
         this._avatarActions['Standard Idle'].play();
         this._currentAvatarAction = this._avatarActions['Standard Idle'];
       }
-      
+
       // Render animation buttons
       this.renderAnimationButtons();
-      
+
       // Unpause animation
       this._avatarAnimatingPaused = false;
-      
+
       return;
     }
 
@@ -4896,29 +5501,19 @@ class TheRevApp {
               originalCommand: command,
             };
           } else if (result.url) {
-            if (aiResponseText) {
-              aiResponseText.textContent = result.approvalRequest.actions
-                .map((a) => `${a.type}: ${a.reason}`)
-                .join(' | ');
-            }
-            if (aiApprovalSection) aiApprovalSection.style.display = 'flex';
-            if (aiResponseArea) aiResponseArea.style.display = 'block';
-            if (statusText) statusText.textContent = '⚠️ Approval needed';
-            this.currentApprovalRequest = {
-              ...result.approvalRequest,
-              originalCommand: command,
-            };
-          } else if (result.url) {
             // Navigation intent - open AI Browser immediately with URL and context
-            console.log('[executeAICommand] Opening AI Browser with URL:', result.url);
-            
+            console.log(
+              '[executeAICommand] Opening AI Browser with URL:',
+              result.url
+            );
+
             // Extract context for the chat
             const context = result.context || `Navigating to: ${result.url}`;
-            
+
             if (window.electronAPI?.openAIBrowser) {
               await window.electronAPI.openAIBrowser(result.url, context);
             }
-            
+
             // AI Avatar: Show success
             this.showAISpeechBubble('✅ Opening!', 2000);
             if (aiResponseText) {
@@ -4929,13 +5524,39 @@ class TheRevApp {
             if (statusText) statusText.textContent = '✅ Opening AI Browser...';
             input.value = '';
           } else if (result.actions) {
-            // AI Avatar: Show success
-            this.showAISpeechBubble('✅ Done!', 3000);
-            if (aiResponseText)
-              aiResponseText.textContent = `Executed: ${result.actions.map((a) => a.type).join(', ')}`;
-            if (aiApprovalSection) aiApprovalSection.style.display = 'none';
-            if (aiResponseArea) aiResponseArea.style.display = 'block';
-            if (statusText) statusText.textContent = '✅ Done';
+            // Check if any action is a NAVIGATE action
+            const navAction = result.actions.find(
+              (a) => a.type === 'NAVIGATE' && a.value
+            );
+
+            if (navAction) {
+              // Open AI Browser with the navigation URL
+              console.log(
+                '[executeAICommand] Opening AI Browser for NAVIGATE action:',
+                navAction.value
+              );
+              if (window.electronAPI?.openAIBrowser) {
+                await window.electronAPI.openAIBrowser(
+                  navAction.value,
+                  result.context || `Navigating to: ${navAction.value}`
+                );
+              }
+              this.showAISpeechBubble('✅ Opening!', 2000);
+              if (aiResponseText)
+                aiResponseText.textContent = `Opening ${navAction.value}`;
+              if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+              if (aiResponseArea) aiResponseArea.style.display = 'block';
+              if (statusText)
+                statusText.textContent = '✅ Opening AI Browser...';
+            } else {
+              // AI Avatar: Show success for other actions
+              this.showAISpeechBubble('✅ Done!', 3000);
+              if (aiResponseText)
+                aiResponseText.textContent = `Executed: ${result.actions.map((a) => a.type).join(', ')}`;
+              if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+              if (aiResponseArea) aiResponseArea.style.display = 'block';
+              if (statusText) statusText.textContent = '✅ Done';
+            }
             input.value = '';
           }
         } else {
@@ -5501,7 +6122,7 @@ class TheRevApp {
       this._tabCache.news = {
         data: container.innerHTML,
         rawData: news,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
     } catch (error) {
       console.error('Error loading news:', error);

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { BrowserSandbox, SandboxConfig } from './BrowserSandbox';
 import { BrowserManager } from './BrowserManager';
+import { ErrorHandler } from '../errors/ErrorHandler';
 
 export enum BrowserEngine {
   PUPPETEER = 'puppeteer',
@@ -145,7 +146,7 @@ export class BrowserAdapter extends EventEmitter {
 
   async newPage(pageId: string): Promise<any> {
     if (!this.browser) {
-      throw new Error('Browser not launched');
+      throw ErrorHandler.serviceUnavailable('Browser not launched');
     }
 
     let page: any;

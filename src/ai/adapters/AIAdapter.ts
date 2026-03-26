@@ -4,6 +4,8 @@ import {
   CircuitBreaker,
   CircuitBreakerConfig,
 } from './CircuitBreaker';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface AIRequest {
   provider: AIProvider;
@@ -97,7 +99,9 @@ export abstract class BaseAIAdapter implements AIAdapter {
     request: AIRequest,
     onChunk: (chunk: string) => void
   ): Promise<AIResponse> {
-    throw new Error(`Streaming not supported for ${this.provider}`);
+    throw ErrorHandler.operationNotAllowed(
+      `Streaming not supported for ${this.provider}`
+    );
   }
 
   abstract getCapabilities(): ProviderCapabilities;
@@ -110,10 +114,14 @@ export abstract class BaseAIAdapter implements AIAdapter {
 
   protected ensureInitialized(): void {
     if (!this.initialized) {
-      throw new Error(`${this.provider} adapter not initialized`);
+      throw ErrorHandler.serviceUnavailable(
+        `${this.provider} adapter not initialized`
+      );
     }
     if (this.circuitBreaker.getState() === 'OPEN') {
-      throw new Error(`${this.provider} circuit breaker is OPEN`);
+      throw ErrorHandler.serviceUnavailable(
+        `${this.provider} circuit breaker is OPEN`
+      );
     }
   }
 
@@ -126,7 +134,12 @@ export abstract class BaseAIAdapter implements AIAdapter {
       operation(),
       new Promise<T>((_, reject) =>
         setTimeout(
-          () => reject(new Error(`Request timeout after ${timeout}ms`)),
+          () =>
+            reject(
+              ErrorHandler.serviceUnavailable(
+                `Request timeout after ${timeout}ms`
+              )
+            ),
           timeout
         )
       ),
