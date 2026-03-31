@@ -2409,6 +2409,11 @@ input:checked + .slider:before {
   right: 20px;
   z-index: 10000;
   animation: slideIn 0.5s ease-out;
+  transition: opacity 0.5s ease;
+}
+
+.startup-toast.fade-out {
+  opacity: 0;
 }
 
 .startup-toast .startup-content {

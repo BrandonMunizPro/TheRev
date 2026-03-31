@@ -517,74 +517,135 @@ class TheRevApp {
     return true;
   }
 
-  showStartupNotification() {
-    // Update init screen status
+  async showStartupNotification() {
+    this._servicesReady = { ollama: false, whisper: false };
+
+    const toast = document.createElement('div');
+    toast.id = 'startup-toast';
+    toast.className = 'startup-toast';
+    toast.innerHTML = `
+      <div class="startup-content">
+        <span class="startup-icon">🔥</span>
+        <span class="startup-text">Revving up your engine...</span>
+      </div>
+    `;
+    document.body.appendChild(toast);
+
+    const dismissStartupToast = () => {
+      if (toast.parentNode) {
+        toast.innerHTML = `
+          <div class="startup-content success">
+            <span class="startup-icon">✅</span>
+            <span class="startup-text">Rev is ready!</span>
+          </div>
+        `;
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          toast.style.transition = 'opacity 0.5s ease';
+          setTimeout(() => {
+            if (toast.parentNode) toast.remove();
+          }, 500);
+        }, 2000);
+      }
+      setTimeout(() => this.hideInitScreen(), 2000);
+    };
+
+    const checkAllServicesReady = () => {
+      if (this._servicesReady.ollama && this._servicesReady.whisper) {
+        dismissStartupToast();
+      }
+    };
+
     this.updateInitScreen(
       'Checking AI systems...',
       10,
       'Connecting to services'
     );
 
-    // Listen for Ollama ready
     if (window.electronAPI?.onOllamaReady) {
       window.electronAPI.onOllamaReady((data) => {
         console.log('[TheRevApp] Ollama ready:', data);
-
-        // Update init screen
+        this._servicesReady.ollama = true;
         this.updateInitScreen(
           'AI Ready!',
           100,
           `Model: ${data.model || 'loaded'}`
         );
-
-        // Hide init screen after short delay
-        setTimeout(() => {
-          this.hideInitScreen();
-        }, 1500);
-
-        // Update toast notification if it exists
-        const toast = document.getElementById('startup-toast');
-        if (toast) {
-          toast.innerHTML = `
-            <div class="startup-content success">
-              <span class="startup-icon">✅</span>
-              <span class="startup-text">Rev is ready! ${data.model ? '(' + data.model + ')' : ''}</span>
-            </div>
-          `;
-          setTimeout(() => toast.remove(), 4000);
-        }
+        checkAllServicesReady();
       });
     }
 
-    // Listen for STT ready
     if (window.electronAPI?.onSTTReady) {
       window.electronAPI.onSTTReady((ready) => {
+        console.log('[TheRevApp] STT ready:', ready);
         if (ready) {
+          this._servicesReady.whisper = true;
           this.updateInitScreen(
             'Voice recognition ready',
             60,
             'Microphone loaded'
           );
+          checkAllServicesReady();
         }
       });
     }
 
-    // Check Ollama status periodically to show progress
-    this.checkOllamaStatusProgress();
+    const checkInitialStatus = async () => {
+      if (window.electronAPI?.checkOllamaStatus) {
+        try {
+          const status = await window.electronAPI.checkOllamaStatus();
+          if (status.models && status.models.length > 0) {
+            console.log(
+              '[TheRevApp] Ollama already ready on check:',
+              status.models
+            );
+            this._servicesReady.ollama = true;
+            this.updateInitScreen(
+              'AI Ready!',
+              100,
+              `Model: ${status.models[0]}`
+            );
+            checkAllServicesReady();
+          }
+        } catch (e) {
+          console.log('[TheRevApp] Initial status check failed:', e);
+        }
+      }
+      if (window.electronAPI?.checkSTTStatus) {
+        try {
+          const sttStatus = await window.electronAPI.checkSTTStatus();
+          if (sttStatus.available) {
+            console.log('[TheRevApp] STT already ready on check');
+            this._servicesReady.whisper = true;
+            checkAllServicesReady();
+          }
+        } catch (e) {
+          console.log('[TheRevApp] STT status check failed:', e);
+        }
+      }
+    };
 
-    // Auto-hide init screen after 30 seconds max
+    this.checkOllamaStatusProgress();
+    checkInitialStatus();
+
     setTimeout(() => {
-      this.hideInitScreen();
-      // Show warning toast if not ready
-      const toast = document.getElementById('startup-toast');
-      if (toast) {
-        toast.innerHTML = `
-          <div class="startup-content warning">
-            <span class="startup-icon">⚠️</span>
-            <span class="startup-text">Using fallback mode</span>
-          </div>
-        `;
-        setTimeout(() => toast.remove(), 3000);
+      if (!this._servicesReady.ollama || !this._servicesReady.whisper) {
+        this.hideInitScreen();
+        if (toast.parentNode) {
+          toast.innerHTML = `
+            <div class="startup-content warning">
+              <span class="startup-icon">⚠️</span>
+              <span class="startup-text">Using fallback mode</span>
+            </div>
+          `;
+          setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity 0.5s ease';
+            setTimeout(() => {
+              if (toast.parentNode) toast.remove();
+            }, 500);
+          }, 3000);
+        }
       }
     }, 30000);
   }
@@ -644,18 +705,6 @@ class TheRevApp {
       }, 500);
     }
     this._initScreenHidden = true;
-
-    // Create startup toast notification (only after init screen is gone)
-    const toast = document.createElement('div');
-    toast.id = 'startup-toast';
-    toast.className = 'startup-toast';
-    toast.innerHTML = `
-      <div class="startup-content">
-        <span class="startup-icon">🔥</span>
-        <span class="startup-text">Revving up your engine...</span>
-      </div>
-    `;
-    document.body.appendChild(toast);
   }
 
   setupWebviewListeners() {
@@ -2870,6 +2919,24 @@ class TheRevApp {
       'Sit Yell': 'SitYell.vrma',
       'Change Dir': 'ChangeDir.vrma',
       Rummaging: 'Rummaging.vrma',
+      // NEW animations from Mixamo
+      Boxing: 'Boxing.vrma',
+      Singing: 'Singing.vrma',
+      'Brooklyn Uprock': 'BrooklynUprock.vrma',
+      'Sitting Clap': 'SittingClap.vrma',
+      'Standing Clap': 'StandingClap.vrma',
+      'Male Standing Pose': 'MaleStandingPose.vrma',
+      'Fishing Cast': 'FishingCast.vrma',
+      Cheering: 'Cheering.vrma',
+      'Hip Hop Dancing': 'HipHopDancing.vrma',
+      'Baseball Pitching': 'BaseballPitching.vrma',
+      Victory: 'Victory.vrma',
+      'Guitar Playing': 'GuitarPlaying.vrma',
+      'Kip Up': 'KipUp.vrma',
+      'Strong Gesture': 'StrongGesture.vrma',
+      'Taunt Gesture': 'TauntGesture.vrma',
+      'Sitting Talking': 'SittingTalking.vrma',
+      'Sitting Disapproval': 'SittingDisapproval.vrma',
     };
 
     console.log('[Avatar] Loading animations from:', basePath + 'animations/');

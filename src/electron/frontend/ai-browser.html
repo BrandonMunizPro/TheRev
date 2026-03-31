@@ -1524,8 +1524,22 @@
         addMessage('user', message);
         chatInput.value = '';
 
-        // Play a random chat animation
+        // Play a random chat animation when user sends message
         playRandomChatAnimation();
+
+        // Analyze user sentiment and react
+        const userSentiment = sentimentAnalyzer.analyze(message);
+        if (
+          userSentiment.emotion !== 'neutral' &&
+          availableChatAnimations.length > 0
+        ) {
+          setTimeout(() => {
+            triggerAvatarReaction(
+              userSentiment.emotion,
+              availableChatAnimations
+            );
+          }, 500);
+        }
 
         setThinking(true);
 
@@ -1731,6 +1745,21 @@
               result.response || 'Executed your request in the browser!'
             );
 
+            // Trigger avatar reaction based on response sentiment
+            const responseSentiment = sentimentAnalyzer.analyze(
+              result.response || ''
+            );
+            if (
+              responseSentiment.emotion !== 'neutral' &&
+              availableChatAnimations.length > 0
+            ) {
+              triggerAvatarReaction(
+                responseSentiment.emotion,
+                availableChatAnimations
+              );
+              updateEmotionDisplay(responseSentiment.emotion);
+            }
+
             // Show contextual information if available
             if (result.context) {
               setTimeout(() => {
@@ -1769,34 +1798,121 @@
             );
           }
         } catch (error) {
-          addMessage('ai', 'Sorry, I encountered an error: ' + error.message);
+          console.error('[Send] Error:', error);
+          // Friendly user message
+          let userMessage = 'Something went wrong. Please try again.';
+          if (
+            error.message.includes('timeout') ||
+            error.message.includes('Timeout')
+          ) {
+            userMessage =
+              'That took too long. The AI might be busy - please try again.';
+          } else if (
+            error.message.includes('fetch') ||
+            error.message.includes('network')
+          ) {
+            userMessage =
+              "Couldn't reach the server. Check your connection and try again.";
+          }
+          addMessage('ai', userMessage);
         }
 
         setThinking(false);
       }
 
+      // Retry helper with exponential backoff for transient errors
+      async function fetchWithRetry(url, options, maxRetries = 2) {
+        let lastError;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const response = await fetch(url, options);
+            return response;
+          } catch (error) {
+            lastError = error;
+            // Only retry on network errors, not HTTP errors
+            const isNetworkError =
+              error.message.includes('network') ||
+              error.message.includes('fetch') ||
+              error.message.includes('Failed to fetch') ||
+              error.message.includes('NetworkError');
+
+            if (!isNetworkError || attempt === maxRetries) {
+              throw error;
+            }
+
+            // Exponential backoff: 1s, 2s
+            const delay = Math.pow(2, attempt) * 1000;
+            console.log(
+              `[Retry] Attempt ${attempt + 1} failed, retrying in ${delay}ms...`
+            );
+            await new Promise((r) => setTimeout(r, delay));
+          }
+        }
+        throw lastError;
+      }
+
       // Async function to fetch context after navigation
       async function fetchContextAsync(query) {
+        let thinkingIndicator = null;
         try {
-          const ctxResponse = await fetch(
+          // Small delay before showing indicator
+          await new Promise((r) => setTimeout(r, 1000));
+
+          thinkingIndicator = document.createElement('div');
+          thinkingIndicator.className = 'ai-message-bubble';
+          thinkingIndicator.innerHTML = `
+            <div class="avatar-container">
+              <span style="font-weight: bold; font-size: 14px;">R</span>
+            </div>
+            <div class="speech-bubble" style="opacity: 0.6;">
+              <em>Generating context...</em>
+            </div>
+          `;
+          chatMessages.appendChild(thinkingIndicator);
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+
+          // Use retry for resilience
+          const ctxResponse = await fetchWithRetry(
             'http://localhost:4000/api/ai-context',
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ command: query }),
-            }
+            },
+            2 // max 2 retries
           );
+
+          if (thinkingIndicator && thinkingIndicator.parentNode) {
+            thinkingIndicator.remove();
+          }
+
           const ctxResult = await ctxResponse.json();
-          if (ctxResult.context) {
-            setTimeout(() => {
-              addMessage(
-                'ai',
-                '📚 <strong>Quick Context:</strong> ' + ctxResult.context
-              );
-            }, 1500);
+          if (ctxResult.success && ctxResult.context) {
+            addMessage(
+              'ai',
+              '📚 <strong>Quick Context:</strong> ' + ctxResult.context
+            );
+
+            // Trigger avatar reaction based on context sentiment
+            const sentiment = sentimentAnalyzer.analyze(ctxResult.context);
+            if (
+              sentiment.emotion !== 'neutral' &&
+              availableChatAnimations.length > 0
+            ) {
+              triggerAvatarReaction(sentiment.emotion, availableChatAnimations);
+              updateEmotionDisplay(sentiment.emotion);
+            }
+          } else if (!ctxResult.success) {
+            console.log(
+              'AI context not available:',
+              ctxResult.context || 'provider unavailable'
+            );
           }
         } catch (e) {
-          console.log('Context fetch error:', e);
+          if (thinkingIndicator && thinkingIndicator.parentNode) {
+            thinkingIndicator.remove();
+          }
+          console.log('Context fetch failed after retries:', e.message);
         }
       }
 
@@ -1848,6 +1964,318 @@
       }
 
       // ==========================================
+      // AVATAR REACTION SYSTEM
+      // ==========================================
+
+      // Simple sentiment analyzer for avatar reactions
+      const sentimentAnalyzer = {
+        emotions: {
+          happy: {
+            keywords: [
+              'happy',
+              'joy',
+              'excited',
+              'great',
+              'amazing',
+              'wonderful',
+              'love',
+              'excellent',
+              'success',
+              'win',
+              'breakthrough',
+              'positive',
+              'good news',
+              'milestone',
+              'achievement',
+              'celebrate',
+              'congratulations',
+              'best',
+              'fantastic',
+              'brilliant',
+            ],
+            weight: 1.2,
+          },
+          sad: {
+            keywords: [
+              'sad',
+              'tragic',
+              'tragedy',
+              'death',
+              'died',
+              'loss',
+              'failed',
+              'failure',
+              'disappointing',
+              'terrible',
+              'awful',
+              'horrible',
+              'worst',
+              'crisis',
+              'disaster',
+              'devastating',
+              'catastrophe',
+              'sorrow',
+              'grief',
+            ],
+            weight: 1.0,
+          },
+          concerned: {
+            keywords: [
+              'concern',
+              'worried',
+              'worry',
+              'warning',
+              'risk',
+              'danger',
+              'threat',
+              'fear',
+              'uncertain',
+              'uncertainty',
+              'inflation',
+              'recession',
+              'decline',
+              'drop',
+              'fell',
+              'lost',
+              'missing',
+              'shortage',
+              'problem',
+              'challenge',
+              'difficult',
+              'hard',
+              'tough',
+              'struggle',
+            ],
+            weight: 1.0,
+          },
+          excited: {
+            keywords: [
+              'exciting',
+              'excited',
+              'incredible',
+              'unbelievable',
+              'shocking',
+              'surprising',
+              'breaking',
+              'just in',
+              'announcement',
+              'revealed',
+              'discovered',
+              'found',
+              'new',
+              'innovation',
+              'revolutionary',
+              'game-changing',
+              'breathtaking',
+            ],
+            weight: 1.3,
+          },
+          shocked: {
+            keywords: [
+              'shocked',
+              'stunned',
+              'cannot believe',
+              'wtf',
+              'unexpected',
+              'outrageous',
+              'insane',
+              'crazy',
+              'scandal',
+              'controversy',
+              'bombshell',
+              'explosive',
+              'alarming',
+            ],
+            weight: 1.2,
+          },
+          confused: {
+            keywords: [
+              'confused',
+              'confusing',
+              'unclear',
+              "doesn't make sense",
+              'contradictory',
+              'mixed',
+              'conflicting',
+              'strange',
+              'weird',
+              'odd',
+              'complicated',
+              'complex',
+              'puzzle',
+              'mystery',
+            ],
+            weight: 0.8,
+          },
+          angry: {
+            keywords: [
+              'angry',
+              'outrage',
+              'furious',
+              'rage',
+              'mad',
+              'hate',
+              'corrupt',
+              'fraud',
+              'scam',
+              'lie',
+              'lies',
+              'dishonest',
+              'disgusting',
+              'appalling',
+              'shameful',
+              'unacceptable',
+            ],
+            weight: 1.1,
+          },
+          hopeful: {
+            keywords: [
+              'hope',
+              'hopeful',
+              'optimistic',
+              'promising',
+              'potential',
+              'could',
+              'may',
+              'might',
+              'possible',
+              'likely',
+              'upcoming',
+              'future',
+              'plan',
+              'proposal',
+              'effort',
+              'progress',
+            ],
+            weight: 0.9,
+          },
+        },
+        lastReaction: 0,
+        reactionDelay: 3000, // Minimum ms between reactions
+        cooldownUntil: 0,
+
+        analyze(text) {
+          if (!text) return { emotion: 'neutral', confidence: 0 };
+          const lower = text.toLowerCase();
+          let scores = {};
+          let totalMatches = 0;
+
+          for (const [emotion, config] of Object.entries(this.emotions)) {
+            let score = 0;
+            for (const keyword of config.keywords) {
+              if (lower.includes(keyword)) {
+                score += config.weight;
+                totalMatches++;
+              }
+            }
+            scores[emotion] = score;
+          }
+
+          let dominant = 'neutral';
+          let maxScore = 0;
+          for (const [emotion, score] of Object.entries(scores)) {
+            if (score > maxScore) {
+              maxScore = score;
+              dominant = emotion;
+            }
+          }
+
+          const confidence = totalMatches > 0 ? maxScore / totalMatches : 0;
+          return {
+            emotion: confidence > 0.3 ? dominant : 'neutral',
+            confidence,
+          };
+        },
+
+        getAnimationForEmotion(emotion) {
+          const animations = {
+            happy: ['Victory', 'Cheering', 'Bling Dance', 'Standing Clap'],
+            sad: ['Sitting Disapproval', 'Sitting Talking', 'Death'],
+            concerned: ['Strong Gesture', 'Taunt Gesture', 'Thinking'],
+            excited: [
+              'Victory',
+              'Cheering',
+              'Hip Hop Dancing',
+              'Brooklyn Uprock',
+            ],
+            shocked: ['Taunt', 'Taunt Gesture', 'Surprised'],
+            confused: ['Thinking', 'Male Standing Pose', 'Sitting Talking'],
+            angry: ['Taunt', 'Taunt Gesture', 'Boxing'],
+            hopeful: ['Victory', 'Standing Clap', 'Cheering'],
+            neutral: ['Standard Idle', 'Bored', 'Idle Dance'],
+          };
+          return animations[emotion] || animations.neutral;
+        },
+
+        shouldReact() {
+          return Date.now() > this.cooldownUntil;
+        },
+
+        triggerReaction() {
+          this.cooldownUntil = Date.now() + this.reactionDelay;
+        },
+      };
+
+      // Trigger avatar reaction based on content
+      function triggerAvatarReaction(emotion, availableAnimations) {
+        if (!emotion || emotion === 'neutral') return;
+        if (!sentimentAnalyzer.shouldReact()) return;
+
+        const animationList = sentimentAnalyzer.getAnimationForEmotion(emotion);
+
+        // Find first available animation from the list
+        let selectedAnimation = null;
+        for (const animName of animationList) {
+          if (availableAnimations.includes(animName)) {
+            selectedAnimation = animName;
+            break;
+          }
+        }
+
+        if (selectedAnimation && typeof playChatAnimation === 'function') {
+          console.log(
+            `[Avatar Reaction] Triggering: ${emotion} → ${selectedAnimation}`
+          );
+          playChatAnimation(selectedAnimation);
+          sentimentAnalyzer.triggerReaction();
+        }
+      }
+
+      // Update emotion display badge
+      function updateEmotionDisplay(emotion) {
+        let emotionBadge = document.querySelector('.chat-emotion-display');
+        if (!emotionBadge) {
+          const chatSection = document.querySelector('.chat-avatar-section');
+          if (chatSection) {
+            emotionBadge = document.createElement('div');
+            emotionBadge.className = 'chat-emotion-display';
+            chatSection.appendChild(emotionBadge);
+          }
+        }
+        if (emotionBadge) {
+          const emojiMap = {
+            happy: '😊',
+            sad: '😢',
+            concerned: '🤔',
+            excited: '🤩',
+            shocked: '😱',
+            confused: '😕',
+            angry: '😠',
+            hopeful: '🤞',
+            neutral: '😐',
+          };
+          emotionBadge.textContent = emojiMap[emotion] || '😐';
+          emotionBadge.style.opacity = '1';
+          emotionBadge.style.transition = 'opacity 0.3s';
+
+          // Fade out after 5 seconds
+          setTimeout(() => {
+            emotionBadge.style.opacity = '0.5';
+          }, 5000);
+        }
+      }
+
+      // ==========================================
       // AVATAR LOADING AND ANIMATION
       // ==========================================
 
@@ -1859,6 +2287,7 @@
       let chatAvatarMixer = null;
       let chatAvatarActions = {};
       let chatCurrentAction = null;
+      let availableChatAnimations = [];
 
       async function initChatAvatar() {
         const canvas = document.getElementById('chat-avatar-canvas');
@@ -2034,6 +2463,42 @@
           'V Sign': 'v_sign.vrma',
           Spin: 'spin.vrma',
           Wave: 'wave.vrma',
+          // Additional animations
+          Bored: 'Bored.vrma',
+          'Bling Dance': 'bling_dance.vrma',
+          'Cat Dance': 'cat_dance.vrma',
+          'Devil Dance': 'devil_dance.vrma',
+          'Heaven/Hell': 'heaven_hell.vrma',
+          Capoeira: 'Capoeira.vrma',
+          Rumba: 'Rumba.vrma',
+          Slam: 'Slam.vrma',
+          Taunt: 'Taunt.vrma',
+          Death: 'Death.vrma',
+          'Baseball Hit': 'BaseballHit.vrma',
+          'Sit Yell': 'SitYell.vrma',
+          Shoot: 'shoot.vrma',
+          'Model Pose': 'model_pose.vrma',
+          'Offensive Idle': 'OffensiveIdle.vrma',
+          'Change Dir': 'ChangeDir.vrma',
+          Rummaging: 'Rummaging.vrma',
+          Jogging: 'Jogging.vrma',
+          'Sitting Clap': 'SittingClap.vrma',
+          'Standing Clap': 'StandingClap.vrma',
+          Cheering: 'Cheering.vrma',
+          'Hip Hop Dancing': 'HipHopDancing.vrma',
+          Victory: 'Victory.vrma',
+          'Guitar Playing': 'GuitarPlaying.vrma',
+          Boxing: 'Boxing.vrma',
+          Singing: 'Singing.vrma',
+          'Brooklyn Uprock': 'BrooklynUprock.vrma',
+          'Kip Up': 'KipUp.vrma',
+          'Strong Gesture': 'StrongGesture.vrma',
+          'Taunt Gesture': 'TauntGesture.vrma',
+          'Sitting Talking': 'SittingTalking.vrma',
+          'Sitting Disapproval': 'SittingDisapproval.vrma',
+          'Fishing Cast': 'FishingCast.vrma',
+          'Male Standing Pose': 'MaleStandingPose.vrma',
+          'Baseball Pitching': 'BaseballPitching.vrma',
         };
 
         console.log(
@@ -2075,6 +2540,13 @@
           chatAvatarActions['Standard Idle'].play();
           chatCurrentAction = chatAvatarActions['Standard Idle'];
         }
+
+        // Store available animations for reaction system
+        availableChatAnimations = Object.keys(chatAvatarActions);
+        console.log(
+          '[Chat Avatar] Available animations:',
+          availableChatAnimations
+        );
       }
 
       function playChatAnimation(name, fadeTime = 0.3) {

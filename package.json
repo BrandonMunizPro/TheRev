@@ -42,7 +42,8 @@
     "worker": "npx ts-node src/worker.ts",
     "worker:start": "npm run worker",
     "dev": "npm run docker:up && npm run electron:full",
-    "dev:wait": "node scripts/wait-for-db.js && npm run electron:full"
+    "dev:wait": "node scripts/wait-for-db.js && npm run electron:full",
+    "convert:animation": "node src/electron/convert-animation.js"
   },
   "keywords": [],
   "author": "",
