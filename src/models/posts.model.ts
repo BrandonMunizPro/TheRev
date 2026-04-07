@@ -10,6 +10,7 @@ import {
   UpdatePostInput,
   UpdatePostPinnedInput,
 } from '../resolvers/Post';
+import { Perspective } from '../graphql/enums/Perspective';
 import { PermissionsService } from '../services/permissionsService';
 import { ErrorHandler } from '../errors/ErrorHandler';
 
@@ -59,7 +60,8 @@ export class PostsModel {
       newDate,
       parsedMetadata,
       false,
-      data.parentId
+      data.parentId,
+      data.perspective
     );
 
     return {
@@ -67,6 +69,7 @@ export class PostsModel {
       content: createdPost.content,
       type: createdPost.type,
       isPinned: createdPost.is_pinned,
+      perspective: createdPost.perspective,
       author: user,
       thread: thread,
       createdAt: createdPost.createdAt,
@@ -107,7 +110,9 @@ export class PostsModel {
     if (!data?.threadId) {
       throw ErrorHandler.missingRequiredField('threadId');
     }
-    const posts = this.dao.findAllByThreadId(data.threadId);
+
+    const perspectives = data.perspective ? [data.perspective] : undefined;
+    const posts = this.dao.findAllByThreadId(data.threadId, perspectives);
     const allPosts = await posts;
 
     let filteredPosts = allPosts;
@@ -127,6 +132,7 @@ export class PostsModel {
       type: post.type,
       content: post.content,
       isPinned: post.isPinned,
+      perspective: post.perspective,
       author: post.author,
       thread: post.thread,
       createdAt: post.createdAt,
@@ -178,6 +184,21 @@ export class PostsModel {
     );
 
     return this.dao.deletePost(postId);
+  }
+
+  async getPostsByUser(userId: string, limit = 50): Promise<returnedPost[]> {
+    const posts = await this.dao.findByAuthorId(userId, limit);
+    return posts.map((post) => ({
+      id: post.id,
+      type: post.type,
+      content: post.content,
+      isPinned: post.isPinned,
+      perspective: post.perspective,
+      author: post.author,
+      thread: post.thread,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+    }));
   }
 
   async updatePostPin(

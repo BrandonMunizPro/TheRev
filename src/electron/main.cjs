@@ -26,11 +26,15 @@ app.commandLine.appendSwitch('ignore-certificate-errors');
 
 // Set up permission handler for microphone
 app.whenReady().then(() => {
-  // Set content settings for Web Speech API
-  session.defaultSession.setContentSettings({
-    microphone: 'allow',
-    'media-stream': 'allow',
-    javascript: 'allow',
+  // Set content settings for Web Speech API (modern Electron approach)
+  session.defaultSession.setPermissionHandler((details) => {
+    if (details.permission === 'media') {
+      return true;
+    }
+    if (details.permission === 'microphone') {
+      return true;
+    }
+    return false;
   });
 
   // Pre-grant microphone permission for the main window
@@ -401,7 +405,7 @@ ipcMain.handle('load-vrm-file', async (event, fileName) => {
 
     return { success: true, dataUrl };
   } catch (error) {
-    console.error('[Avatar] Error loading VRM file:', error);
+    console.error('[load-vrm-file] error:', error);
     return { success: false, error: error.message };
   }
 });

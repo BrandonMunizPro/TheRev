@@ -35,11 +35,53 @@ export class ThreadsModel {
     thread = await this.dao.findByIdWithReplies(data.id);
     if (!thread) return null;
 
+    // Fetch vote counts for this thread
+    const voteCountsMap = await this.dao.getVoteCountsForThreads([thread.id]);
+
+    // Calculate post perspective counts from loaded posts (includes replies)
+    const postCounts = { PRO: 0, AGAINST: 0, NEUTRAL: 0, total: 0 };
+    if (thread.posts) {
+      thread.posts.forEach((post) => {
+        const persp = post.perspective || 'NEUTRAL';
+        postCounts[persp]++;
+        postCounts.total++;
+        if (post.replies) {
+          post.replies.forEach((reply) => {
+            const replyPersp = reply.perspective || 'NEUTRAL';
+            postCounts[replyPersp]++;
+            postCounts.total++;
+          });
+        }
+      });
+    }
+
+    // Get vote counts (or zeros if none)
+    const voteCounts = voteCountsMap.get(thread.id) || {
+      PRO: 0,
+      AGAINST: 0,
+      NEUTRAL: 0,
+      total: 0,
+    };
+
+    // Combine
+    const combinedVoteCounts = {
+      PRO: (voteCounts.PRO || 0) + (postCounts.PRO || 0),
+      AGAINST: (voteCounts.AGAINST || 0) + (postCounts.AGAINST || 0),
+      NEUTRAL: (voteCounts.NEUTRAL || 0) + (postCounts.NEUTRAL || 0),
+      total: (voteCounts.total || 0) + (postCounts.total || 0),
+    };
+
+    console.log(
+      `[getThread] Thread "${thread.title}": votes=${JSON.stringify(voteCounts)}, posts=${JSON.stringify(postCounts)}, combined=${JSON.stringify(combinedVoteCounts)}`
+    );
+
     return {
       id: thread.id,
       author: thread.author,
       title: thread.title,
+      content: thread.content,
       posts: thread.posts,
+      voteCounts: combinedVoteCounts,
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
     };
@@ -50,30 +92,119 @@ export class ThreadsModel {
     if (!user) {
       throw ErrorHandler.userNotFound(userId);
     }
-    const threads = this.dao.findAllWithMetadata();
-    return threads;
+    const threads = await this.dao.findAllWithMetadata();
+
+    // Fetch vote counts for all threads
+    const threadIds = threads.map((t) => t.id);
+    const voteCountsMap = await this.dao.getVoteCountsForThreads(threadIds);
+
+    // Calculate post perspective counts from already-loaded posts (includes replies)
+    const postCountsMap = new Map<
+      string,
+      { PRO: number; AGAINST: number; NEUTRAL: number; total: number }
+    >();
+    threads.forEach((thread) => {
+      const postCounts = { PRO: 0, AGAINST: 0, NEUTRAL: 0, total: 0 };
+      console.log(
+        `[listAllThreads] Thread "${thread.title}": posts count = ${thread.posts?.length || 0}`
+      );
+      if (thread.posts) {
+        thread.posts.forEach((post) => {
+          console.log(
+            `[listAllThreads]   Post: "${post.content?.substring(0, 30)}...", perspective = ${post.perspective}`
+          );
+          const persp = post.perspective || 'NEUTRAL';
+          postCounts[persp]++;
+          postCounts.total++;
+          // Also count replies
+          if (post.replies) {
+            post.replies.forEach((reply) => {
+              const replyPersp = reply.perspective || 'NEUTRAL';
+              postCounts[replyPersp]++;
+              postCounts.total++;
+            });
+          }
+        });
+      }
+      postCountsMap.set(thread.id, postCounts);
+    });
+
+    // Return new objects with voteCounts properly set
+    const result: returnedThread[] = threads.map((thread) => {
+      const voteCounts = voteCountsMap.get(thread.id) || {
+        PRO: 0,
+        AGAINST: 0,
+        NEUTRAL: 0,
+        total: 0,
+      };
+      const postCounts = postCountsMap.get(thread.id) || {
+        PRO: 0,
+        AGAINST: 0,
+        NEUTRAL: 0,
+        total: 0,
+      };
+      console.log(
+        `[listAllThreads] Thread "${thread.title}": votes=${JSON.stringify(voteCounts)}, posts=${JSON.stringify(postCounts)}`
+      );
+      return {
+        id: thread.id,
+        title: thread.title,
+        content: thread.content,
+        author: thread.author,
+        posts: thread.posts,
+        voteCounts: {
+          PRO: (voteCounts.PRO || 0) + (postCounts.PRO || 0),
+          AGAINST: (voteCounts.AGAINST || 0) + (postCounts.AGAINST || 0),
+          NEUTRAL: (voteCounts.NEUTRAL || 0) + (postCounts.NEUTRAL || 0),
+          total: (voteCounts.total || 0) + (postCounts.total || 0),
+        },
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt,
+      };
+    });
+
+    console.log('[listAllThreads] Returning threads with voteCounts');
+    return result;
   }
 
   async listThreadsByUser(
     userId: string,
     userIdContext: string
   ): Promise<returnedThread[] | null> {
-    const user = await this.usersDao.findById(userIdContext);
+    console.log(
+      '[listThreadsByUser] userId:',
+      userId,
+      'userIdContext:',
+      userIdContext
+    );
+
+    const user = await this.usersDao.findById(userId);
 
     if (!user) {
-      throw ErrorHandler.userNotFound(userIdContext);
+      console.log('[listThreadsByUser] User not found:', userId);
+      throw ErrorHandler.userNotFound(userId);
     }
 
-    const isAdmin = await this.permissionsService.checkGlobalAdmin(userId);
-    if (!isAdmin || user.id !== userId) {
-      throw ErrorHandler.insufficientPermissions('list threads', 'user');
+    // Allow any logged-in user to view threads
+    if (!userIdContext) {
+      console.log('[listThreadsByUser] Not authenticated');
+      throw ErrorHandler.notAuthenticated();
     }
 
-    const threads = this.dao.findAllByUserId(userId);
+    console.log('[listThreadsByUser] Fetching threads for user:', userId);
+    const threads = await this.dao.findAllByUserId(userId);
+    console.log('[listThreadsByUser] Found threads:', threads.length);
     return threads;
   }
 
   async listThreadsUserParticipatedIn(
+    userId: string
+  ): Promise<returnedThread[] | null> {
+    const threads = await this.dao.findThreadsUserParticipatedIn(userId);
+    return threads;
+  }
+
+  async listUserParticipatedIn(
     userId: string
   ): Promise<returnedThread[] | null> {
     const threads = await this.dao.findThreadsUserParticipatedIn(userId);
@@ -119,6 +250,7 @@ export class ThreadsModel {
 
     const thread = await this.dao.createThread({
       title: input.title,
+      content: input.content,
       author,
     });
 
@@ -142,6 +274,7 @@ export class ThreadsModel {
     return {
       id: thread.id,
       title: thread.title,
+      content: thread.content,
       author: thread.author,
       posts: thread.posts,
       createdAt: thread.createdAt,

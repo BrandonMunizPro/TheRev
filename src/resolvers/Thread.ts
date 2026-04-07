@@ -1,5 +1,5 @@
 import { Resolver, Query, Mutation, Arg, Ctx } from 'type-graphql';
-import { Thread } from '../entities/Thread';
+import { Thread, ThreadVoteCounts } from '../entities/Thread';
 import { ThreadsModel } from '../models/threads.model';
 import { InputType, Field, ID } from 'type-graphql';
 import { User } from '../entities/User';
@@ -59,6 +59,7 @@ export type returnedThread = {
   content?: string;
   author?: User;
   posts?: Post[];
+  voteCounts?: ThreadVoteCounts;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -69,6 +70,7 @@ export type returnedThreadWithLockAndPins = {
   content?: string;
   author?: User;
   posts?: Post[];
+  voteCounts?: ThreadVoteCounts;
   createdAt?: Date;
   updatedAt?: Date;
   isLocked?: Boolean;
@@ -118,6 +120,21 @@ export class ThreadResolver {
       throw ErrorHandler.notAuthenticated();
     }
     return this.model.listThreadsByUser(data.authorId!, ctx.user.userId);
+  }
+
+  @Query(() => [Thread])
+  async listUserParticipatedThreads(
+    @Arg('data') data: ThreadQueryInput,
+    @Ctx() ctx: GraphQLContext
+  ): Promise<returnedThread[] | null> {
+    console.log('[listUserParticipatedThreads] userId:', data.authorId);
+    if (!ctx.user) {
+      console.log('[listUserParticipatedThreads] Not authenticated');
+      return [];
+    }
+    const result = await this.model.listUserParticipatedIn(data.authorId!);
+    console.log('[listUserParticipatedThreads] Found threads:', result?.length);
+    return result;
   }
 
   @Query(() => [Thread])

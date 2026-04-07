@@ -344,6 +344,7 @@
           <nav class="nav">
             <button id="threads-btn" class="nav-btn active">Threads</button>
             <button id="news-btn" class="nav-btn">News</button>
+            <button id="friends-btn" class="nav-btn">Friends</button>
             <button id="ai-settings-btn" class="nav-btn">AI Settings</button>
             <button id="tasks-btn" class="nav-btn">Tasks</button>
             <button id="analytics-btn" class="nav-btn">Analytics</button>
@@ -467,6 +468,7 @@
               <form id="create-post-form">
                 <input type="hidden" id="post-thread-id" />
                 <input type="hidden" id="post-parent-id" />
+                <input type="hidden" id="post-perspective" value="NEUTRAL" />
                 <div
                   class="reply-to-indicator"
                   id="reply-to-indicator"
@@ -509,6 +511,38 @@
                     <option value="IMAGE">Image</option>
                   </select>
                 </div>
+                <div class="form-group">
+                  <label>Your Perspective</label>
+                  <div class="perspective-selector">
+                    <button
+                      type="button"
+                      class="perspective-btn"
+                      data-perspective="PRO"
+                      onclick="theRevApp.selectPerspective('PRO')"
+                    >
+                      <span class="perspective-icon">🟦</span>
+                      <span class="perspective-label">Pro</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="perspective-btn"
+                      data-perspective="AGAINST"
+                      onclick="theRevApp.selectPerspective('AGAINST')"
+                    >
+                      <span class="perspective-icon">🟥</span>
+                      <span class="perspective-label">Against</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="perspective-btn selected"
+                      data-perspective="NEUTRAL"
+                      onclick="theRevApp.selectPerspective('NEUTRAL')"
+                    >
+                      <span class="perspective-icon">🟨</span>
+                      <span class="perspective-label">Neutral</span>
+                    </button>
+                  </div>
+                </div>
                 <div
                   id="create-post-error"
                   class="error-message"
@@ -530,7 +564,226 @@
               </button>
             </div>
             <div class="modal-body">
+              <!-- Unified Perspective Section - shows vote buttons OR post counts -->
+              <div class="perspective-section" id="perspective-section">
+                <!-- Vote buttons (shown when no posts, or always clickable) -->
+                <div class="vote-label">What's your perspective?</div>
+                <div class="quick-vote-buttons">
+                  <button
+                    class="quick-vote-btn pro"
+                    id="vote-pro"
+                    onclick="theRevApp.castVote('PRO')"
+                  >
+                    <span class="vote-icon">🟦</span>
+                    <span class="vote-text">Pro</span>
+                    <span class="vote-count" id="vote-count-pro">0</span>
+                  </button>
+                  <button
+                    class="quick-vote-btn against"
+                    id="vote-against"
+                    onclick="theRevApp.castVote('AGAINST')"
+                  >
+                    <span class="vote-icon">🟥</span>
+                    <span class="vote-text">Against</span>
+                    <span class="vote-count" id="vote-count-against">0</span>
+                  </button>
+                  <button
+                    class="quick-vote-btn neutral"
+                    id="vote-neutral"
+                    onclick="theRevApp.castVote('NEUTRAL')"
+                  >
+                    <span class="vote-icon">🟨</span>
+                    <span class="vote-text">Neutral</span>
+                    <span class="vote-count" id="vote-count-neutral">0</span>
+                  </button>
+                </div>
+                <div class="vote-total">
+                  <span id="vote-total">0</span> perspectives
+                </div>
+              </div>
+              <!-- Filter Tabs -->
+              <div class="perspective-tabs" id="perspective-tabs">
+                <button
+                  class="perspective-tab active"
+                  data-filter="ALL"
+                  onclick="theRevApp.filterByPerspective('ALL')"
+                >
+                  All <span class="tab-count" id="count-all">0</span>
+                </button>
+                <button
+                  class="perspective-tab"
+                  data-filter="PRO"
+                  onclick="theRevApp.filterByPerspective('PRO')"
+                >
+                  <span class="tab-icon">🟦</span> Pro
+                  <span class="tab-count" id="count-pro">0</span>
+                </button>
+                <button
+                  class="perspective-tab"
+                  data-filter="AGAINST"
+                  onclick="theRevApp.filterByPerspective('AGAINST')"
+                >
+                  <span class="tab-icon">🟥</span> Against
+                  <span class="tab-count" id="count-against">0</span>
+                </button>
+                <button
+                  class="perspective-tab"
+                  data-filter="NEUTRAL"
+                  onclick="theRevApp.filterByPerspective('NEUTRAL')"
+                >
+                  <span class="tab-icon">🟨</span> Neutral
+                  <span class="tab-count" id="count-neutral">0</span>
+                </button>
+              </div>
               <div class="thread-posts" id="thread-posts"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Friends Section -->
+        <section id="friends-section" class="content-section">
+          <div class="friends-container">
+            <div class="section-header">
+              <h2>Friends</h2>
+              <button
+                id="add-friend-btn"
+                class="primary-btn"
+                onclick="theRevApp.openSearchFriendsModal()"
+              >
+                + Find Friends
+              </button>
+            </div>
+
+            <!-- Friends Tabs -->
+            <div class="friends-tabs">
+              <button
+                class="friends-tab active"
+                data-tab="list"
+                onclick="theRevApp.switchFriendsTab('list')"
+              >
+                My Friends <span class="tab-badge" id="friends-count">0</span>
+              </button>
+              <button
+                class="friends-tab"
+                data-tab="requests"
+                onclick="theRevApp.switchFriendsTab('requests')"
+              >
+                Requests
+                <span class="tab-badge pending" id="requests-count">0</span>
+              </button>
+            </div>
+
+            <!-- Friends List -->
+            <div id="friends-list" class="friends-list">
+              <div class="loading">Loading friends...</div>
+            </div>
+
+            <!-- Pending Requests -->
+            <div
+              id="friends-requests"
+              class="friends-list"
+              style="display: none"
+            >
+              <div class="loading">Loading requests...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Search Friends Modal -->
+        <div id="search-friends-modal" class="modal">
+          <div class="modal-content thread-modal">
+            <div class="modal-header">
+              <h3>Find Friends</h3>
+              <button
+                class="close-btn"
+                onclick="theRevApp.closeSearchFriendsModal()"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <input
+                  type="text"
+                  id="friend-search-input"
+                  placeholder="Search by username..."
+                  oninput="theRevApp.searchUsers(this.value)"
+                />
+              </div>
+              <div id="friend-search-results" class="friend-search-results">
+                <p class="search-hint">Type a username to search</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Friend Profile Modal -->
+        <div id="friend-profile-modal" class="modal">
+          <div class="modal-content profile-modal">
+            <div class="modal-header">
+              <h3 id="friend-profile-name">User's Profile</h3>
+              <button
+                class="close-btn"
+                onclick="theRevApp.closeFriendProfileModal()"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="profile-header">
+                <div class="profile-avatar">
+                  <img
+                    id="friend-profile-pic"
+                    src="assets/default-avatar.svg"
+                    alt="Avatar"
+                    class="rev-avatar large"
+                  />
+                </div>
+                <div class="profile-info">
+                  <h2 id="friend-profile-username">@username</h2>
+                  <p class="bio" id="friend-profile-bio">No bio yet</p>
+                  <div class="profile-meta">
+                    <span class="ideology-badge" id="friend-profile-ideology"
+                      >Moderate</span
+                    >
+                    <span class="join-date" id="friend-profile-joined"
+                      >Joined:
+                    </span>
+                  </div>
+                  <div class="profile-stats">
+                    <div class="stat">
+                      <span class="stat-number" id="friend-stat-threads"
+                        >0</span
+                      >
+                      <span class="stat-label">Threads</span>
+                    </div>
+                    <div class="stat">
+                      <span class="stat-number" id="friend-stat-posts">0</span>
+                      <span class="stat-label">Posts</span>
+                    </div>
+                    <div class="stat">
+                      <span class="stat-number" id="friend-stat-replies"
+                        >0</span
+                      >
+                      <span class="stat-label">Replies</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="profile-content">
+                <div class="profile-section">
+                  <h3 id="friend-threads-title">User's Threads</h3>
+                  <div class="recent-threads" id="friend-user-threads">
+                    <!-- Will be populated dynamically -->
+                  </div>
+                </div>
+                <div class="profile-section">
+                  <h3>Recent Activity</h3>
+                  <div class="recent-threads" id="friend-profile-activity">
+                    <!-- Will be populated dynamically -->
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

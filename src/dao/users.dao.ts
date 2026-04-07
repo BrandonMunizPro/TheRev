@@ -24,6 +24,16 @@ export class UsersDao {
     return this.repo.findOne({ where: { userName } });
   }
 
+  async searchByUsername(query: string, limit: number = 20): Promise<User[]> {
+    return this.repo
+      .createQueryBuilder('user')
+      .where('LOWER(user.userName) LIKE LOWER(:query)', {
+        query: `%${query}%`,
+      })
+      .take(limit)
+      .getMany();
+  }
+
   async create(data: Partial<User>): Promise<User> {
     const user = this.repo.create(data);
     return this.repo.save(user);

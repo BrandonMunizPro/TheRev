@@ -59,8 +59,9 @@ class TheRevApp {
       news: { data: null, timestamp: 0, rawData: null },
       profile: { data: null, timestamp: 0 },
       avatar: { loaded: false, vrmDataUrl: null, fileName: null },
+      friends: { data: null, timestamp: 0 },
     };
-    this._cacheTimeout = 5 * 60 * 1000; // 5 minutes
+    this._cacheTimeout = 10 * 1000; // 10 seconds (for testing)
 
     this.init();
   }
@@ -145,8 +146,14 @@ class TheRevApp {
   loadAuthSession() {
     try {
       const stored = localStorage.getItem('therev_auth');
+      console.log('[loadAuthSession] Stored auth:', stored ? 'exists' : 'none');
       if (stored) {
         const auth = JSON.parse(stored);
+        console.log('[loadAuthSession] Auth user:', auth.user);
+        console.log(
+          '[loadAuthSession] profilePicUrl:',
+          auth.user?.profilePicUrl
+        );
         if (auth.jwt && auth.user) {
           // Check if token is expired
           try {
@@ -176,9 +183,13 @@ class TheRevApp {
   }
 
   saveAuthSession(user, jwt) {
+    console.log('[saveAuthSession] Saving user:', user);
+    console.log('[saveAuthSession] profilePicUrl:', user.profilePicUrl);
     this.currentUser = user;
     this.jwtToken = jwt;
     localStorage.setItem('therev_auth', JSON.stringify({ user, jwt }));
+    // Also store userId separately for ai-browser to access
+    localStorage.setItem('therev_userId', user.id);
     this.updateAuthUI();
   }
 
@@ -186,6 +197,27 @@ class TheRevApp {
     this.currentUser = null;
     this.jwtToken = null;
     localStorage.removeItem('therev_auth');
+    localStorage.removeItem('therev_userId');
+
+    // Clear all tab caches
+    this._tabCache = {
+      threads: { data: null, timestamp: 0 },
+      news: { data: null, timestamp: 0, rawData: null },
+      profile: { data: null, timestamp: 0 },
+      avatar: { loaded: false, vrmDataUrl: null, fileName: null },
+      friends: { data: null, timestamp: 0 },
+    };
+
+    // Reset header to show login button
+    const userRev = document.getElementById('user-rev-container');
+    if (userRev) {
+      userRev.innerHTML = `
+        <button class="login-btn" id="header-login-btn" onclick="showLoginModal()">
+          Sign In
+        </button>
+      `;
+    }
+
     this.updateAuthUI();
   }
 
@@ -200,10 +232,22 @@ class TheRevApp {
 
       // Update header avatar area
       const userRev = document.getElementById('user-rev-container');
+      let profilePic = 'assets/default-avatar.svg';
+      console.log('[updateAuthUI] currentUser:', this.currentUser);
+      if (this.currentUser?.profilePicUrl) {
+        profilePic = this.currentUser.profilePicUrl.startsWith('http')
+          ? this.currentUser.profilePicUrl
+          : `http://localhost:4000${this.currentUser.profilePicUrl}`;
+        console.log('[updateAuthUI] Using profilePic:', profilePic);
+      } else {
+        console.log(
+          '[updateAuthUI] No profilePicUrl, using default robot avatar'
+        );
+      }
       if (userRev) {
         userRev.innerHTML = `
-          <div class="avatar-container" style="display:flex;align-items:center;gap:10px;">
-            <img id="user-avatar" src="assets/default-avatar.png" alt="User Rev" class="rev-avatar" style="width:36px;height:36px;border-radius:50%;" />
+          <div class="avatar-container" style="display:flex;align-items:center;gap:12px;">
+            <img id="user-avatar" src="${profilePic}" alt="User Rev" class="rev-avatar mini" onerror="this.src='assets/default-avatar.svg'" />
             <span class="username" style="color:var(--text-primary);font-weight:500;">${this.currentUser.userName || this.currentUser.email}</span>
             ${this.currentUser.role !== 'STANDARD' ? `<span class="role-badge">${this.currentUser.role}</span>` : ''}
             <button class="logout-btn" onclick="theRevApp.logout()">Sign Out</button>
@@ -417,6 +461,7 @@ class TheRevApp {
                   role
                   ideology
                   profilePicUrl
+                  avatarUrl
                 }
                 jwt
               }
@@ -443,6 +488,8 @@ class TheRevApp {
       if (result.data?.verifyUser) {
         const { user, jwt } = result.data.verifyUser;
         console.log('[Login] Success! User:', user);
+        console.log('[Login] profilePicUrl:', user.profilePicUrl);
+        console.log('[Login] avatarUrl:', user.avatarUrl);
         this.saveAuthSession(user, jwt);
         return { success: true };
       } else {
@@ -518,8 +565,6 @@ class TheRevApp {
   }
 
   async showStartupNotification() {
-    this._servicesReady = { ollama: false, whisper: false };
-
     const toast = document.createElement('div');
     toast.id = 'startup-toast';
     toast.className = 'startup-toast';
@@ -531,7 +576,11 @@ class TheRevApp {
     `;
     document.body.appendChild(toast);
 
-    const dismissStartupToast = () => {
+    let readyShown = false;
+    const dismissWhenReady = () => {
+      if (readyShown) return;
+      readyShown = true;
+
       if (toast.parentNode) {
         toast.innerHTML = `
           <div class="startup-content success">
@@ -539,21 +588,17 @@ class TheRevApp {
             <span class="startup-text">Rev is ready!</span>
           </div>
         `;
-        setTimeout(() => {
+      }
+      setTimeout(() => {
+        this.hideInitScreen();
+        if (toast.parentNode) {
           toast.style.opacity = '0';
           toast.style.transition = 'opacity 0.5s ease';
           setTimeout(() => {
             if (toast.parentNode) toast.remove();
           }, 500);
-        }, 2000);
-      }
-      setTimeout(() => this.hideInitScreen(), 2000);
-    };
-
-    const checkAllServicesReady = () => {
-      if (this._servicesReady.ollama && this._servicesReady.whisper) {
-        dismissStartupToast();
-      }
+        }
+      }, 1500);
     };
 
     this.updateInitScreen(
@@ -562,65 +607,66 @@ class TheRevApp {
       'Connecting to services'
     );
 
+    // Listen for Ollama ready
     if (window.electronAPI?.onOllamaReady) {
       window.electronAPI.onOllamaReady((data) => {
         console.log('[TheRevApp] Ollama ready:', data);
-        this._servicesReady.ollama = true;
         this.updateInitScreen(
           'AI Ready!',
           100,
           `Model: ${data.model || 'loaded'}`
         );
-        checkAllServicesReady();
+        dismissWhenReady();
       });
     }
 
+    // Listen for STT ready
     if (window.electronAPI?.onSTTReady) {
       window.electronAPI.onSTTReady((ready) => {
         console.log('[TheRevApp] STT ready:', ready);
         if (ready) {
-          this._servicesReady.whisper = true;
           this.updateInitScreen(
             'Voice recognition ready',
             60,
             'Microphone loaded'
           );
-          checkAllServicesReady();
+          dismissWhenReady();
         }
       });
     }
 
+    // Check initial status immediately
     const checkInitialStatus = async () => {
+      // Check Ollama
       if (window.electronAPI?.checkOllamaStatus) {
         try {
           const status = await window.electronAPI.checkOllamaStatus();
           if (status.models && status.models.length > 0) {
-            console.log(
-              '[TheRevApp] Ollama already ready on check:',
-              status.models
-            );
-            this._servicesReady.ollama = true;
+            console.log('[TheRevApp] Ollama already ready:', status.models);
             this.updateInitScreen(
               'AI Ready!',
               100,
               `Model: ${status.models[0]}`
             );
-            checkAllServicesReady();
+            dismissWhenReady();
+            return;
           }
         } catch (e) {
-          console.log('[TheRevApp] Initial status check failed:', e);
+          console.log('[TheRevApp] Ollama check failed:', e);
         }
       }
+
+      // Check STT
       if (window.electronAPI?.checkSTTStatus) {
         try {
           const sttStatus = await window.electronAPI.checkSTTStatus();
           if (sttStatus.available) {
-            console.log('[TheRevApp] STT already ready on check');
-            this._servicesReady.whisper = true;
-            checkAllServicesReady();
+            console.log('[TheRevApp] STT already ready');
+            dismissWhenReady();
+            return;
           }
         } catch (e) {
-          console.log('[TheRevApp] STT status check failed:', e);
+          console.log('[TheRevApp] STT check failed:', e);
         }
       }
     };
@@ -628,26 +674,27 @@ class TheRevApp {
     this.checkOllamaStatusProgress();
     checkInitialStatus();
 
+    // Force dismiss after 20 seconds max
     setTimeout(() => {
-      if (!this._servicesReady.ollama || !this._servicesReady.whisper) {
+      if (!readyShown) {
+        console.log('[TheRevApp] Timeout reached, forcing ready state');
         this.hideInitScreen();
         if (toast.parentNode) {
           toast.innerHTML = `
-            <div class="startup-content warning">
-              <span class="startup-icon">⚠️</span>
-              <span class="startup-text">Using fallback mode</span>
+            <div class="startup-content">
+              <span class="startup-icon">🚀</span>
+              <span class="startup-text">Ready to go!</span>
             </div>
           `;
           setTimeout(() => {
             toast.style.opacity = '0';
-            toast.style.transition = 'opacity 0.5s ease';
             setTimeout(() => {
               if (toast.parentNode) toast.remove();
             }, 500);
-          }, 3000);
+          }, 2000);
         }
       }
-    }, 30000);
+    }, 20000);
   }
 
   async checkOllamaStatusProgress() {
@@ -1336,6 +1383,10 @@ class TheRevApp {
       console.log('[Nav] News button clicked');
       this.switchSection('news');
     });
+    document.getElementById('friends-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Friends button clicked');
+      this.switchSection('friends');
+    });
     document.getElementById('profile-btn')?.addEventListener('click', () => {
       console.log('[Nav] Profile button clicked');
       this.switchSection('profile');
@@ -1841,6 +1892,10 @@ class TheRevApp {
           this.loadThreads(true);
         }
         break;
+      case 'friends':
+        this.loadFriends();
+        this.loadPendingRequests();
+        break;
       case 'browser':
         break;
       case 'ai-settings':
@@ -1894,10 +1949,17 @@ class TheRevApp {
                   id
                   userName
                 }
+                voteCounts {
+                  PRO
+                  AGAINST
+                  NEUTRAL
+                  total
+                }
                 posts {
                   id
                   content
                   type
+                  perspective
                   createdAt
                   metadata
                   author {
@@ -1908,6 +1970,7 @@ class TheRevApp {
                     id
                     content
                     type
+                    perspective
                     createdAt
                     metadata
                     author {
@@ -1940,28 +2003,66 @@ class TheRevApp {
         } else {
           container.innerHTML = threads
             .map((thread) => {
-              // Check for URLs in thread content AND first post content
+              // Get content from first post if available
+              const firstPost = thread.posts?.[0];
+              const previewContent = thread.content || firstPost?.content || '';
+
+              // Check for URLs
               let urlLink = '';
-              const contentToSearch =
-                thread.content + ' ' + (thread.posts?.[0]?.content || '');
+              const contentToSearch = previewContent;
               const urlMatch = contentToSearch.match(/(https?:\/\/[^\s]+)/);
               if (urlMatch && urlMatch[1]) {
                 urlLink = `<span class="url-link clickable" data-url="${urlMatch[1]}">🔗 Open Link</span>`;
               }
 
+              // Check for video/image in first post
+              const firstPostType = firstPost?.type || 'TEXT';
+              const isVideo = firstPostType === 'VIDEO';
+              const isImage = firstPostType === 'IMAGE';
+              const hasMedia = isVideo || isImage;
+              const thumbnailUrl = firstPost?.metadata?.thumbnailUrl;
+
+              // Build thumbnail HTML for side-by-side layout
+              let thumbnailHtml = '';
+              if (hasMedia && thumbnailUrl) {
+                if (isVideo) {
+                  const ytMatch = previewContent.match(
+                    /(https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[^\s]+|https?:\/\/youtu\.be\/[^\s]+)/
+                  );
+                  const videoUrl = ytMatch ? ytMatch[0] : thumbnailUrl;
+                  thumbnailHtml = `
+                    <div class="thread-thumbnail-container clickable" data-url="${videoUrl}" onclick="event.stopPropagation(); theRevApp.showOpenModeModal('${videoUrl}', '', 'Video')">
+                      <img src="${thumbnailUrl}" alt="Video thumbnail" class="thread-thumb" />
+                      <div class="thread-thumb-overlay">
+                        <span class="thread-play-btn">▶</span>
+                      </div>
+                    </div>
+                  `;
+                } else if (isImage) {
+                  thumbnailHtml = `
+                    <div class="thread-thumbnail-container">
+                      <img src="${thumbnailUrl}" alt="Image" class="thread-thumb" />
+                    </div>
+                  `;
+                }
+              }
+
               return `
             <div class="thread-card" onclick="theRevApp.openThread('${thread.id}')">
-              <div class="thread-header">
-                <h3>${thread.title}</h3>
-                ${thread.isPinned ? '<span class="pinned-indicator">📌 Pinned</span>' : ''}
-              </div>
-              <div class="thread-meta">
-                <span class="author">by @${thread.author?.userName || 'Unknown'}</span>
-                <span class="timestamp">${new Date(thread.createdAt).toLocaleDateString()}</span>
-                ${urlLink}
-              </div>
-              <p class="thread-preview">${thread.content || ''}</p>
-              <div class="thread-posts">
+              <div class="thread-card-inner${thumbnailHtml ? ' has-thumbnail' : ''}">
+                ${thumbnailHtml}
+                <div class="thread-card-body">
+                  <div class="thread-header">
+                    <h3>${thread.title}</h3>
+                    ${thread.isPinned ? '<span class="pinned-indicator">📌 Pinned</span>' : ''}
+                  </div>
+                  <div class="thread-meta">
+                    <span class="author">by @${thread.author?.userName || 'Unknown'}</span>
+                    <span class="timestamp">${new Date(thread.createdAt).toLocaleDateString()}</span>
+                    ${urlLink}
+                  </div>
+                  <p class="thread-preview">${previewContent.replace(/(https?:\/\/[^\s]+)/g, '').substring(0, 150) || ''}</p>
+              ${thread.posts && thread.posts.length > 0 ? '<div class="thread-posts-label">Recent Activity</div><div class="thread-posts">' : ''}
                 ${
                   thread.posts
                     ? thread.posts
@@ -1972,6 +2073,13 @@ class TheRevApp {
                           const replyCount = post.replies
                             ? post.replies.length
                             : 0;
+                          const postPerspective = post.perspective || 'NEUTRAL';
+                          const perspIcon =
+                            postPerspective === 'PRO'
+                              ? '🟦'
+                              : postPerspective === 'AGAINST'
+                                ? '🟥'
+                                : '🟨';
                           let mediaContent = '';
                           // Check for YouTube URL in post content
                           const postContentToSearch = post.content || '';
@@ -2001,9 +2109,17 @@ class TheRevApp {
                             repliesHtml =
                               '<div class="nested-replies" style="margin-top:10px;padding-left:15px;border-left:2px solid #00a8ff;">';
                             post.replies.forEach((reply) => {
+                              const replyPerspective =
+                                reply.perspective || 'NEUTRAL';
+                              const replyIcon =
+                                replyPerspective === 'PRO'
+                                  ? '🟦'
+                                  : replyPerspective === 'AGAINST'
+                                    ? '🟥'
+                                    : '🟨';
                               repliesHtml += `
                                 <div class="nested-reply" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.1);">
-                                  <div class="post-author" style="font-size:11px;">@${reply.author?.userName || 'Unknown'} <span class="post-date">${new Date(reply.createdAt).toLocaleString()}</span></div>
+                                  <div class="post-author" style="font-size:11px;">${replyIcon} @${reply.author?.userName || 'Unknown'} <span class="post-date">${new Date(reply.createdAt).toLocaleString()}</span></div>
                                   <div class="post-text" style="font-size:12px;margin-top:4px;">${reply.content || ''}</div>
                                 </div>
                               `;
@@ -2013,7 +2129,7 @@ class TheRevApp {
 
                           return `
                   <div class="post-item">
-                    <div class="post-author">@${post.author?.userName || 'Unknown'}</div>
+                    <div class="post-author">${perspIcon} @${post.author?.userName || 'Unknown'}</div>
                     <div class="post-text">${post.content || ''}</div>
                     ${mediaContent}
                     <div class="post-footer">
@@ -2027,6 +2143,8 @@ class TheRevApp {
                         .join('')
                     : ''
                 }
+                ${thread.posts && thread.posts.length > 0 ? '</div>' : ''}
+                </div>
               </div>
             </div>
           `;
@@ -2071,6 +2189,714 @@ class TheRevApp {
           if (url) this.showOpenModeModal(url, '', 'Link');
         });
       });
+  }
+
+  // ==================== FRIENDS METHODS ====================
+
+  async loadFriends() {
+    if (!this.jwtToken || !this.currentUser) {
+      document.getElementById('friends-list').innerHTML =
+        '<div class="empty-state">Please log in to view friends</div>';
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetFriends($userId: ID!) {
+              getFriends(userId: $userId) {
+                id
+                userId
+                userName
+                firstName
+                lastName
+                profilePicUrl
+                avatarUrl
+                status
+                createdAt
+              }
+            }
+          `,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      const friends = result.data?.getFriends || [];
+
+      document.getElementById('friends-count').textContent = friends.length;
+      this.renderFriendsList(friends);
+    } catch (error) {
+      console.error('Error loading friends:', error);
+      document.getElementById('friends-list').innerHTML =
+        '<div class="error-state">Error loading friends</div>';
+    }
+  }
+
+  async loadPendingRequests() {
+    if (!this.jwtToken || !this.currentUser) {
+      console.log('[Friends] Cannot load pending requests - not logged in');
+      return;
+    }
+
+    try {
+      console.log(
+        '[Friends] Loading pending requests for user:',
+        this.currentUser.id
+      );
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetPendingRequests($userId: ID!) {
+              getPendingRequests(userId: $userId) {
+                id
+                userId
+                userName
+                firstName
+                lastName
+                profilePicUrl
+                avatarUrl
+                status
+                createdAt
+              }
+            }
+          `,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[Friends] Pending requests response:', result);
+      const requests = result.data?.getPendingRequests || [];
+      console.log('[Friends] Found', requests.length, 'pending requests');
+
+      document.getElementById('requests-count').textContent = requests.length;
+      this.renderFriendRequests(requests);
+    } catch (error) {
+      console.error('Error loading pending requests:', error);
+    }
+  }
+
+  renderFriendsList(friends) {
+    const container = document.getElementById('friends-list');
+    if (!container) return;
+
+    if (friends.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">No friends yet. Find some friends!</div>';
+      return;
+    }
+
+    container.innerHTML = friends
+      .map((friend) => {
+        const profilePic = friend.profilePicUrl
+          ? friend.profilePicUrl.startsWith('http')
+            ? friend.profilePicUrl
+            : `http://localhost:4000${friend.profilePicUrl}`
+          : 'assets/default-avatar.svg';
+
+        return `
+        <div class="friend-card">
+          <div class="friend-avatar">
+            <img src="${profilePic}" alt="${friend.userName}" onerror="this.src='assets/default-avatar.svg'" />
+          </div>
+          <div class="friend-info">
+            <div class="friend-name">${friend.firstName} ${friend.lastName}</div>
+            <div class="friend-username">@${friend.userName}</div>
+          </div>
+          <div class="friend-actions">
+            <button class="secondary-btn small" onclick="theRevApp.viewFriendProfile('${friend.userId}')">View</button>
+            <button class="danger-btn small" onclick="theRevApp.unfriend('${friend.id}')">Unfriend</button>
+          </div>
+        </div>
+      `;
+      })
+      .join('');
+  }
+
+  renderFriendRequests(requests) {
+    const container = document.getElementById('friends-requests');
+    if (!container) return;
+
+    if (requests.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">No pending requests</div>';
+      return;
+    }
+
+    container.innerHTML = requests
+      .map((request) => {
+        const profilePic = request.profilePicUrl
+          ? request.profilePicUrl.startsWith('http')
+            ? request.profilePicUrl
+            : `http://localhost:4000${request.profilePicUrl}`
+          : 'assets/default-avatar.svg';
+
+        return `
+        <div class="friend-card">
+          <div class="friend-avatar">
+            <img src="${profilePic}" alt="${request.userName}" onerror="this.src='assets/default-avatar.svg'" />
+          </div>
+          <div class="friend-info">
+            <div class="friend-name">${request.firstName} ${request.lastName}</div>
+            <div class="friend-username">@${request.userName}</div>
+          </div>
+          <div class="friend-actions">
+            <button class="primary-btn small" onclick="theRevApp.acceptFriendRequest('${request.id}')">Accept</button>
+            <button class="secondary-btn small" onclick="theRevApp.declineFriendRequest('${request.id}')">Decline</button>
+          </div>
+        </div>
+      `;
+      })
+      .join('');
+  }
+
+  switchFriendsTab(tab) {
+    document
+      .querySelectorAll('.friends-tab')
+      .forEach((t) => t.classList.remove('active'));
+    document
+      .querySelector(`.friends-tab[data-tab="${tab}"]`)
+      ?.classList.add('active');
+
+    const listSection = document.getElementById('friends-list');
+    const requestsSection = document.getElementById('friends-requests');
+
+    if (tab === 'list') {
+      listSection.style.display = 'block';
+      requestsSection.style.display = 'none';
+      this.loadFriends();
+    } else {
+      listSection.style.display = 'none';
+      requestsSection.style.display = 'block';
+      this.loadPendingRequests();
+    }
+  }
+
+  openSearchFriendsModal() {
+    document.getElementById('search-friends-modal').classList.add('active');
+    document.getElementById('friend-search-input').value = '';
+    document.getElementById('friend-search-results').innerHTML =
+      '<p class="search-hint">Type a username to search</p>';
+  }
+
+  closeSearchFriendsModal() {
+    document.getElementById('search-friends-modal').classList.remove('active');
+  }
+
+  async searchUsers(query) {
+    if (!query || query.length < 2) {
+      document.getElementById('friend-search-results').innerHTML =
+        '<p class="search-hint">Type at least 2 characters to search</p>';
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query SearchUsers($query: String!, $userId: ID!) {
+              searchUsers(query: $query, userId: $userId) {
+                id
+                userId
+                userName
+                firstName
+                lastName
+                profilePicUrl
+                avatarUrl
+                status
+              }
+            }
+          `,
+          variables: { query, userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      const users = result.data?.searchUsers || [];
+
+      this.renderSearchResults(users);
+    } catch (error) {
+      console.error('Error searching users:', error);
+    }
+  }
+
+  renderSearchResults(users) {
+    const container = document.getElementById('friend-search-results');
+
+    if (users.length === 0) {
+      container.innerHTML = '<p class="search-hint">No users found</p>';
+      return;
+    }
+
+    container.innerHTML = users
+      .map((user) => {
+        const profilePic = user.profilePicUrl
+          ? user.profilePicUrl.startsWith('http')
+            ? user.profilePicUrl
+            : `http://localhost:4000${user.profilePicUrl}`
+          : 'assets/default-avatar.svg';
+
+        let actionBtn = '';
+        if (user.status === 'ACCEPTED') {
+          actionBtn =
+            '<span class="friend-status-badge friends">Friends</span>';
+        } else if (user.status === 'PENDING') {
+          actionBtn = `<span class="friend-status-badge pending">Pending</span> <button class="danger-btn small" onclick="theRevApp.cancelFriendRequest('${user.id}')">Cancel</button>`;
+        } else if (user.status === 'BLOCKED') {
+          actionBtn =
+            '<span class="friend-status-badge blocked">Blocked</span>';
+        } else {
+          actionBtn = `<button class="primary-btn small" onclick="theRevApp.sendFriendRequest('${user.userId}')">Add Friend</button>`;
+        }
+
+        return `
+        <div class="friend-card search-result">
+          <div class="friend-avatar">
+            <img src="${profilePic}" alt="${user.userName}" onerror="this.src='assets/default-avatar.svg'" />
+          </div>
+          <div class="friend-info">
+            <div class="friend-name">${user.firstName} ${user.lastName}</div>
+            <div class="friend-username">@${user.userName}</div>
+          </div>
+          <div class="friend-actions">${actionBtn}</div>
+        </div>
+      `;
+      })
+      .join('');
+  }
+
+  async sendFriendRequest(recipientId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation SendFriendRequest($requesterId: ID!, $recipientId: ID!) {
+              sendFriendRequest(requesterId: $requesterId, data: { recipientId: $recipientId }) {
+                id
+                status
+              }
+            }
+          `,
+          variables: { requesterId: this.currentUser.id, recipientId },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error('Error sending friend request:', result.errors);
+        alert('Could not send friend request');
+        return;
+      }
+
+      alert('Friend request sent!');
+      this.searchUsers(document.getElementById('friend-search-input').value);
+    } catch (error) {
+      console.error('Error sending friend request:', error);
+      alert('Error sending friend request');
+    }
+  }
+
+  async acceptFriendRequest(friendId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation AcceptFriendRequest($friendId: ID!, $userId: ID!) {
+              acceptFriendRequest(friendId: $friendId, userId: $userId) {
+                id
+                status
+              }
+            }
+          `,
+          variables: { friendId, userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error('Error accepting friend request:', result.errors);
+        return;
+      }
+
+      this.loadPendingRequests();
+      this.loadFriends();
+    } catch (error) {
+      console.error('Error accepting friend request:', error);
+    }
+  }
+
+  async declineFriendRequest(friendId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation DeclineFriendRequest($friendId: ID!, $userId: ID!) {
+              declineFriendRequest(friendId: $friendId, userId: $userId)
+            }
+          `,
+          variables: { friendId, userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error('Error declining friend request:', result.errors);
+        return;
+      }
+
+      this.loadPendingRequests();
+    } catch (error) {
+      console.error('Error declining friend request:', error);
+    }
+  }
+
+  async cancelFriendRequest(friendId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation CancelFriendRequest($userId: ID!, $friendId: ID!) {
+              cancelFriendRequest(userId: $userId, friendId: $friendId)
+            }
+          `,
+          variables: { userId: this.currentUser.id, friendId },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error('Error canceling friend request:', result.errors);
+        alert('Could not cancel request');
+        return;
+      }
+
+      alert('Request cancelled');
+      this.searchUsers(document.getElementById('friend-search-input').value);
+    } catch (error) {
+      console.error('Error canceling friend request:', error);
+      alert('Error canceling request');
+    }
+  }
+
+  async unfriend(friendId) {
+    if (!confirm('Are you sure you want to unfriend this user?')) return;
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation Unfriend($userId: ID!, $friendId: ID!) {
+              unfriend(userId: $userId, friendId: $friendId)
+            }
+          `,
+          variables: { userId: this.currentUser.id, friendId },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error('Error unfriending:', result.errors);
+        return;
+      }
+
+      this.loadFriends();
+    } catch (error) {
+      console.error('Error unfriending:', error);
+    }
+  }
+
+  async viewFriendProfile(userId) {
+    console.log('[Friends] Viewing friend profile:', userId);
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetUser($data: GetUserInput!) {
+              user(data: $data) {
+                id
+                userName
+                firstName
+                lastName
+                bio
+                ideology
+                profilePicUrl
+                avatarUrl
+                createdAt
+              }
+            }
+          `,
+          variables: { data: { id: userId } },
+        }),
+      });
+
+      const result = await response.json();
+      const user = result.data?.user;
+
+      if (!user) {
+        alert('User not found');
+        return;
+      }
+
+      // Update modal content
+      document.getElementById('friend-profile-name').textContent =
+        `${user.firstName} ${user.lastName}`;
+      document.getElementById('friend-profile-username').textContent =
+        `@${user.userName}`;
+      document.getElementById('friend-profile-bio').textContent =
+        user.bio || 'No bio yet';
+      document.getElementById('friend-profile-ideology').textContent =
+        user.ideology || 'Moderate';
+
+      // Profile pic
+      const profilePic = user.profilePicUrl
+        ? user.profilePicUrl.startsWith('http')
+          ? user.profilePicUrl
+          : `http://localhost:4000${user.profilePicUrl}`
+        : 'assets/default-avatar.svg';
+      document.getElementById('friend-profile-pic').src = profilePic;
+
+      // Update join date
+      document.getElementById('friend-profile-joined').textContent =
+        user.createdAt
+          ? `Joined: ${new Date(user.createdAt).toLocaleDateString()}`
+          : '';
+
+      // Load user stats
+      await this.loadFriendStats(userId);
+
+      // Load user's threads
+      await this.loadFriendThreads(userId);
+
+      // Load user's activity (participated threads)
+      await this.loadFriendActivity(userId);
+
+      // Show modal
+      document.getElementById('friend-profile-modal').classList.add('active');
+    } catch (error) {
+      console.error('Error viewing friend profile:', error);
+      alert('Error loading profile');
+    }
+  }
+
+  async loadFriendStats(userId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + this.jwtToken,
+        },
+        body: JSON.stringify({
+          query:
+            'query GetUserStats($userId: ID!) { getUserStats(userId: $userId) { threads posts replies } }',
+          variables: { userId },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.data?.getUserStats) {
+        const stats = result.data.getUserStats;
+        document.getElementById('friend-stat-threads').textContent =
+          stats.threads;
+        document.getElementById('friend-stat-posts').textContent = stats.posts;
+        document.getElementById('friend-stat-replies').textContent =
+          stats.replies;
+      }
+    } catch (error) {
+      console.error('Error loading friend stats:', error);
+    }
+  }
+
+  async loadFriendThreads(userId) {
+    try {
+      console.log('[FriendThreads] Loading threads for user:', userId);
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + this.jwtToken,
+        },
+        body: JSON.stringify({
+          query:
+            'query GetUserThreads($userId: String!) { listThreadsByUser(data: { authorId: $userId }) { id title content createdAt author { userName } } }',
+          variables: { userId },
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.errors) {
+        console.error(
+          '[FriendThreads] Errors:',
+          JSON.stringify(result.errors, null, 2)
+        );
+      }
+
+      const threads = result.data?.listThreadsByUser || [];
+      console.log('[FriendThreads] Found', threads.length, 'threads');
+
+      // Render threads like main profile
+      const container = document.getElementById('friend-user-threads');
+      if (container) {
+        if (threads.length === 0) {
+          container.innerHTML = '<p class="no-threads">No threads yet.</p>';
+        } else {
+          container.innerHTML = threads
+            .map(function (thread) {
+              // Check for video URLs in content
+              let thumbnailHtml = '';
+              const ytMatch = (thread.content || '').match(
+                /(https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[^\s]+)/
+              );
+              const ytShortMatch = (thread.content || '').match(
+                /(https?:\/\/youtu\.be\/[^\s]+)/
+              );
+              const videoUrl = ytMatch
+                ? ytMatch[1]
+                : ytShortMatch
+                  ? ytShortMatch[1]
+                  : null;
+
+              if (videoUrl) {
+                thumbnailHtml =
+                  '<div class="thread-thumb clickable" data-url="' +
+                  videoUrl +
+                  '" style="cursor:pointer"><span class="video-badge">🎬 Click to Open Video</span></div>';
+              }
+
+              let urlLink = '';
+              const urlMatch = (thread.content || '').match(
+                /(https?:\/\/[^\s]+)/g
+              );
+              if (urlMatch && urlMatch[0] && !videoUrl) {
+                urlLink =
+                  '<span class="url-indicator clickable" data-url="' +
+                  urlMatch[0] +
+                  '">🔗 Open Link</span>';
+              }
+
+              return (
+                '<div class="thread-item" onclick="theRevApp.openThread(\'' +
+                thread.id +
+                '\')">' +
+                thumbnailHtml +
+                '<span class="thread-title">' +
+                (thread.title || 'Untitled') +
+                '</span>' +
+                '<div class="thread-meta">' +
+                '<span class="thread-author">by @' +
+                (thread.author?.userName || 'Unknown') +
+                '</span>' +
+                '<span class="thread-date">' +
+                new Date(thread.createdAt).toLocaleDateString() +
+                '</span>' +
+                urlLink +
+                '</div></div>'
+              );
+            })
+            .join('');
+
+          // Add click handlers
+          container
+            .querySelectorAll(
+              '.thread-thumb.clickable, .url-indicator.clickable'
+            )
+            .forEach(function (el) {
+              el.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const url = el.dataset.url;
+                if (url) theRevApp.showOpenModeModal(url, '', 'Video');
+              });
+            });
+        }
+      }
+
+      // Update activity section
+      const activityContainer = document.getElementById(
+        'friend-profile-activity'
+      );
+      if (activityContainer) {
+        if (threads.length === 0) {
+          activityContainer.innerHTML =
+            '<p class="no-threads">No activity yet.</p>';
+        } else {
+          activityContainer.innerHTML = threads
+            .map(function (thread) {
+              return (
+                '<div class="thread-item" onclick="theRevApp.openThread(\'' +
+                thread.id +
+                '\')">' +
+                '<span class="thread-title">' +
+                (thread.title || 'Untitled') +
+                '</span>' +
+                '<div class="thread-meta">' +
+                '<span class="thread-author">by @' +
+                (thread.author?.userName || 'Unknown') +
+                '</span>' +
+                '<span class="thread-date">' +
+                new Date(thread.createdAt).toLocaleDateString() +
+                '</span>' +
+                '</div></div>'
+              );
+            })
+            .join('');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading friend threads:', error);
+    }
+  }
+
+  closeFriendProfileModal() {
+    document.getElementById('friend-profile-modal').classList.remove('active');
   }
 
   async loadProfile() {
@@ -2168,20 +2994,592 @@ class TheRevApp {
       }
     }
 
-    // Load participated threads and stats
-    await this.loadParticipatedThreads();
-    await this.loadProfileStats();
+    // Update stats from profile data
+    this.updateProfileStats();
+
+    // Load user's threads
+    await this.loadUserThreads();
+
+    // Load participated threads for activity
+    await this.loadUserActivity();
+
+    // Update avatar display
+    this.updateAvatarDisplay();
+
+    // Update user info display with avatar info
+    if (window.electronAPI) {
+      const avatarData = await window.electronAPI.getAvatarData();
+      if (avatarData && avatarData.fileName) {
+        const userNameEl = document.getElementById('user-name');
+        if (userNameEl) {
+          userNameEl.textContent = this.currentUser.userName + ' 🤖';
+        }
+      }
+    }
+  }
+
+  async updateProfileStats() {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + this.jwtToken,
+        },
+        body: JSON.stringify({
+          query: 'query GetStats { myParticipatedThreads { id } }',
+        }),
+      });
+
+      const result = await response.json();
+      const threads = result.data?.myParticipatedThreads || [];
+      document.getElementById('stat-threads').textContent = threads.length;
+    } catch (error) {
+      console.error('Error updating profile stats:', error);
+    }
+  }
+
+  async loadUserThreads() {
+    try {
+      // Get threads the user authored with posts
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + this.jwtToken,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetMyThreads($userId: String!) {
+              listThreadsByUser(data: { authorId: $userId }) {
+                id
+                title
+                content
+                createdAt
+                author {
+                  userName
+                }
+                posts {
+                  id
+                  content
+                  type
+                  metadata
+                }
+              }
+            }
+          `,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      console.log(
+        '[loadUserThreads] Response:',
+        JSON.stringify(result, null, 2)
+      );
+
+      let threads = result.data?.listThreadsByUser || [];
+      console.log('[Profile] Loaded', threads.length, 'authored threads');
+
+      // Debug: Check posts in first thread
+      if (threads.length > 0) {
+        console.log('[loadUserThreads] Thread 0:', threads[0].title);
+        console.log(
+          '[loadUserThreads] Thread 0 posts count:',
+          threads[0].posts?.length
+        );
+        if (threads[0].posts?.length > 0) {
+          console.log(
+            '[loadUserThreads] Thread 0 post 0:',
+            threads[0].posts[0]
+          );
+        }
+      }
+
+      // Remove duplicates by thread ID and sort by newest first
+      const seen = new Set();
+      threads = threads
+        .filter((t) => {
+          if (seen.has(t.id)) return false;
+          seen.add(t.id);
+          return true;
+        })
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      console.log('[loadUserThreads] After dedup:', threads.length, 'threads');
+
+      const container = document.getElementById('user-threads');
+      if (container) {
+        if (threads.length === 0) {
+          container.innerHTML =
+            '<p class="no-threads">You haven\'t created any threads yet.</p>';
+        } else {
+          container.innerHTML = threads
+            .map((thread) => {
+              // Find VIDEO post first, then any other post
+              const posts = thread.posts || [];
+              const videoPost = posts.find((p) => p.type === 'VIDEO');
+              const imagePost = posts.find((p) => p.type === 'IMAGE');
+              const firstPost = videoPost || imagePost || posts[0];
+              const postContent = firstPost?.content || thread.content || '';
+
+              // Truncate long content
+              const shortContent =
+                postContent.length > 120
+                  ? postContent.substring(0, 120) + '...'
+                  : postContent;
+
+              // Check for video/image thumbnail
+              let thumbnailHtml = '';
+              let videoUrl = '';
+
+              // Check for YouTube URL in thread content or first post
+              const ytMatch = postContent.match(
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+              );
+
+              if (ytMatch) {
+                const videoId = ytMatch[1];
+                const thumbUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+                videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                thumbnailHtml = `<div class="thread-thumb clickable" data-url="${videoUrl}"><img src="${thumbUrl}" alt="" onerror="this.parentElement.style.display='none'" /><span class="video-badge">🎬</span></div>`;
+              } else if (firstPost?.metadata?.thumbnailUrl) {
+                if (firstPost.type === 'VIDEO') {
+                  thumbnailHtml = `<div class="thread-thumb clickable" data-url="${firstPost.metadata.thumbnailUrl}"><img src="${firstPost.metadata.thumbnailUrl}" alt="" onerror="this.parentElement.style.display='none'" /><span class="video-badge">🎬</span></div>`;
+                } else if (firstPost.type === 'IMAGE') {
+                  thumbnailHtml = `<div class="thread-thumb"><img src="${firstPost.metadata.thumbnailUrl}" alt="" onerror="this.parentElement.style.display='none'" /></div>`;
+                }
+              }
+
+              return `
+              <div class="thread-item" onclick="theRevApp.openThread('${thread.id}')">
+                ${thumbnailHtml}
+                <div class="thread-content">
+                  <span class="thread-title">${thread.title}</span>
+                  <span class="thread-excerpt">${shortContent}</span>
+                  <div class="thread-meta">
+                    <span class="thread-date">${new Date(thread.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              </div>
+            `;
+            })
+            .join('');
+
+          container
+            .querySelectorAll('.thread-thumb.clickable')
+            .forEach((el) => {
+              el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const url = el.dataset.url;
+                if (url) theRevApp.showOpenModeModal(url, '', 'Video');
+              });
+            });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user threads:', error);
+    }
+  }
+
+  async loadUserActivity() {
+    console.log('[UserActivity] Loading activity...');
+    try {
+      const userId = this.currentUser?.id;
+      const userName = (this.currentUser?.userName || '').toLowerCase();
+
+      // Get threads user participated in
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + this.jwtToken,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetActivity {
+              myParticipatedThreads {
+                id
+                title
+                posts {
+                  id
+                  content
+                  perspective
+                  createdAt
+                  parent {
+                    id
+                    content
+                    author {
+                      userName
+                    }
+                  }
+                  metadata
+                  type
+                  author {
+                    id
+                    userName
+                  }
+                }
+              }
+            }
+          `,
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[UserActivity] Response:', JSON.stringify(result, null, 2));
+
+      if (result.errors) {
+        console.error('[UserActivity] GraphQL errors:', result.errors);
+      }
+
+      const threads = result.data?.myParticipatedThreads || [];
+      console.log('[UserActivity] Found threads:', threads.length);
+
+      // Find user's posts in each thread
+      const activityItems = [];
+      for (const thread of threads) {
+        const userPost = thread.posts?.find(
+          (p) =>
+            (p.author?.id || '').toLowerCase() === userId.toLowerCase() ||
+            (p.author?.userName || '').toLowerCase() === userName
+        );
+
+        if (userPost) {
+          activityItems.push({ thread, userPost });
+        }
+      }
+
+      // Sort by newest first (user's post date)
+      activityItems.sort(
+        (a, b) =>
+          new Date(b.userPost.createdAt) - new Date(a.userPost.createdAt)
+      );
+
+      console.log('[UserActivity] Activity items:', activityItems.length);
+
+      // Render activity items
+      const container = document.getElementById('profile-activity');
+      if (container) {
+        if (activityItems.length === 0) {
+          container.innerHTML = '<p class="no-threads">No activity yet.</p>';
+        } else {
+          container.innerHTML = activityItems
+            .map(({ thread, userPost }) => {
+              const perspectiveBadge =
+                {
+                  PRO: '🟦',
+                  AGAINST: '🟥',
+                  NEUTRAL: '🟨',
+                }[userPost.perspective] || '🟨';
+
+              // Find VIDEO post first, then any other post
+              const posts = thread.posts || [];
+              const videoPost = posts.find((p) => p.type === 'VIDEO');
+              const imagePost = posts.find((p) => p.type === 'IMAGE');
+              const firstPost = videoPost || imagePost || posts[0];
+              const isThreadAuthor =
+                (firstPost?.author?.userName || '').toLowerCase() === userName;
+
+              // First post IS the thread's content
+              const threadContent = firstPost?.content || thread.content || '';
+
+              // Determine what content to show
+              let contentHtml = '';
+              let labelText = 'Replied to thread:';
+              let threadContentHtml = '';
+
+              if (!userPost.parent) {
+                // Root level reply - show thread title + first post content + thumbnail
+                const ytMatch = threadContent.match(
+                  /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+                );
+
+                if (ytMatch) {
+                  const videoId = ytMatch[1];
+                  const thumbUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+                  contentHtml = `<div class="activity-media"><img src="${thumbUrl}" alt="" onerror="this.style.display='none'" /><span class="video-badge">🎬 Video</span></div>`;
+                } else if (firstPost?.metadata?.thumbnailUrl) {
+                  const badge = firstPost.type === 'VIDEO' ? '🎬 ' : '📷 ';
+                  contentHtml = `<div class="activity-media"><img src="${firstPost.metadata.thumbnailUrl}" alt="" onerror="this.style.display='none'" />${firstPost.type === 'VIDEO' ? '<span class="video-badge">' + badge + 'Video</span>' : ''}</div>`;
+                }
+
+                // Show thread content
+                const shortThreadContent =
+                  threadContent.length > 100
+                    ? threadContent.substring(0, 100) + '...'
+                    : threadContent;
+                if (shortThreadContent) {
+                  threadContentHtml = `<span class="activity-thread-content">${shortThreadContent}</span>`;
+                }
+              } else {
+                // Nested reply - show the parent post being responded to
+                const parentShort =
+                  userPost.parent.content?.length > 80
+                    ? userPost.parent.content.substring(0, 80) + '...'
+                    : userPost.parent.content;
+                contentHtml = `
+                  <div class="activity-parent">
+                    <span class="parent-label">In reply to @${userPost.parent.author?.userName || 'Unknown'}:</span>
+                    <span class="parent-content">"${parentShort}"</span>
+                  </div>
+                `;
+              }
+
+              const shortReply =
+                userPost.content?.length > 80
+                  ? userPost.content.substring(0, 80) + '...'
+                  : userPost.content || 'No content';
+
+              return `
+              <div class="activity-item" onclick="theRevApp.openThread('${thread.id}')">
+                ${contentHtml}
+                <div class="activity-thread-info">
+                  <span class="activity-label">${isThreadAuthor ? 'Created thread' : labelText}</span>
+                  <span class="activity-thread-title">${thread.title}</span>
+                  ${threadContentHtml}
+                </div>
+                <div class="activity-your-reply">
+                  <span class="activity-perspective">${perspectiveBadge}</span>
+                  <span class="activity-reply">${shortReply}</span>
+                </div>
+                <div class="thread-meta">
+                  <span class="thread-date">${new Date(userPost.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+            `;
+            })
+            .join('');
+
+          container.querySelectorAll('.activity-item').forEach((el) => {
+            el.addEventListener('click', () => {});
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user activity:', error);
+    }
+  }
+
+  async loadFriendActivity(userId) {
+    console.log('[FriendActivity] Loading activity for userId:', userId);
+    try {
+      // Get threads friend participated in with posts and parent info
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + this.jwtToken,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetFriendActivity($userId: String!) {
+              listUserParticipatedThreads(data: { authorId: $userId }) {
+                id
+                title
+                posts {
+                  id
+                  content
+                  type
+                  perspective
+                  createdAt
+                  metadata
+                  parent {
+                    id
+                    content
+                    author {
+                      userName
+                    }
+                  }
+                  author {
+                    id
+                    userName
+                  }
+                }
+              }
+            }
+          `,
+          variables: { userId },
+        }),
+      });
+
+      const result = await response.json();
+      console.log(
+        '[FriendActivity] GraphQL response:',
+        JSON.stringify(result, null, 2)
+      );
+
+      if (result.errors) {
+        console.error('[FriendActivity] GraphQL errors:', result.errors);
+      }
+
+      const threads = result.data?.listUserParticipatedThreads || [];
+      console.log('[FriendActivity] Threads found:', threads.length);
+
+      // Find friend's posts in each thread
+      const friendUserName = (this.viewingFriend?.userName || '').toLowerCase();
+      const activityItems = [];
+
+      for (const thread of threads) {
+        const friendPost = thread.posts?.find(
+          (p) =>
+            p.author?.id === userId ||
+            (p.author?.userName || '').toLowerCase() === friendUserName
+        );
+
+        if (friendPost) {
+          activityItems.push({ thread, friendPost });
+        }
+      }
+
+      console.log('[FriendActivity] Activity items:', activityItems.length);
+
+      const container = document.getElementById('friend-profile-activity');
+      if (container) {
+        if (activityItems.length === 0) {
+          container.innerHTML = '<p class="no-threads">No activity yet.</p>';
+        } else {
+          container.innerHTML = activityItems
+            .map(({ thread, friendPost }) => {
+              // Get perspective badge
+              const perspectiveBadge =
+                {
+                  PRO: '🟦',
+                  AGAINST: '🟥',
+                  NEUTRAL: '🟨',
+                }[friendPost.perspective] || '🟨';
+
+              const firstPost = thread.posts?.[0];
+
+              // First post IS the thread's content
+              const threadContent = firstPost?.content || thread.content || '';
+
+              // Determine what content to show
+              let contentHtml = '';
+              let labelText = 'Replied:';
+              let threadContentHtml = '';
+
+              if (!friendPost.parent) {
+                // Root level reply - show thread title + first post content + thumbnail
+                labelText = 'Replied to thread:';
+
+                const ytMatch = threadContent.match(
+                  /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+                );
+
+                if (ytMatch) {
+                  const videoId = ytMatch[1];
+                  const thumbUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+                  contentHtml = `<div class="activity-media"><img src="${thumbUrl}" alt="" onerror="this.style.display='none'" /><span class="video-badge">🎬 Video</span></div>`;
+                } else if (firstPost?.metadata?.thumbnailUrl) {
+                  const badge = firstPost.type === 'VIDEO' ? '🎬 ' : '📷 ';
+                  contentHtml = `<div class="activity-media"><img src="${firstPost.metadata.thumbnailUrl}" alt="" onerror="this.style.display='none'" />${firstPost.type === 'VIDEO' ? '<span class="video-badge">' + badge + 'Video</span>' : ''}</div>`;
+                }
+
+                // Show thread content
+                const shortThreadContent =
+                  threadContent.length > 100
+                    ? threadContent.substring(0, 100) + '...'
+                    : threadContent;
+                if (shortThreadContent) {
+                  threadContentHtml = `<span class="activity-thread-content">${shortThreadContent}</span>`;
+                }
+              } else {
+                // Nested reply - show the parent post being responded to
+                const parentShort =
+                  friendPost.parent.content?.length > 80
+                    ? friendPost.parent.content.substring(0, 80) + '...'
+                    : friendPost.parent.content;
+                contentHtml = `
+                  <div class="activity-parent">
+                    <span class="parent-label">In reply to @${friendPost.parent.author?.userName || 'Unknown'}:</span>
+                    <span class="parent-content">"${parentShort}"</span>
+                  </div>
+                `;
+              }
+
+              // Truncate friend reply
+              const shortReply =
+                friendPost.content?.length > 80
+                  ? friendPost.content.substring(0, 80) + '...'
+                  : friendPost.content || 'No content';
+
+              const isAuthor =
+                (firstPost?.author?.userName || '').toLowerCase() ===
+                friendUserName;
+
+              return `
+              <div class="activity-item" onclick="theRevApp.openThread('${thread.id}')">
+                ${contentHtml}
+                <div class="activity-thread-info">
+                  <span class="activity-label">${isAuthor ? 'Created thread:' : labelText}</span>
+                  <span class="activity-thread-title">${thread.title}</span>
+                  ${threadContentHtml}
+                </div>
+                <div class="activity-your-reply">
+                  <span class="activity-perspective">${perspectiveBadge}</span>
+                  <span class="activity-reply">${shortReply}</span>
+                </div>
+                <div class="thread-meta">
+                  <span class="thread-date">${new Date(friendPost.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+            `;
+            })
+            .join('');
+
+          container.querySelectorAll('.activity-item').forEach((el) => {
+            el.addEventListener('click', () => {});
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading friend activity:', error);
+    }
   }
 
   async loadProfileStats() {
-    // Don't try to load if not logged in
     if (!this.jwtToken || !this.currentUser) {
-      console.log('[Profile] Not logged in, skipping stats load');
       return;
     }
 
     try {
-      const response = await fetch('http://localhost:4000/graphql', {
+      const userId = this.currentUser.id;
+      const userName = (this.currentUser.userName || '').toLowerCase();
+
+      // Get threads user authored (for thread count)
+      const threadsResponse = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetStats($userId: String!) {
+              listThreadsByUser(data: { authorId: $userId }) {
+                id
+              }
+            }
+          `,
+          variables: { userId },
+        }),
+      });
+
+      const threadsResult = await threadsResponse.json();
+      let threadList = threadsResult.data?.listThreadsByUser || [];
+
+      // Remove duplicates and count
+      const seenThreads = new Set();
+      threadList = threadList.filter((t) => {
+        if (seenThreads.has(t.id)) return false;
+        seenThreads.add(t.id);
+        return true;
+      });
+      const threadCount = threadList.length;
+
+      // Get user's posts count from participated threads
+      const postsResponse = await fetch('http://localhost:4000/graphql', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2194,6 +3592,9 @@ class TheRevApp {
                 id
                 posts {
                   id
+                  author {
+                    userName
+                  }
                 }
               }
             }
@@ -2201,21 +3602,40 @@ class TheRevApp {
         }),
       });
 
-      const result = await response.json();
-      const threads = result.data?.myParticipatedThreads || [];
+      const postsResult = await postsResponse.json();
+      const threads = postsResult.data?.myParticipatedThreads || [];
 
-      // Calculate stats
-      const threadCount = threads.length;
-      const postCount = threads.reduce(
-        (acc, t) => acc + (t.posts?.length || 0),
-        0
+      // Count user's posts across all threads
+      const userPostsMap = new Map(); // Map of threadId -> postCount
+      for (const thread of threads) {
+        for (const post of thread.posts || []) {
+          if ((post.author?.userName || '').toLowerCase() === userName) {
+            const count = userPostsMap.get(thread.id) || 0;
+            userPostsMap.set(thread.id, count + 1);
+          }
+        }
+      }
+
+      // Count posts where user participated (not just authored)
+      let replyCount = 0;
+      for (const [threadId, count] of userPostsMap) {
+        replyCount += count;
+      }
+      // Subtract thread count (each thread includes the user's initial post)
+      replyCount = Math.max(0, replyCount - threadCount);
+
+      console.log(
+        '[ProfileStats] threadCount:',
+        threadCount,
+        'replyCount:',
+        replyCount
       );
 
-      // Update stats display with IDs
+      // Update stats
       const threadsEl = document.getElementById('stat-threads');
       const postsEl = document.getElementById('stat-posts');
       if (threadsEl) threadsEl.textContent = threadCount;
-      if (postsEl) postsEl.textContent = postCount;
+      if (postsEl) postsEl.textContent = replyCount;
     } catch (error) {
       console.error('Error loading profile stats:', error);
     }
@@ -5410,6 +6830,11 @@ class TheRevApp {
   }
 
   async saveAvatarCustomization() {
+    if (!this.currentUser) {
+      alert('You must be logged in to save avatar settings');
+      return;
+    }
+
     const avatarData = {
       style: document.getElementById('avatar-style').value,
       primaryColor: document.getElementById('avatar-primary-color').value,
@@ -5568,29 +6993,96 @@ class TheRevApp {
               originalCommand: command,
             };
           } else if (result.url) {
-            // Navigation intent - open AI Browser immediately with URL and context
             console.log(
               '[executeAICommand] Opening AI Browser with URL:',
               result.url
             );
 
-            // Extract context for the chat
-            const context = result.context || `Navigating to: ${result.url}`;
+            // Check if there's also an AI response to display
+            const hasAIResponse =
+              result.response ||
+              (result.actions &&
+                result.actions.some((a) => a.type === 'AI_RESPONSE'));
+            const aiText =
+              result.response ||
+              result.actions?.find((a) => a.type === 'AI_RESPONSE')?.content;
 
-            if (window.electronAPI?.openAIBrowser) {
-              await window.electronAPI.openAIBrowser(result.url, context);
+            // If we have an AI response, display it in the chat AND open browser
+            if (hasAIResponse && aiText) {
+              console.log('[executeAICommand] AI Response:', aiText);
+
+              // Show AI response in chat
+              if (aiResponseText) {
+                aiResponseText.textContent = aiText;
+              }
+              if (aiResponseArea) aiResponseArea.style.display = 'block';
+
+              // Show avatar reaction
+              this.showAISpeechBubble('💬', 3000);
+              this.avatarReact('speak', aiText);
+
+              // Also open browser for navigation
+              const context = result.context || `Navigating to: ${result.url}`;
+              if (window.electronAPI?.openAIBrowser) {
+                await window.electronAPI.openAIBrowser(result.url, context);
+              }
+
+              if (statusText)
+                statusText.textContent = '💬 Answer + Opening browser...';
+            } else {
+              // Just navigation, no AI response
+              const context = result.context || `Navigating to: ${result.url}`;
+              if (window.electronAPI?.openAIBrowser) {
+                await window.electronAPI.openAIBrowser(result.url, context);
+              }
+
+              this.showAISpeechBubble('✅ Opening!', 2000);
+              if (aiResponseText) {
+                aiResponseText.textContent = `Opening ${result.url}`;
+              }
+              if (statusText)
+                statusText.textContent = '✅ Opening AI Browser...';
             }
 
-            // AI Avatar: Show success
-            this.showAISpeechBubble('✅ Opening!', 2000);
-            if (aiResponseText) {
-              aiResponseText.textContent = `Opening ${result.url}`;
-            }
             if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+            input.value = '';
+          } else if (result.isAIResponse && result.response) {
+            // Pure AI response without navigation
+            console.log(
+              '[executeAICommand] Pure AI Response:',
+              result.response
+            );
+            if (aiResponseText) {
+              aiResponseText.textContent = result.response;
+            }
             if (aiResponseArea) aiResponseArea.style.display = 'block';
-            if (statusText) statusText.textContent = '✅ Opening AI Browser...';
+            this.showAISpeechBubble('💬', 4000);
+            this.avatarReact('speak', result.response);
+            if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+            if (statusText) statusText.textContent = '💬 Rev answered!';
             input.value = '';
           } else if (result.actions) {
+            // Check for AI_RESPONSE action type
+            const aiResponseAction = result.actions.find(
+              (a) => a.type === 'AI_RESPONSE' && a.content
+            );
+            if (aiResponseAction) {
+              console.log(
+                '[executeAICommand] AI Response action:',
+                aiResponseAction.content
+              );
+              if (aiResponseText) {
+                aiResponseText.textContent = aiResponseAction.content;
+              }
+              if (aiResponseArea) aiResponseArea.style.display = 'block';
+              this.showAISpeechBubble('💬', 4000);
+              this.avatarReact('speak', aiResponseAction.content);
+              if (aiApprovalSection) aiApprovalSection.style.display = 'none';
+              if (statusText) statusText.textContent = '💬 Rev answered!';
+              input.value = '';
+              return;
+            }
+
             // Check if any action is a NAVIGATE action
             const navAction = result.actions.find(
               (a) => a.type === 'NAVIGATE' && a.value
@@ -5836,6 +7328,20 @@ class TheRevApp {
     this.clearReplyTo();
   }
 
+  selectPerspective(perspective) {
+    const perspectiveInput = document.getElementById('post-perspective');
+    perspectiveInput.value = perspective;
+
+    const buttons = document.querySelectorAll('.perspective-btn');
+    buttons.forEach((btn) => {
+      if (btn.dataset.perspective === perspective) {
+        btn.classList.add('selected');
+      } else {
+        btn.classList.remove('selected');
+      }
+    });
+  }
+
   async submitCreatePost(e) {
     e.preventDefault();
 
@@ -5848,9 +7354,10 @@ class TheRevApp {
     const parentId = document.getElementById('post-parent-id').value;
     const content = document.getElementById('post-content').value;
     const type = document.getElementById('post-type').value;
+    const perspective = document.getElementById('post-perspective').value;
     const errorEl = document.getElementById('create-post-error');
 
-    const input = { threadId, content, type };
+    const input = { threadId, content, type, perspective };
     if (parentId) {
       input.parentId = parentId;
     }
@@ -5965,6 +7472,12 @@ class TheRevApp {
                 title
                 content
                 createdAt
+                voteCounts {
+                  PRO
+                  AGAINST
+                  NEUTRAL
+                  total
+                }
                 author {
                   id
                   userName
@@ -5973,12 +7486,23 @@ class TheRevApp {
                   id
                   content
                   type
+                  perspective
                   createdAt
                   author {
                     id
                     userName
                   }
                   metadata
+                  replies {
+                    id
+                    content
+                    perspective
+                    createdAt
+                    author {
+                      id
+                      userName
+                    }
+                  }
                 }
               }
             }
@@ -6044,7 +7568,16 @@ class TheRevApp {
       thread.posts?.[0]?.replies
     );
 
+    // Store current thread and posts for filtering
+    this._currentThread = thread;
+    this._currentPosts = thread.posts || [];
+    this._perspectiveFilter = 'ALL';
+    this._currentVote = null;
+
     if (titleEl) titleEl.textContent = thread.title;
+
+    // Load vote counts
+    this.loadThreadVotes(thread.id);
 
     // Add reply button
     let replyButton = document.getElementById('thread-reply-btn');
@@ -6058,12 +7591,103 @@ class TheRevApp {
     }
     replyButton.onclick = () => this.openCreatePostModal(thread.id);
 
-    if (postsEl && thread.posts) {
+    if (postsEl && this._currentPosts) {
+      // Update perspective counts
+      this._updatePerspectiveCounts();
+
+      // Check for featured media (first post with video/image)
+      const firstPost = this._currentPosts[0];
+      let featuredMediaHtml = '';
+
+      if (firstPost) {
+        const firstPostType = firstPost.type || 'TEXT';
+        const firstPostUrl =
+          firstPost.content?.match(/(https?:\/\/[^\s]+)/)?.[1];
+
+        if (firstPostType === 'VIDEO' && firstPost.metadata?.thumbnailUrl) {
+          // YouTube or video content
+          const videoUrl = firstPostUrl || firstPost.metadata.thumbnailUrl;
+          featuredMediaHtml = `
+            <div class="thread-featured-media">
+              <div class="featured-media-header">
+                <span class="featured-label">🎬 Featured Content</span>
+              </div>
+              <div class="featured-video-container clickable" data-url="${videoUrl}" onclick="theRevApp.showOpenModeModal('${videoUrl}', '', 'Video')">
+                <img src="${firstPost.metadata.thumbnailUrl}" alt="Video thumbnail" class="featured-thumbnail" />
+                <div class="featured-play-overlay">
+                  <span class="play-icon">▶</span>
+                </div>
+              </div>
+              <div class="featured-media-footer">
+                <a href="${videoUrl}" target="_blank" class="featured-link">${videoUrl}</a>
+              </div>
+            </div>
+          `;
+        } else if (
+          firstPostType === 'IMAGE' &&
+          firstPost.metadata?.thumbnailUrl
+        ) {
+          featuredMediaHtml = `
+            <div class="thread-featured-media">
+              <div class="featured-media-header">
+                <span class="featured-label">🖼️ Featured Image</span>
+              </div>
+              <div class="featured-image-container">
+                <img src="${firstPost.metadata.thumbnailUrl}" alt="Featured image" class="featured-image" />
+              </div>
+            </div>
+          `;
+        } else if (firstPostUrl) {
+          // Regular URL
+          const isYoutube =
+            firstPostUrl.includes('youtube.com') ||
+            firstPostUrl.includes('youtu.be');
+          const isTwitter =
+            firstPostUrl.includes('twitter.com') ||
+            firstPostUrl.includes('x.com');
+          const mediaType = isYoutube ? 'video' : 'link';
+          const icon = isYoutube ? '🎬' : isTwitter ? '🐦' : '🔗';
+
+          featuredMediaHtml = `
+            <div class="thread-featured-link">
+              <div class="featured-link-header">
+                <span class="featured-label">${icon} ${isYoutube ? 'YouTube' : isTwitter ? 'Twitter' : 'Link'}</span>
+              </div>
+              <a href="${firstPostUrl}" target="_blank" class="featured-url" onclick="event.stopPropagation();">
+                <span class="url-text">${firstPostUrl}</span>
+                <span class="url-arrow">↗</span>
+              </a>
+              <button class="open-in-browser-btn" onclick="theRevApp.showOpenModeModal('${firstPostUrl}', '', 'Link')">
+                Open in Browser
+              </button>
+            </div>
+          `;
+        }
+      }
+
       const renderPost = (post, depth = 0) => {
         const postType = post.type || 'TEXT';
         const isVideo = postType === 'VIDEO';
         const isImage = postType === 'IMAGE';
         const indent = depth * 30;
+        const perspective = post.perspective || 'NEUTRAL';
+
+        // Perspective badge
+        const perspectiveColors = {
+          PRO: { bg: '#22c55e', color: '#166534' },
+          AGAINST: { bg: '#ef4444', color: '#991b1b' },
+          NEUTRAL: { bg: '#eab308', color: '#854d0e' },
+        };
+        const perspColors =
+          perspectiveColors[perspective] || perspectiveColors.NEUTRAL;
+        const perspectiveIcon =
+          perspective === 'PRO'
+            ? '🟦'
+            : perspective === 'AGAINST'
+              ? '🟥'
+              : '🟨';
+        const perspectiveLabel =
+          perspective.charAt(0) + perspective.slice(1).toLowerCase();
 
         let mediaContent = '';
         if (isVideo && post.metadata?.thumbnailUrl) {
@@ -6085,6 +7709,9 @@ class TheRevApp {
           <div class="post-card" style="margin-left: ${indent}px; border-left: ${depth > 0 ? '2px solid var(--border-color)' : 'none'};">
             <div class="post-header">
               <span class="post-author">@${post.author?.userName || 'Unknown'}</span>
+              <span class="perspective-badge" style="background: ${perspColors.bg}; color: ${perspColors.color};" title="${perspectiveLabel}">
+                ${perspectiveIcon} ${perspectiveLabel}
+              </span>
               <span class="post-date">${new Date(post.createdAt).toLocaleString()}</span>
               <span class="post-type">${postType}</span>
               ${post.isPinned ? '<span class="pinned-badge">📌 Pinned</span>' : ''}
@@ -6100,9 +7727,13 @@ class TheRevApp {
         `;
       };
 
-      postsEl.innerHTML = thread.posts
+      // Build the posts HTML, starting with featured media
+      let postsHtml = featuredMediaHtml;
+      postsHtml += this._currentPosts
         .map((post) => renderPost(post, 0))
         .join('');
+
+      postsEl.innerHTML = postsHtml;
 
       // Add click handlers for video thumbnails
       postsEl.querySelectorAll('.post-media.video.clickable').forEach((el) => {
@@ -6115,6 +7746,230 @@ class TheRevApp {
     }
 
     if (modal) modal.classList.add('active');
+  }
+
+  _updatePerspectiveCounts() {
+    const posts = this._currentPosts || [];
+    const counts = { ALL: posts.length, PRO: 0, AGAINST: 0, NEUTRAL: 0 };
+
+    posts.forEach((post) => {
+      const persp = post.perspective || 'NEUTRAL';
+      counts[persp]++;
+    });
+
+    document.getElementById('count-all').textContent = counts.ALL;
+    document.getElementById('count-pro').textContent = counts.PRO;
+    document.getElementById('count-against').textContent = counts.AGAINST;
+    document.getElementById('count-neutral').textContent = counts.NEUTRAL;
+  }
+
+  async loadThreadVotes(threadId) {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (this.jwtToken) {
+        headers['Authorization'] = `Bearer ${this.jwtToken}`;
+      }
+
+      // Use voteCounts from thread if available (server already combined votes + posts)
+      const serverVoteCounts = this._currentThread?.voteCounts;
+
+      if (serverVoteCounts) {
+        document.getElementById('vote-count-pro').textContent =
+          serverVoteCounts.PRO;
+        document.getElementById('vote-count-against').textContent =
+          serverVoteCounts.AGAINST;
+        document.getElementById('vote-count-neutral').textContent =
+          serverVoteCounts.NEUTRAL;
+        document.getElementById('vote-total').textContent =
+          serverVoteCounts.total;
+        document.getElementById('count-pro').textContent = serverVoteCounts.PRO;
+        document.getElementById('count-against').textContent =
+          serverVoteCounts.AGAINST;
+        document.getElementById('count-neutral').textContent =
+          serverVoteCounts.NEUTRAL;
+        document.getElementById('count-all').textContent =
+          serverVoteCounts.total;
+      }
+
+      // Only fetch user's current vote
+      if (this.jwtToken && this.currentUser) {
+        const voteResponse = await fetch('http://localhost:4000/graphql', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            query: `
+              query GetMyVote($threadId: String!) {
+                myThreadVote(threadId: $threadId) {
+                  id
+                  perspective
+                }
+              }
+            `,
+            variables: { threadId },
+          }),
+        });
+
+        const voteResult = await voteResponse.json();
+        if (voteResult.data?.myThreadVote) {
+          this._currentVote = voteResult.data.myThreadVote;
+          this._updateVoteUI();
+        }
+      }
+    } catch (error) {
+      console.error('Error loading thread votes:', error);
+    }
+  }
+
+  async castVote(perspective) {
+    if (!this.jwtToken || !this.currentUser) {
+      alert('Please log in to vote');
+      return;
+    }
+
+    const threadId = this._currentThread?.id;
+    if (!threadId) return;
+
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.jwtToken}`,
+      };
+
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: `
+            mutation CastVote($threadId: String!, $perspective: Perspective!) {
+              castThreadVote(threadId: $threadId, perspective: $perspective) {
+                vote {
+                  id
+                  perspective
+                }
+                removed
+              }
+            }
+          `,
+          variables: { threadId, perspective },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error('Vote error:', result.errors);
+        return;
+      }
+
+      if (result.data?.castThreadVote) {
+        const { vote, removed } = result.data.castThreadVote;
+        this._currentVote = removed ? null : vote;
+        this._updateVoteUI();
+        this.loadThreadVotes(threadId);
+      }
+    } catch (error) {
+      console.error('Error casting vote:', error);
+    }
+  }
+
+  _updateVoteUI() {
+    document.querySelectorAll('.quick-vote-btn').forEach((btn) => {
+      btn.classList.remove('voted');
+    });
+
+    if (this._currentVote) {
+      const perspective = this._currentVote.perspective;
+      let btnId = 'vote-neutral';
+      if (perspective === 'PRO') btnId = 'vote-pro';
+      else if (perspective === 'AGAINST') btnId = 'vote-against';
+
+      const btn = document.getElementById(btnId);
+      if (btn) btn.classList.add('voted');
+    }
+  }
+
+  filterByPerspective(filter) {
+    this._perspectiveFilter = filter;
+
+    // Update active tab
+    document.querySelectorAll('.perspective-tab').forEach((tab) => {
+      if (tab.dataset.filter === filter) {
+        tab.classList.add('active');
+      } else {
+        tab.classList.remove('active');
+      }
+    });
+
+    const postsEl = document.getElementById('thread-posts');
+    if (!postsEl || !this._currentPosts) return;
+
+    const renderPost = (post, depth = 0) => {
+      const postType = post.type || 'TEXT';
+      const isVideo = postType === 'VIDEO';
+      const isImage = postType === 'IMAGE';
+      const indent = depth * 30;
+      const perspective = post.perspective || 'NEUTRAL';
+
+      const perspectiveColors = {
+        PRO: { bg: '#22c55e', color: '#166534' },
+        AGAINST: { bg: '#ef4444', color: '#991b1b' },
+        NEUTRAL: { bg: '#eab308', color: '#854d0e' },
+      };
+      const perspColors =
+        perspectiveColors[perspective] || perspectiveColors.NEUTRAL;
+      const perspectiveIcon =
+        perspective === 'PRO' ? '🟦' : perspective === 'AGAINST' ? '🟥' : '🟨';
+      const perspectiveLabel =
+        perspective.charAt(0) + perspective.slice(1).toLowerCase();
+
+      let mediaContent = '';
+      if (isVideo && post.metadata?.thumbnailUrl) {
+        mediaContent = `<div class="post-media video"><img src="${post.metadata.thumbnailUrl}" alt="Video thumbnail" /><span class="media-badge">🎬 Video</span></div>`;
+      } else if (isImage && post.metadata?.thumbnailUrl) {
+        mediaContent = `<div class="post-media image"><img src="${post.metadata.thumbnailUrl}" alt="Post image" /></div>`;
+      }
+
+      let repliesHtml = '';
+      if (post.replies && post.replies.length > 0) {
+        repliesHtml = post.replies
+          .map((reply) => renderPost(reply, depth + 1))
+          .join('');
+      }
+
+      const isPinned = post.isPinned || false;
+
+      return `
+        <div class="post-card" style="margin-left: ${indent}px; border-left: ${depth > 0 ? '2px solid var(--border-color)' : 'none'};">
+          <div class="post-header">
+            <span class="post-author">@${post.author?.userName || 'Unknown'}</span>
+            <span class="perspective-badge" style="background: ${perspColors.bg}; color: ${perspColors.color};" title="${perspectiveLabel}">
+              ${perspectiveIcon} ${perspectiveLabel}
+            </span>
+            <span class="post-date">${new Date(post.createdAt).toLocaleString()}</span>
+            <span class="post-type">${postType}</span>
+            ${post.isPinned ? '<span class="pinned-badge">📌 Pinned</span>' : ''}
+            <button class="reply-btn" onclick="theRevApp.openCreatePostModal('${this._currentThread.id}', '${post.id}', '${post.author?.userName || ''}')">Reply</button>
+            ${this.currentUser && post.author?.id === this.currentUser.id ? `<button class="pin-btn" onclick="theRevApp.togglePin('${post.id}', ${!isPinned})">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>` : ''}
+          </div>
+          <div class="post-content">
+            ${post.content}
+            ${mediaContent}
+          </div>
+          ${repliesHtml}
+        </div>
+      `;
+    };
+
+    // Filter posts
+    let filteredPosts = this._currentPosts;
+    if (filter !== 'ALL') {
+      filteredPosts = this._currentPosts.filter(
+        (post) => post.perspective === filter
+      );
+    }
+
+    postsEl.innerHTML = filteredPosts
+      .map((post) => renderPost(post, 0))
+      .join('');
   }
 
   closeThreadModal() {

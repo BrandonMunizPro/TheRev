@@ -13,6 +13,8 @@ import { ThreadResolver } from './resolvers/Thread';
 import { AuthResolver } from './resolvers/Auth';
 import { PostResolver } from './resolvers/Post';
 import { ThreadAdminResolver } from './resolvers/ThreadPermissions';
+import { ThreadVoteResolver } from './resolvers/ThreadVote';
+import { FriendResolver } from './resolvers/Friend';
 import { GraphQLContext } from './graphql/context';
 import { AIIntentClassifier } from './ai/AIIntentClassifier';
 import {
@@ -292,6 +294,8 @@ async function startServer() {
         ThreadResolver,
         ThreadAdminResolver,
         PostResolver,
+        ThreadVoteResolver,
+        FriendResolver,
       ],
       validate: false,
     });

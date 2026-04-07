@@ -12,6 +12,7 @@ import { GraphQLJSONObject } from 'graphql-scalars';
 import { User } from './User';
 import { Thread } from './Thread';
 import { PostType } from '../graphql/enums/PostType';
+import { Perspective } from '../graphql/enums/Perspective';
 
 @ObjectType()
 @Entity()
@@ -31,6 +32,10 @@ export class Post {
   @Field(() => Boolean)
   @Column({ default: false })
   isPinned!: boolean;
+
+  @Field(() => Perspective)
+  @Column({ type: 'enum', enum: Perspective, default: Perspective.NEUTRAL })
+  perspective!: Perspective;
 
   @Field(() => GraphQLJSONObject, { nullable: true })
   @Column('jsonb', { nullable: true })

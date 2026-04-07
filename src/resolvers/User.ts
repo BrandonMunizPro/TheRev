@@ -1,10 +1,24 @@
-import { InputType, Field, ID } from 'type-graphql';
+import { InputType, Field, ID, Int, ObjectType } from 'type-graphql';
 import { Resolver, Query, Mutation, Arg } from 'type-graphql';
 import { User } from '../entities/User';
 import { UsersModel } from '../models/users.model';
 import { IsOptional, IsString, IsEmail } from 'class-validator';
 import { AppDataSource } from '../data-source';
 import { ErrorHandler } from '../errors/ErrorHandler';
+import { Thread } from '../entities/Thread';
+import { Post } from '../entities/Post';
+
+@ObjectType()
+export class UserStats {
+  @Field(() => Int)
+  threads!: number;
+
+  @Field(() => Int)
+  posts!: number;
+
+  @Field(() => Int)
+  replies!: number;
+}
 
 //WE NEED TO ADD ROLES TO USER AS WELL
 @InputType()
@@ -166,5 +180,32 @@ export class UserResolver {
   ): Promise<User | null> {
     const userRepo = AppDataSource.getRepository(User);
     return userRepo.findOne({ where: { id: userId } });
+  }
+
+  @Query(() => UserStats)
+  async getUserStats(
+    @Arg('userId', () => ID) userId: string
+  ): Promise<UserStats> {
+    const threadRepo = AppDataSource.getRepository(Thread);
+    const postRepo = AppDataSource.getRepository(Post);
+
+    const threads = await threadRepo.count({
+      where: { author: { id: userId } },
+    });
+
+    const posts = await postRepo
+      .createQueryBuilder('post')
+      .leftJoin('post.thread', 'thread')
+      .where('post.authorId = :userId', { userId })
+      .andWhere('post.parent IS NULL')
+      .getCount();
+
+    const replies = await postRepo
+      .createQueryBuilder('post')
+      .where('post.authorId = :userId', { userId })
+      .andWhere('post.parent IS NOT NULL')
+      .getCount();
+
+    return { threads, posts, replies };
   }
 }

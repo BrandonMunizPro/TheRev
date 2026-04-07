@@ -4,6 +4,7 @@ import { PostsModel } from '../models/posts.model';
 import { InputType, Field, ID } from 'type-graphql';
 import { GraphQLContext } from '../graphql/context';
 import { PostType } from '../graphql/enums/PostType';
+import { Perspective } from '../graphql/enums/Perspective';
 import { ErrorHandler } from '../errors/ErrorHandler';
 
 @InputType()
@@ -22,6 +23,9 @@ export class CreatePostInput {
 
   @Field(() => ID, { nullable: true })
   parentId?: string;
+
+  @Field(() => Perspective, { defaultValue: Perspective.NEUTRAL })
+  perspective!: Perspective;
 }
 
 @InputType()
@@ -73,6 +77,9 @@ export class PostQueryInput {
 
   @Field(() => Boolean, { nullable: true })
   pinnedOnly?: boolean;
+
+  @Field(() => Perspective, { nullable: true })
+  perspective?: Perspective;
 }
 
 export type returnedPost = {
@@ -80,6 +87,7 @@ export type returnedPost = {
   type: PostType;
   content?: string;
   isPinned?: boolean;
+  perspective?: Perspective;
   author?: any; // User type
   thread?: any; // Thread type
   parent?: any; // Parent post
@@ -112,10 +120,17 @@ export class PostResolver {
   async postsByThread(
     @Arg('threadId', () => ID) threadId: string,
     @Arg('limit', () => Number, { nullable: true }) limit?: number,
-    @Arg('offset', () => Number, { nullable: true }) offset?: number
+    @Arg('offset', () => Number, { nullable: true }) offset?: number,
+    @Arg('perspective', () => Perspective, { nullable: true })
+    perspective?: Perspective
   ): Promise<returnedPost[] | null> {
     // Read operations don't require authentication
-    return this.model.listPostsByThread({ threadId, limit, offset });
+    return this.model.listPostsByThread({
+      threadId,
+      limit,
+      offset,
+      perspective,
+    });
   }
 
   @Query(() => [Post])
@@ -123,8 +138,6 @@ export class PostResolver {
     @Arg('threadId', () => ID, { nullable: true }) threadId?: string
   ): Promise<returnedPost[] | null> {
     if (!threadId) {
-      // If no threadId provided, return all pinned posts from all threads
-      // This would require a different DAO method, for now return empty array
       return [];
     }
     return this.model.listPostsByThread({
@@ -133,6 +146,14 @@ export class PostResolver {
       offset: undefined,
       pinnedOnly: true,
     });
+  }
+
+  @Query(() => [Post])
+  async myPosts(@Ctx() ctx: GraphQLContext): Promise<returnedPost[] | null> {
+    if (!ctx.user) {
+      return [];
+    }
+    return this.model.getPostsByUser(ctx.user.userId);
   }
 
   @Mutation(() => Post)

@@ -1,7 +1,8 @@
 import { AppDataSource } from '../data-source';
-import { Thread } from '../entities/Thread';
-import { DeepPartial, Repository } from 'typeorm';
+import { Thread, ThreadVoteCounts } from '../entities/Thread';
+import { DeepPartial, In, Repository } from 'typeorm';
 import { ErrorHandler } from '../errors/ErrorHandler';
+import { Perspective } from '../graphql/enums/Perspective';
 
 export class ThreadsDao {
   private get repo(): Repository<Thread> {
@@ -26,8 +27,53 @@ export class ThreadsDao {
       order: {
         isPinned: 'DESC',
         createdAt: 'DESC',
+        posts: {
+          createdAt: 'ASC',
+        },
       },
     });
+  }
+
+  async getVoteCountsForThreads(
+    threadIds: string[]
+  ): Promise<Map<string, ThreadVoteCounts>> {
+    if (threadIds.length === 0) {
+      return new Map();
+    }
+
+    const result = await AppDataSource.query(
+      `
+      SELECT "threadId", perspective, COUNT(*) as count
+      FROM thread_vote
+      WHERE "threadId" = ANY($1)
+      GROUP BY "threadId", perspective
+      `,
+      [threadIds]
+    );
+
+    const voteCountsMap = new Map<string, ThreadVoteCounts>();
+
+    // Initialize all threads with zero counts
+    threadIds.forEach((id) => {
+      voteCountsMap.set(id, { PRO: 0, AGAINST: 0, NEUTRAL: 0, total: 0 });
+    });
+
+    // Populate with actual counts
+    result.forEach((row) => {
+      const counts = voteCountsMap.get(row.threadId);
+      if (counts) {
+        if (row.perspective === Perspective.PRO) {
+          counts.PRO = parseInt(row.count);
+        } else if (row.perspective === Perspective.AGAINST) {
+          counts.AGAINST = parseInt(row.count);
+        } else {
+          counts.NEUTRAL = parseInt(row.count);
+        }
+        counts.total += parseInt(row.count);
+      }
+    });
+
+    return voteCountsMap;
   }
 
   async findById(id: string): Promise<Thread | null> {
@@ -50,7 +96,7 @@ export class ThreadsDao {
       order: {
         posts: {
           isPinned: 'DESC',
-          createdAt: 'DESC',
+          createdAt: 'ASC',
         },
       },
     });
@@ -63,7 +109,7 @@ export class ThreadsDao {
           id: userId,
         },
       },
-      relations: ['author'],
+      relations: ['author', 'posts'],
     });
   }
 
@@ -72,16 +118,35 @@ export class ThreadsDao {
     limit = 20
   ): Promise<Thread[]> {
     // Get threads where user is author OR has posted (participated)
-    return this.repo
+    // First get thread IDs where user participated
+    const participatedThreads = await this.repo
       .createQueryBuilder('thread')
-      .leftJoinAndSelect('thread.author', 'author')
-      .leftJoinAndSelect('thread.posts', 'post')
-      .where('thread.author.id = :userId', { userId })
-      .orWhere('post.author.id = :userId', { userId })
-      .distinct(true)
-      .orderBy('thread.createdAt', 'DESC')
-      .limit(limit)
+      .leftJoin('thread.posts', 'post')
+      .where('thread.author = :userId', { userId })
+      .orWhere('post.author = :userId', { userId })
+      .select('thread.id')
+      .distinct()
       .getMany();
+
+    const threadIds = participatedThreads.map((t) => t.id);
+
+    if (threadIds.length === 0) {
+      return [];
+    }
+
+    // Then fetch full thread data with all relations including parent posts
+    return this.repo.find({
+      where: { id: In(threadIds) },
+      relations: [
+        'author',
+        'posts',
+        'posts.author',
+        'posts.parent',
+        'posts.parent.author',
+      ],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
   }
 
   async createThread(data: Partial<Thread>): Promise<Thread> {

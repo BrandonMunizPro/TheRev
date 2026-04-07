@@ -208,6 +208,19 @@ export class ErrorHandler {
     );
   }
 
+  static notFound(
+    resource: string,
+    identifier: string,
+    details?: ErrorDetails
+  ): NotFoundError {
+    const errorDetails = { ...details, resource, value: identifier };
+    return new NotFoundError(
+      `${resource} not found: ${identifier}`,
+      ErrorCode.USER_NOT_FOUND,
+      errorDetails
+    );
+  }
+
   // Business Logic Errors
   static threadLocked(details?: ErrorDetails): BusinessLogicError {
     return new BusinessLogicError(
