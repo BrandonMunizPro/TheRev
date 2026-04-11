@@ -17,6 +17,9 @@ class TheRevApp {
     this.currentUser = null;
     this.jwtToken = null;
     this.currentNewsType = 'article';
+    this.currentServerId = null;
+    this.currentChannelId = null;
+    this.currentDMUserId = null;
     this.protectedSections = [
       'tasks',
       'analytics',
@@ -1379,6 +1382,10 @@ class TheRevApp {
       console.log('[Nav] Threads button clicked');
       this.switchSection('threads');
     });
+    document.getElementById('messages-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Messages button clicked');
+      this.switchSection('messages');
+    });
     document.getElementById('news-btn')?.addEventListener('click', () => {
       console.log('[Nav] News button clicked');
       this.switchSection('news');
@@ -1508,6 +1515,11 @@ class TheRevApp {
       .getElementById('profile-pic-input')
       ?.addEventListener('change', (e) => this.handleProfilePicUpload(e));
 
+    // Server icon upload
+    document
+      .getElementById('server-icon-upload')
+      ?.addEventListener('change', (e) => this.handleServerIconUpload(e));
+
     // Quick site buttons - also use delegation
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.quick-site-btn');
@@ -1522,6 +1534,25 @@ class TheRevApp {
     document
       .getElementById('new-thread-btn')
       .addEventListener('click', () => this.createNewThread());
+
+    // Messages section buttons
+    document
+      .getElementById('create-server-btn')
+      ?.addEventListener('click', () => this.createServer());
+    document
+      .getElementById('new-dm-btn')
+      ?.addEventListener('click', () => this.openSearchFriendsModal());
+    document
+      .getElementById('add-channel-btn')
+      ?.addEventListener('click', () => this.createChannel());
+    document
+      .getElementById('send-message-btn')
+      ?.addEventListener('click', () => this.sendMessage());
+    document
+      .getElementById('message-input')
+      ?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') this.sendMessage();
+      });
 
     // News source filters
     document.querySelectorAll('.source-btn').forEach((btn) => {
@@ -1895,6 +1926,9 @@ class TheRevApp {
       case 'friends':
         this.loadFriends();
         this.loadPendingRequests();
+        break;
+      case 'messages':
+        this.loadMessages();
         break;
       case 'browser':
         break;
@@ -2455,8 +2489,10 @@ class TheRevApp {
 
         let actionBtn = '';
         if (user.status === 'ACCEPTED') {
-          actionBtn =
-            '<span class="friend-status-badge friends">Friends</span>';
+          actionBtn = `
+            <span class="friend-status-badge friends">Friends</span>
+            <button class="primary-btn small" onclick="theRevApp.openDirectMessageByUserId('${user.userId}')">Message</button>
+          `;
         } else if (user.status === 'PENDING') {
           actionBtn = `<span class="friend-status-badge pending">Pending</span> <button class="danger-btn small" onclick="theRevApp.cancelFriendRequest('${user.id}')">Cancel</button>`;
         } else if (user.status === 'BLOCKED') {
@@ -2480,6 +2516,54 @@ class TheRevApp {
       `;
       })
       .join('');
+  }
+
+  async openDirectMessageByUserId(userId) {
+    console.log('[Messages] Opening DM by userId:', userId);
+    if (userId) {
+      this.closeSearchFriendsModal();
+      await this.openDirectMessage(userId);
+    }
+  }
+
+  async openDirectMessageFromSearch(friendId) {
+    console.log('[Messages] Opening DM from search, friendId:', friendId);
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetFriend($friendId: ID!) {
+              getFriend(friendId: $friendId) {
+                id
+                userId
+                firstName
+                lastName
+              }
+            }
+          `,
+          variables: { friendId },
+        }),
+      });
+
+      const result = await response.json();
+      const friend = result.data?.getFriend;
+      console.log('[Messages] getFriend result:', friend);
+
+      if (friend?.userId) {
+        this.closeSearchFriendsModal();
+        await this.openDirectMessage(friend.userId);
+      } else {
+        console.error('[Messages] No userId found in getFriend result');
+      }
+    } catch (error) {
+      console.error('[Messages] Error getting friend for DM:', error);
+    }
   }
 
   async sendFriendRequest(recipientId) {
@@ -2897,6 +2981,766 @@ class TheRevApp {
 
   closeFriendProfileModal() {
     document.getElementById('friend-profile-modal').classList.remove('active');
+  }
+
+  // ==================== MESSAGES METHODS (DISCORD-STYLE) ====================
+
+  async loadMessages() {
+    console.log('[Messages] Loading messages...');
+    this.loadServers();
+    this.loadConversations();
+  }
+
+  async loadServers() {
+    if (!this.jwtToken || !this.currentUser) {
+      document.getElementById('servers-list').innerHTML =
+        '<div class="empty-state">Please log in to view servers</div>';
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetUserServers($userId: ID!) {
+              getUserServers(userId: $userId) {
+                serverId
+                serverName
+                iconUrl
+                role
+                joinedAt
+                channels {
+                  id
+                  name
+                  type
+                }
+              }
+            }
+          `,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      const servers = result.data?.getUserServers || [];
+      this.renderServersList(servers);
+    } catch (error) {
+      console.error('[Messages] Error loading servers:', error);
+    }
+  }
+
+  renderServersList(servers) {
+    const container = document.getElementById('servers-list');
+    if (servers.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">No servers yet. Create one!</div>';
+      return;
+    }
+
+    container.innerHTML = servers
+      .map((server) => {
+        const iconHtml = server.iconUrl
+          ? `<img src="http://localhost:4000${server.iconUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+          : server.serverName.charAt(0).toUpperCase();
+        return `
+          <div class="server-item" onclick="theRevApp.selectServer('${server.serverId}')">
+            <div class="server-icon">${iconHtml}</div>
+            <span class="server-name">${server.serverName}</span>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  async loadConversations() {
+    if (!this.jwtToken || !this.currentUser) return;
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetConversations($userId: ID!) {
+              getConversations(userId: $userId) {
+                odlFriendId
+                odlFriendUserName
+                odlFriendFirstName
+                odlFriendLastName
+                odlFriendProfilePicUrl
+                odlFriendAvatarUrl
+                lastMessage
+                lastMessageDate
+                unreadCount
+              }
+            }
+          `,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      const conversations = result.data?.getConversations || [];
+      this.renderConversationsList(conversations);
+    } catch (error) {
+      console.error('[Messages] Error loading conversations:', error);
+    }
+  }
+
+  renderConversationsList(conversations) {
+    const container = document.getElementById('conversations-list');
+    if (conversations.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state" style="padding: 12px; font-size: 12px;">No direct messages</div>';
+      return;
+    }
+
+    container.innerHTML = conversations
+      .map(
+        (conv) => `
+        <div class="conversation-item" onclick="theRevApp.openDirectMessage('${conv.odlFriendId}')">
+          <div class="conversation-avatar">${conv.odlFriendFirstName?.charAt(0) || conv.odlFriendUserName?.charAt(0) || '?'}</div>
+          <div class="conversation-info">
+            <div class="conversation-name">${conv.odlFriendFirstName} ${conv.odlFriendLastName || ''}</div>
+            <div class="conversation-preview">${conv.lastMessage?.substring(0, 30) || 'No messages'}...</div>
+          </div>
+          ${conv.unreadCount > 0 ? `<span class="conversation-badge">${conv.unreadCount}</span>` : ''}
+        </div>
+      `
+      )
+      .join('');
+  }
+
+  async selectServer(serverId) {
+    console.log('[Messages] Selecting server:', serverId);
+    this.currentServerId = serverId;
+
+    // Update UI
+    document
+      .querySelectorAll('.server-item')
+      .forEach((item) => item.classList.remove('active'));
+    event?.target?.closest('.server-item')?.classList.add('active');
+
+    // Show server view
+    document.getElementById('messages-welcome').style.display = 'none';
+    document.getElementById('server-view').style.display = 'flex';
+
+    // Load server details and channels
+    await this.loadServerDetails(serverId);
+  }
+
+  async loadServerDetails(serverId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetServer($serverId: ID!, $userId: ID) {
+              getServer(serverId: $serverId, userId: $userId) {
+                id
+                name
+                description
+                type
+                iconUrl
+                channels {
+                  id
+                  name
+                  type
+                  description
+                }
+                memberCount
+                userRole
+              }
+            }
+          `,
+          variables: { serverId, userId: this.currentUser?.id },
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[Messages] Server details:', result);
+      const server = result.data?.getServer;
+
+      if (server) {
+        document.getElementById('server-name').textContent = server.name;
+        console.log('[Messages] Channels:', server.channels);
+        this.renderChannelsList(server.channels || []);
+      }
+    } catch (error) {
+      console.error('[Messages] Error loading server:', error);
+    }
+  }
+
+  renderChannelsList(channels) {
+    const container = document.getElementById('channels-list');
+    if (channels.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state" style="padding: 8px; font-size: 12px;">No channels yet</div>';
+      return;
+    }
+
+    container.innerHTML = channels
+      .filter((c) => c.type === 'TEXT' || c.type === 'ANNOUNCEMENT')
+      .map((channel) => {
+        const icon = channel.type === 'ANNOUNCEMENT' ? '📌' : '#';
+        return `
+          <div class="channel-item" onclick="theRevApp.selectChannel('${channel.id}', '${channel.name}')">
+            <span class="channel-hash">${icon}</span>
+            <span>${channel.name}</span>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  async selectChannel(channelId, channelName) {
+    console.log('[Messages] Selecting channel:', channelId, channelName);
+    this.currentChannelId = channelId;
+
+    // Update UI
+    document
+      .querySelectorAll('.channel-item')
+      .forEach((item) => item.classList.remove('active'));
+    event?.target?.closest('.channel-item')?.classList.add('active');
+
+    // Update header
+    document.getElementById('channel-name').textContent = channelName;
+    document.getElementById('message-input').placeholder =
+      `Message #${channelName}`;
+
+    // Load messages
+    await this.loadChannelMessages(channelId);
+  }
+
+  async loadChannelMessages(channelId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetChannelMessages($channelId: ID!, $limit: Float) {
+              getChannelMessages(channelId: $channelId, limit: $limit) {
+                id
+                content
+                senderId
+                senderUserName
+                senderFirstName
+                senderLastName
+                senderAvatarUrl
+                isRead
+                reactions {
+                  emoji
+                  users
+                }
+                createdAt
+              }
+            }
+          `,
+          variables: { channelId, limit: 50 },
+        }),
+      });
+
+      const result = await response.json();
+      const messages = result.data?.getChannelMessages || [];
+      this.renderChannelMessages(messages);
+    } catch (error) {
+      console.error('[Messages] Error loading messages:', error);
+    }
+  }
+
+  renderChannelMessages(messages) {
+    const container = document.getElementById('channel-messages');
+    console.log(
+      '[Messages] renderChannelMessages called, container:',
+      container,
+      'messages:',
+      messages
+    );
+
+    if (!container) {
+      console.error('[Messages] channel-messages container not found!');
+      return;
+    }
+
+    if (messages.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">No messages yet. Start the conversation!</div>';
+      return;
+    }
+
+    container.innerHTML = messages
+      .map(
+        (msg) => `
+        <div class="message-item">
+          <div class="message-avatar">${msg.senderFirstName?.charAt(0) || msg.senderUserName?.charAt(0) || '?'}</div>
+          <div class="message-content">
+            <div class="message-header">
+              <span class="message-author">${msg.senderFirstName} ${msg.senderLastName || ''}</span>
+              <span class="message-timestamp">${new Date(msg.createdAt).toLocaleTimeString()}</span>
+            </div>
+            <div class="message-text">${msg.content}</div>
+            ${
+              msg.reactions?.length
+                ? `
+              <div class="message-reactions">
+                ${msg.reactions.map((r) => `<span class="reaction-badge">${r.emoji} ${r.users.length}</span>`).join('')}
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `
+      )
+      .join('');
+  }
+
+  async openDirectMessage(otherUserId) {
+    console.log('[Messages] Opening DM with:', otherUserId);
+    this.currentDMUserId = otherUserId;
+
+    // Show server view without server (for DMs)
+    document.getElementById('messages-welcome').style.display = 'none';
+    document.getElementById('server-view').style.display = 'flex';
+    document.getElementById('channels-sidebar').style.display = 'none';
+    document.getElementById('members-sidebar').style.display = 'none';
+    document.getElementById('message-input').placeholder = 'Type a message...';
+
+    // Get recipient info and show in header
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetUser($id: ID!) {
+              getUser(id: $id) {
+                firstName
+                lastName
+                userName
+                profilePicUrl
+                avatarUrl
+              }
+            }
+          `,
+          variables: { id: otherUserId },
+        }),
+      });
+
+      const result = await response.json();
+      const user = result.data?.getUser;
+      if (user) {
+        const header = document.getElementById('channel-header');
+        const avatarUrl = user.profilePicUrl || user.avatarUrl;
+        const avatarImg = avatarUrl
+          ? avatarUrl.startsWith('http')
+            ? avatarUrl
+            : `http://localhost:4000${avatarUrl}`
+          : '';
+
+        header.innerHTML = avatarImg
+          ? `<img src="${avatarImg}" class="dm-avatar" onerror="this.style.display='none'" />`
+          : `<div class="dm-avatar-placeholder">${user.firstName?.charAt(0) || '?'}</div>`;
+        header.innerHTML += `<span>@${user.userName}</span>`;
+      }
+    } catch (error) {
+      console.error('[Messages] Error getting recipient:', error);
+      document.getElementById('channel-name').textContent = 'Direct Message';
+    }
+
+    await this.loadDirectMessages(otherUserId);
+  }
+
+  async loadDirectMessages(otherUserId) {
+    console.log('[Messages] Loading DM with user:', otherUserId);
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query GetDirectMessages($userId: ID!, $otherUserId: ID!, $limit: Float) {
+              getDirectMessages(userId: $userId, otherUserId: $otherUserId, limit: $limit) {
+                id
+                content
+                senderId
+                senderUserName
+                senderFirstName
+                senderLastName
+                senderAvatarUrl
+                isRead
+                createdAt
+              }
+            }
+          `,
+          variables: { userId: this.currentUser.id, otherUserId, limit: 50 },
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[Messages] DM response:', result);
+
+      if (result.errors) {
+        console.error(
+          '[Messages] DM errors:',
+          JSON.stringify(result.errors, null, 2)
+        );
+      }
+
+      const messages = result.data?.getDirectMessages || [];
+      console.log('[Messages] DM messages:', messages);
+      this.renderChannelMessages(messages);
+    } catch (error) {
+      console.error('[Messages] Error loading DM:', error);
+    }
+  }
+
+  async sendMessage() {
+    const input = document.getElementById('message-input');
+    const content = input.value.trim();
+    if (!content || !this.currentUser) return;
+
+    console.log(
+      '[Messages] sendMessage called, currentDMUserId:',
+      this.currentDMUserId
+    );
+
+    try {
+      const variables = {
+        senderId: this.currentUser.id,
+        data: { content },
+      };
+
+      // Add channel/server or recipient based on context
+      if (this.currentChannelId) {
+        variables.data.channelId = this.currentChannelId;
+      }
+      if (this.currentServerId) {
+        variables.data.serverId = this.currentServerId;
+      }
+      if (this.currentDMUserId) {
+        variables.data.recipientId = this.currentDMUserId;
+      }
+
+      console.log('[Messages] Sending with variables:', variables);
+
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation SendMessage($senderId: ID!, $data: SendMessageInput!) {
+              sendMessage(senderId: $senderId, data: $data) {
+                id
+                content
+                senderId
+                senderUserName
+                senderFirstName
+                createdAt
+              }
+            }
+          `,
+          variables,
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[Messages] sendMessage result:', result);
+
+      if (result.errors) {
+        console.error('[Messages] sendMessage errors:', result.errors);
+      }
+
+      if (result.data?.sendMessage) {
+        input.value = '';
+        // Reload messages
+        if (this.currentChannelId) {
+          this.loadChannelMessages(this.currentChannelId);
+        } else if (this.currentDMUserId) {
+          this.loadDirectMessages(this.currentDMUserId);
+        }
+      }
+    } catch (error) {
+      console.error('[Messages] Error sending message:', error);
+    }
+  }
+
+  async createServer() {
+    document.getElementById('create-server-modal').style.display = 'flex';
+  }
+
+  closeCreateServerModal() {
+    document.getElementById('create-server-modal').style.display = 'none';
+    document.getElementById('server-name-input').value = '';
+    document.getElementById('server-description-input').value = '';
+    document.getElementById('server-type-input').value = 'PUBLIC';
+  }
+
+  async submitCreateServer() {
+    const name = document.getElementById('server-name-input').value.trim();
+    const description = document
+      .getElementById('server-description-input')
+      .value.trim();
+    const type = document.getElementById('server-type-input').value;
+
+    if (!name || !this.currentUser) {
+      alert('Please enter a server name');
+      return;
+    }
+
+    try {
+      const serverData = { name, description, type };
+      if (this._serverIconBase64) {
+        serverData.iconBase64 = this._serverIconBase64;
+      }
+
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation CreateServer($data: CreateServerInput!, $userId: ID!) {
+              createServer(data: $data, userId: $userId) {
+                id
+                name
+                iconUrl
+                channels {
+                  id
+                  name
+                }
+              }
+            }
+          `,
+          variables: {
+            data: serverData,
+            userId: this.currentUser.id,
+          },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.data?.createServer) {
+        this._serverIconBase64 = null;
+        this.closeCreateServerModal();
+        this.loadServers();
+        this.showSpeechBubble('Server created!', 3000);
+      } else if (result.errors) {
+        alert('Error creating server: ' + result.errors[0].message);
+      }
+    } catch (error) {
+      console.error('[Messages] Error creating server:', error);
+      alert('Failed to create server');
+    }
+  }
+
+  showInviteUsersModal() {
+    if (!this.currentServerId) {
+      alert('Select a server first');
+      return;
+    }
+    document.getElementById('invite-users-modal').style.display = 'flex';
+    document.getElementById('invite-search-input').value = '';
+    document.getElementById('invite-search-results').innerHTML =
+      '<p class="search-hint">Type a username to search</p>';
+  }
+
+  closeInviteUsersModal() {
+    document.getElementById('invite-users-modal').style.display = 'none';
+  }
+
+  async searchUsersForInvite(query) {
+    if (!query || query.length < 2) {
+      document.getElementById('invite-search-results').innerHTML =
+        '<p class="search-hint">Type at least 2 characters</p>';
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            query SearchUsers($query: String!, $userId: ID!, $limit: Float) {
+              searchUsers(query: $query, userId: $userId, limit: $limit) {
+                id
+                userName
+                firstName
+                lastName
+                profilePicUrl
+              }
+            }
+          `,
+          variables: { query, userId: this.currentUser.id, limit: 20 },
+        }),
+      });
+
+      const result = await response.json();
+      const users = result.data?.searchUsers || [];
+
+      if (users.length === 0) {
+        document.getElementById('invite-search-results').innerHTML =
+          '<p class="search-hint">No users found</p>';
+        return;
+      }
+
+      document.getElementById('invite-search-results').innerHTML = users
+        .map((user) => {
+          const profilePic = user.profilePicUrl
+            ? user.profilePicUrl.startsWith('http')
+              ? user.profilePicUrl
+              : `http://localhost:4000${user.profilePicUrl}`
+            : '';
+          return `
+          <div class="friend-card search-result">
+            <div class="friend-avatar">
+              <img src="${profilePic || 'assets/default-avatar.svg'}" alt="${user.userName}" onerror="this.src='assets/default-avatar.svg'" />
+            </div>
+            <div class="friend-info">
+              <div class="friend-name">${user.firstName} ${user.lastName || ''}</div>
+              <div class="friend-username">@${user.userName}</div>
+            </div>
+            <div class="friend-actions">
+              <button class="primary-btn small" onclick="theRevApp.inviteUserToServer('${user.id}')">Invite</button>
+            </div>
+          </div>
+        `;
+        })
+        .join('');
+    } catch (error) {
+      console.error('[Messages] Error searching users:', error);
+    }
+  }
+
+  async inviteUserToServer(userId) {
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation JoinServer($data: JoinServerInput!) {
+              joinServer(data: $data)
+            }
+          `,
+          variables: { data: { serverId: this.currentServerId, userId } },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.data?.joinServer) {
+        this.showSpeechBubble('User invited to server!', 3000);
+        this.searchUsersForInvite(
+          document.getElementById('invite-search-input').value
+        );
+      } else if (result.errors) {
+        alert('Error inviting user: ' + result.errors[0].message);
+      }
+    } catch (error) {
+      console.error('[Messages] Error inviting user:', error);
+    }
+  }
+
+  async createChannel() {
+    document.getElementById('create-channel-modal').style.display = 'flex';
+  }
+
+  closeCreateChannelModal() {
+    document.getElementById('create-channel-modal').style.display = 'none';
+    document.getElementById('channel-name-input').value = '';
+    document.getElementById('channel-description-input').value = '';
+    document.getElementById('channel-type-input').value = 'TEXT';
+  }
+
+  async submitCreateChannel() {
+    if (!this.currentServerId) {
+      alert('Select a server first');
+      return;
+    }
+
+    const name = document.getElementById('channel-name-input').value.trim();
+    const description = document
+      .getElementById('channel-description-input')
+      .value.trim();
+    const type = document.getElementById('channel-type-input').value;
+
+    if (!name) {
+      alert('Please enter a channel name');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation CreateChannel($data: CreateChannelInput!) {
+              createChannel(data: $data) {
+                id
+                name
+              }
+            }
+          `,
+          variables: {
+            data: {
+              name,
+              description,
+              type,
+              serverId: this.currentServerId,
+            },
+          },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.data?.createChannel) {
+        this.closeCreateChannelModal();
+        this.loadServerDetails(this.currentServerId);
+        this.showSpeechBubble('Channel created!', 3000);
+      } else if (result.errors) {
+        alert('Error creating channel: ' + result.errors[0].message);
+      }
+    } catch (error) {
+      console.error('[Messages] Error creating channel:', error);
+    }
   }
 
   async loadProfile() {
@@ -3709,6 +4553,49 @@ class TheRevApp {
     }
 
     this.setupAvatarUI();
+  }
+
+  async preloadAvatarScene() {
+    console.log('[Avatar] Preloading avatar scene in background');
+
+    try {
+      // Get cached VRM if available
+      let vrmUrl = this._tabCache.avatar.vrmDataUrl;
+      let fileName = this._tabCache.avatar.fileName;
+
+      // If not cached, try to load saved avatar
+      if (!vrmUrl && window.electronAPI) {
+        const savedAvatar = await window.electronAPI.getAvatarData();
+        if (savedAvatar && savedAvatar.fileName) {
+          const vrmResult = await window.electronAPI.loadVrmFile(
+            savedAvatar.fileName
+          );
+          if (vrmResult.success && vrmResult.dataUrl) {
+            vrmUrl = vrmResult.dataUrl;
+            fileName = savedAvatar.fileName;
+          }
+        }
+      }
+
+      if (!vrmUrl) {
+        console.log('[Avatar] No avatar to preload');
+        return;
+      }
+
+      // Preload into avatar section (which has animations)
+      await this.renderAvatar3D(vrmUrl, 'avatar-3d-container');
+
+      // Cache for profile too
+      this._tabCache.avatar = {
+        loaded: true,
+        vrmDataUrl: vrmUrl,
+        fileName: fileName,
+      };
+
+      console.log('[Avatar] Preload complete');
+    } catch (error) {
+      console.log('[Avatar] Preload failed:', error);
+    }
   }
 
   setupAvatarUI() {
@@ -6913,6 +7800,37 @@ class TheRevApp {
     }
 
     // Reset input so same file can be selected again
+    event.target.value = '';
+  }
+
+  _serverIconBase64 = null;
+
+  async handleServerIconUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be less than 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      this._serverIconBase64 = reader.result;
+
+      // Update preview
+      const preview = document.getElementById('server-icon-preview');
+      if (preview) {
+        preview.innerHTML = `<img src="${reader.result}" style="width: 100%; height: 100%; object-fit: cover;">`;
+      }
+    };
+    reader.readAsDataURL(file);
+
     event.target.value = '';
   }
 

@@ -1,87 +1,178 @@
-# therev - AI Avatar Social Media Platform
+# TheRev - AI Avatar Social Media Platform
 
 ## Vision
 
-therev is an enterprise social media platform where users interact through **AI avatars** powered by multiple AI providers (ChatGPT, Claude, Gemini, Perplexity). The system features intelligent AI intent routing, automatic fallback strategies, and a production-grade sharded architecture designed for massive scale.
+TheRev is a revolutionary social media platform designed to **revolutionize how people interact** - built for community, learning, and authentic expression. Unlike corporate social media that pushes mainstream narratives, TheRev empowers real journalists and independent thinkers who question the status quo.
+
+Through **customizable AI avatars**, users express themselves uniquely while an **AI personal assistant** helps navigate the information landscape. The platform connects people with authentic voices who challenge financial globalization rather than parrot the opinions of those who control it.
+
+### Our Mission
+
+> _"The Rev starts with you!"_
+
+We're building a platform where:
+
+- **Community comes first** - Connect with genuine people, not algorithms
+- **Learning is continuous** - Share knowledge and grow together
+- **Voice is authentic** - Express yourself through a customizable avatar
+- **Truth matters** - Real journalists over mainstream parrots
 
 ### Tech Stack
 
 - **Backend**: Node.js with TypeScript
-- **Database**: PostgreSQL with TypeORM
-- **Caching**: Redis Cluster
+- **Database**: PostgreSQL (TypeORM)
+- **Caching**: Redis
 - **API**: GraphQL with Type-GraphQL
-- **Testing**: Jest with comprehensive test coverage with containerized Integration tests
 - **Frontend**: Electron desktop application
-- **Browser**: Playwright automation for AI-controlled browsing
+- **AI**: Multiple providers (Ollama local, OpenAI, Claude, Gemini, Perplexity)
+- **Avatar**: VRM 3D avatars with animations
+
+### Prerequisites
+
+```bash
+# Install Node.js (v18+)
+# Install Docker Desktop
+# Install Ollama (optional, for local AI)
+```
 
 ### Quick Start
 
+#### 1. Clone and Install
+
 ```bash
-# Clone repository
 git clone https://github.com/your-org/therev.git
 cd therev
-
-# Install dependencies
 npm install
+```
 
-# Set up environment variables
+#### 2. Set Up Environment
+
+```bash
 cp .env.example .env
-# Edit .env with your database and Redis credentials
+# Edit .env with your settings
+```
 
-# Start services (Docker Compose)
-docker-compose up -d postgres redis
+#### 3. Start Database (Docker)
 
-# Run database migrations
+```bash
+# Start PostgreSQL in Docker
+docker run -d --name therev-postgres \
+  -e POSTGRES_PASSWORD=yourpassword \
+  -e POSTGRES_DB=therev \
+  -p 5432:5432 \
+  postgres:15
+
+# Run migrations to your Docker database
 npm run migration:run
 ```
 
-### Running the App
-
-#### Option 1: Full Development (recommended)
+#### 4. Run the Full App
 
 ```bash
-# Terminal 1: Start browser automation server (required for AI browsing)
-node src/browser/automation-server.cjs
-
-# Terminal 2: Start backend
-npm run start:dev
-
-# Terminal 3: Start Electron app
-npm run electron:dev
+# This runs everything: backend + Electron
+npm run electron:full:dev
 ```
 
-#### Option 2: Quick Start
-
-```bash
-# This runs both backend and Electron concurrently
-npm run electron:dev
-```
+> **Note**: If you want to run services separately:
+>
+> ```bash
+> # Terminal 1: Backend
+> npm run start:dev
+>
+> # Terminal 2: Electron
+> npm run electron:dev
+> ```
 
 ### Features
 
-#### AI Browser Integration
+#### 🗣️ Voice-Controlled AI Browser
 
-- **Natural Language Commands**: Tell Rev what to do - "Go to Gmail and search for meeting emails"
+- **Natural Language Commands**: Tell Rev what to do - "Go to Youtube and find latest news"
 - **Smart Action Planning**: AI analyzes pages and suggests actions
-- **User Approval Workflow**: AI asks before executing risky actions (typing, clicking submit)
-- **Risk Assessment**: Each action is rated (SAFE → CRITICAL) for security
+- **User Approval Workflow**: AI asks before executing actions
+- **30+ Website Support**: Instant navigation to major news sites
 
-#### Multi-AI Provider Support
+#### 🤖 Multi-AI Provider Support
 
-- ChatGPT (OpenAI)
-- Claude (Anthropic)
-- Gemini (Google)
-- Perplexity
-- Ollama (Local/open-source)
+- **Ollama** (local/open-source) - Default, runs on your machine
+- **ChatGPT** (OpenAI)
+- **Claude** (Anthropic)
+- **Gemini** (Google)
+- **Perplexity**
 
-#### Smart Fallback
+_Smart fallback automatically switches providers when one is rate-limited_
 
-- Automatically switches providers when one is rate-limited or fails
-- Circuit breaker prevents cascading failures
-- Health-weighted routing for best performance
+#### 🎬 VRM Avatar System
+
+- **45+ Animations**: Idle, Dance, Walk, Fight, Sports, Music, and more
+- **Customizable**: Upload your own VRM model from VRoid Studio
+- **Expression**: Avatar reacts to content sentiment
+- **Profile Integration**: Your avatar appears on your profile
+
+#### 📰 Perspective Threads
+
+- **Three Perspectives**: Pro / Against / Neutral
+- **Threaded Discussions**: Nested replies
+- **Media Support**: YouTube videos, links, images
+- **Community Moderation**: Vote-Based system
+
+#### 💬 Servers & Channels (Discord-like)
+
+- **Create Servers**: Build your community
+- **Text Channels**: General, announcements, topics
+- **Voice Channels**: Coming soon
+- **Server Icons**: Upload custom icons
+
+#### 👥 Friends & Social
+
+- **Friend Requests**: Send/accept/decline
+- **Activity Feed**: See what friends are posting
+- **Profile Pages**: Custom avatars and bios
+
+#### 📊 Analytics Dashboard
+
+- **Thread Analytics**: Engagement metrics
+- **User Activity**: Participation stats
+- **Shard Health**: Database monitoring
+
+### Project Structure
+
+```
+therev/
+├── src/
+│   ├── electron/           # Electron app
+│   │   └── frontend/     # UI (HTML/CSS/JS)
+│   ├── entities/          # Database entities
+│   ├── resolvers/        # GraphQL resolvers
+│   ├── models/          # Data models
+│   ├── ai/              # AI routing & intents
+│   ├── browser/          # Playwright automation
+│   └── data-source.ts   # Database config
+├── uploads/             # User uploads
+├── animations/          # VRM animations
+├── package.json
+└── README.md
+```
+
+### Commands
+
+| Command                      | Description          |
+| ---------------------------- | -------------------- |
+| `npm run start:dev`          | Start backend only   |
+| `npm run electron:dev`       | Start Electron only  |
+| `npm run electron:full:dev`  | Start full app       |
+| `npm run migration:generate` | Create new migration |
+| `npm run migration:run`      | Run migrations       |
+| `npm run typecheck`          | TypeScript check     |
 
 ---
 
 <div align="center">
-  <strong>Built with ❤️ for the future of AI powered social interaction</strong>
+
+### Built with ❤️ for authentic voices
+
+**The Rev starts with you!**
+
+_Questioning the narrative, empowering the community._
+
 </div>

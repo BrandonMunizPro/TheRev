@@ -9,12 +9,25 @@ import {
 } from 'typeorm';
 import { ObjectType, Field, ID } from 'type-graphql';
 import { User } from './User';
+import { Channel } from './Channel';
+import { Server } from './Server';
+
+@ObjectType()
+export class Reaction {
+  @Field()
+  emoji!: string;
+
+  @Field(() => [String])
+  users!: string[];
+}
 
 @ObjectType()
 @Entity('message')
 @Index('idx_message_sender', ['senderId'])
 @Index('idx_message_recipient', ['recipientId'])
 @Index('idx_message_conversation', ['senderId', 'recipientId'])
+@Index('idx_message_channel', ['channelId'])
+@Index('idx_message_server', ['serverId'])
 export class Message {
   @Field(() => ID)
   @PrimaryGeneratedColumn('uuid')
@@ -24,9 +37,9 @@ export class Message {
   @Column({ name: 'sender_id' })
   senderId!: string;
 
-  @Field(() => ID)
-  @Column({ name: 'recipient_id' })
-  recipientId!: string;
+  @Field(() => ID, { nullable: true })
+  @Column({ name: 'recipient_id', nullable: true })
+  recipientId?: string;
 
   @Field()
   @Column({ type: 'text' })
@@ -40,6 +53,25 @@ export class Message {
   @CreateDateColumn({ name: 'created_at' })
   createdAt?: Date;
 
+  // Server/Channel fields for Discord-style messaging
+  @Field({ nullable: true })
+  @Column({ nullable: true, name: 'server_id' })
+  serverId?: string;
+
+  @Field({ nullable: true })
+  @Column({ nullable: true, name: 'channel_id' })
+  channelId?: string;
+
+  // Discordstyle: thread reference for threaded conversations
+  @Field({ nullable: true })
+  @Column({ nullable: true, name: 'thread_id' })
+  threadId?: string;
+
+  // Reactions (JSON array for Discord style emoji reactions)
+  @Field(() => [Reaction], { nullable: true })
+  @Column({ type: 'jsonb', nullable: true })
+  reactions?: Reaction[];
+
   @ManyToOne(() => User, { eager: true })
   @JoinColumn({ name: 'sender_id' })
   sender?: User;
@@ -47,6 +79,14 @@ export class Message {
   @ManyToOne(() => User, { eager: true })
   @JoinColumn({ name: 'recipient_id' })
   recipient?: User;
+
+  @ManyToOne(() => Server, { nullable: true })
+  @JoinColumn({ name: 'server_id' })
+  server?: Server;
+
+  @ManyToOne(() => Channel, { nullable: true })
+  @JoinColumn({ name: 'channel_id' })
+  channel?: Channel;
 }
 
 @ObjectType()

@@ -9,7 +9,6 @@ import {
 import { Field, ID, ObjectType } from 'type-graphql';
 import { User } from './User';
 import { Thread } from './Thread';
-import { Perspective } from '../graphql/enums/Perspective';
 
 @ObjectType()
 @Entity()
@@ -19,9 +18,9 @@ export class ThreadVote {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Field(() => Perspective)
-  @Column({ type: 'enum', enum: Perspective })
-  perspective!: Perspective;
+  @Field()
+  @Column({ type: 'varchar', length: 20, default: 'NEUTRAL' })
+  perspective!: string;
 
   @Field(() => User)
   @ManyToOne(() => User, { onDelete: 'CASCADE' })

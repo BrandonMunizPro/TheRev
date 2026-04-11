@@ -15,6 +15,8 @@ import { PostResolver } from './resolvers/Post';
 import { ThreadAdminResolver } from './resolvers/ThreadPermissions';
 import { ThreadVoteResolver } from './resolvers/ThreadVote';
 import { FriendResolver } from './resolvers/Friend';
+import { ServerResolver } from './resolvers/Server';
+import { MessageResolver } from './resolvers/Message';
 import { GraphQLContext } from './graphql/context';
 import { AIIntentClassifier } from './ai/AIIntentClassifier';
 import {
@@ -296,6 +298,8 @@ async function startServer() {
         PostResolver,
         ThreadVoteResolver,
         FriendResolver,
+        ServerResolver,
+        MessageResolver,
       ],
       validate: false,
     });
@@ -314,11 +318,15 @@ async function startServer() {
     // Serve uploaded files
     const uploadsDir = path.join(__dirname, '..', 'uploads');
     const uploadsProfilesDir = path.join(uploadsDir, 'profiles');
+    const uploadsServersDir = path.join(uploadsDir, 'servers');
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
     if (!fs.existsSync(uploadsProfilesDir)) {
       fs.mkdirSync(uploadsProfilesDir, { recursive: true });
+    }
+    if (!fs.existsSync(uploadsServersDir)) {
+      fs.mkdirSync(uploadsServersDir, { recursive: true });
     }
     app.use('/uploads', express.static(uploadsDir));
 
@@ -1061,6 +1069,40 @@ async function startServer() {
         res.json({ success: true, imageUrl: imageUrl });
       } catch (error) {
         console.error('[Profile] Upload error:', error);
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // Server Icon Upload Endpoint
+    app.post('/api/server/icon/upload', async (req, res) => {
+      try {
+        const { imageBase64, serverId, fileName } = req.body;
+
+        if (!imageBase64) {
+          return res
+            .status(400)
+            .json({ success: false, error: 'No image provided' });
+        }
+
+        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+
+        let extension = 'jpg';
+        if (imageBase64.includes('image/png')) extension = 'png';
+        else if (imageBase64.includes('image/gif')) extension = 'gif';
+        else if (imageBase64.includes('image/webp')) extension = 'webp';
+
+        const uniqueName = `server_${serverId || 'new'}_${Date.now()}.${extension}`;
+        const filePath = path.join(uploadsServersDir, uniqueName);
+
+        fs.writeFileSync(filePath, imageBuffer);
+
+        const imageUrl = `/uploads/servers/${uniqueName}`;
+        console.log(`[Server] Uploaded icon: ${imageUrl}`);
+
+        res.json({ success: true, imageUrl: imageUrl });
+      } catch (error) {
+        console.error('[Server] Icon upload error:', error);
         res.status(500).json({ success: false, error: error.message });
       }
     });

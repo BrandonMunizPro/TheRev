@@ -9,6 +9,10 @@ import { TaskEntity, TaskEvent, TaskMetrics, Worker } from './entities/Task';
 import { NewsArticle } from './entities/NewsArticle';
 import { ThreadVote } from './entities/ThreadVote';
 import { Friend } from './entities/Friend';
+import { Server } from './entities/Server';
+import { Channel } from './entities/Channel';
+import { ServerMember } from './entities/ServerMember';
+import { Message } from './entities/Message';
 import {
   MigrationState,
   UserStorageLocation,
@@ -30,7 +34,7 @@ export const AppDataSource = new DataSource({
   database:
     process.env.DB_DATABASE ||
     (isTest ? process.env.DB_TEST_DATABASE : process.env.DB_DATABASE),
-  synchronize: isTest, // true for tests, false for production
+  synchronize: true, // true for development to auto-create tables
   logging: isDevelopment,
   entities: [
     User,
@@ -47,6 +51,10 @@ export const AppDataSource = new DataSource({
     NewsArticle,
     ThreadVote,
     Friend,
+    Server,
+    Channel,
+    ServerMember,
+    Message,
   ],
   migrations: isTest ? undefined : ['./src/migrations/*.ts'],
   subscribers: [],

@@ -767,6 +767,7 @@
           src="about:blank"
           partition="persist:ai-browser"
           allowpopups="true"
+          useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ></webview>
         <div class="page-info" id="pageInfo">Navigate to a page to start</div>
       </div>
@@ -1473,21 +1474,45 @@
           const result = await browserFrame.executeJavaScript(`
             (function() {
               const fields = [];
-              const inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
+              
+              // Get all input, textarea, and contenteditable elements
+              const inputs = document.querySelectorAll('input:not([type=hidden]), textarea, [contenteditable="true"], [role="textbox"], .editable');
+              
+              // For Gmail specifically - find the compose textarea
+              const gmailCompose = document.querySelector('.Am.Al.editable');
+              if (gmailCompose) {
+                fields.push({
+                  index: 0,
+                  type: 'gmail-compose',
+                  name: 'gmail-compose',
+                  placeholder: '',
+                  label: 'Gmail Message Body'
+                });
+              }
 
               inputs.forEach((input, i) => {
                 // Skip hidden fields
                 if (input.offsetParent === null) return;
+                
+                // Skip Gmail's search box and other non-compose fields
+                const classes = input.className || '';
+                if (classes.includes('search') || input.name === 'q' || input.id === 'gbqfq') return;
 
                 // Get field info
                 const info = {
-                  index: i,
+                  index: fields.length,
                   type: input.tagName.toLowerCase(),
                   inputType: input.type || 'text',
                   name: input.name || input.id || '',
                   placeholder: input.placeholder || '',
                   label: ''
                 };
+
+                // Check if it's contenteditable
+                if (input.getAttribute('contenteditable') === 'true' || input.isContentEditable) {
+                  info.type = 'contenteditable';
+                  info.label = 'Editable area';
+                }
 
                 // Try to find label
                 const labelEl = document.querySelector('label[for="' + input.id + '"]');
@@ -1516,6 +1541,100 @@
           console.error('[Write] Error finding fields:', e);
           return [];
         }
+      }
+
+      // Smart field selection based on context
+      async function smartFillField(message) {
+        const fields = await findFormFields();
+
+        if (fields.length === 0) {
+          return { success: false, error: 'No form fields found' };
+        }
+
+        // Check for reply/compose context
+        const lowerMessage = message.toLowerCase();
+        const isReply =
+          lowerMessage.includes('reply') ||
+          lowerMessage.includes('respond') ||
+          lowerMessage.includes('send') ||
+          lowerMessage.includes('message');
+
+        // For Gmail compose field
+        const gmailField = fields.find(
+          (f) => f.type === 'gmail-compose' || f.name === 'gmail-compose'
+        );
+        if (gmailField) {
+          const content = message
+            .replace(/^(reply|respond|send|message|write|fill)\s*/i, '')
+            .replace(/^(to|with|in)\s*/i, '');
+
+          const fillResult = await browserFrame.executeJavaScript(`
+            (function() {
+              const compose = document.querySelector('.Am.Al.editable');
+              if (compose) {
+                compose.focus();
+                compose.innerText = '${content.replace(/'/g, "\\'")}';
+                compose.dispatchEvent(new Event('input', {bubbles: true}));
+                return { success: true, field: 'Gmail compose' };
+              }
+              return { success: false };
+            })()
+          `);
+          return fillResult;
+        }
+
+        // For general contenteditable areas
+        const editableField = fields.find((f) => f.type === 'contenteditable');
+        if (editableField) {
+          const content = message
+            .replace(/^(reply|respond|send|message|write|fill)\s*/i, '')
+            .replace(/^(to|with|in)\s*/i, '');
+
+          const fillResult = await browserFrame.executeJavaScript(`
+            (function() {
+              const inputs = document.querySelectorAll('[contenteditable="true"], [role="textbox"]');
+              for (let input of inputs) {
+                if (input.offsetParent !== null && input.innerText.length < 1000) {
+                  input.focus();
+                  input.innerText = '${content.replace(/'/g, "\\'")}';
+                  input.dispatchEvent(new Event('input', {bubbles: true}));
+                  return { success: true, field: 'contenteditable' };
+                }
+              }
+              return { success: false };
+            })()
+          `);
+          return fillResult;
+        }
+
+        // Fallback: fill first text input
+        const firstTextField = fields.find(
+          (f) => f.type === 'input' && f.inputType === 'text'
+        );
+        if (firstTextField) {
+          const content = message
+            .replace(/^(reply|respond|send|message|write|fill)\s*/i, '')
+            .replace(/^(to|with|in)\s*/i, '');
+
+          const fillResult = await browserFrame.executeJavaScript(`
+            (function() {
+              const inputs = document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]), textarea');
+              for (let input of inputs) {
+                if (input.offsetParent !== null && input.type !== 'submit' && input.type !== 'button' && input.name !== 'q') {
+                  input.focus();
+                  input.value = '${content.replace(/'/g, "\\'")}';
+                  input.dispatchEvent(new Event('input', {bubbles: true}));
+                  input.dispatchEvent(new Event('change', {bubbles: true}));
+                  return { success: true, field: input.name || input.id || 'text input' };
+                }
+              }
+              return { success: false };
+            })()
+          `);
+          return fillResult;
+        }
+
+        return { success: false, error: 'No suitable field found' };
       }
       async function sendMessage() {
         const message = chatInput.value.trim();
@@ -1546,58 +1665,34 @@
         // Check for write intent
         if (writeModeEnabled && detectWriteIntent(message)) {
           try {
-            // Find form fields on the page
-            const fields = await findFormFields();
-
-            if (fields.length === 0) {
-              addMessage(
-                'ai',
-                "I couldn't find any form fields on this page to write to. Try navigating to a page with a form first."
-              );
-              setThinking(false);
-              return;
-            }
-
-            // Ask for confirmation before writing
-            const fieldList = fields
-              .map(
-                (f, i) =>
-                  `${i + 1}. ${f.label || f.name || f.inputType} (${f.type})`
-              )
-              .join('\n');
-            addMessage(
-              'ai',
-              `<strong>Found ${fields.length} form fields:</strong>\n${fieldList}\n\nTo write "${message}", I need to know which field(s) to fill. Please confirm which field number or I'll fill the first text field.`
-            );
-
-            // For now, just fill the first text input as a demo
-            const fillResult = await browserFrame.executeJavaScript(`
-              (function() {
-                const inputs = document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]), textarea');
-                for (let input of inputs) {
-                  if (input.offsetParent !== null && input.type !== 'submit' && input.type !== 'button') {
-                    input.focus();
-                    input.value = 'Test message from Rev - write mode working!';
-                    input.dispatchEvent(new Event('input', {bubbles: true}));
-                    input.dispatchEvent(new Event('change', {bubbles: true}));
-                    return { success: true, field: input.name || input.id || 'text input' };
-                  }
-                }
-                return { success: false, error: 'No suitable field found' };
-              })()
-            `);
+            // Use smart fill to intelligently find and fill the right field
+            const fillResult = await smartFillField(message);
 
             if (fillResult.success) {
               addMessage(
                 'ai',
-                `✅ <strong>Write Successful!</strong><br>I filled in the "${fillResult.field}" field. You can now review and submit the form manually, or ask me to submit it.`
+                `✅ <strong>Write Successful!</strong><br>I filled in the "${fillResult.field}" field with your message. You can now review and send it, or ask me to send it.`
               );
             } else {
-              addMessage(
-                'ai',
-                "Sorry, I couldn't find a suitable field to write to: " +
-                  fillResult.error
-              );
+              // Fallback to asking user
+              const fields = await findFormFields();
+              if (fields.length === 0) {
+                addMessage(
+                  'ai',
+                  "I couldn't find any form fields to write to. Try clicking into the message field first."
+                );
+              } else {
+                const fieldList = fields
+                  .map(
+                    (f, i) =>
+                      `${i + 1}. ${f.label || f.name || f.inputType} (${f.type})`
+                  )
+                  .join('\n');
+                addMessage(
+                  'ai',
+                  `<strong>Found ${fields.length} form fields:</strong>\n${fieldList}\n\nWhich field number should I fill?`
+                );
+              }
             }
           } catch (error) {
             console.error('[Write] Error:', error);

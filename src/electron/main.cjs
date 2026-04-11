@@ -1138,6 +1138,26 @@ ipcMain.handle('open-ai-browser', async (event, url, context) => {
       title: 'Rev AI Browser',
     });
 
+    // Set a custom user agent for the AI browser to avoid being blocked
+    aiBrowserWindow.webContents.session.webRequest.onBeforeSendHeaders(
+      (details, callback) => {
+        if (
+          details.url.includes('youtube.com') ||
+          details.url.includes('google.com')
+        ) {
+          callback({
+            requestHeaders: {
+              ...details.requestHeaders,
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          });
+        } else {
+          callback({ requestHeaders: details.requestHeaders });
+        }
+      }
+    );
+
     // Set up microphone permissions for AI browser window
     aiBrowserWindow.webContents.on('did-finish-load', () => {
       console.log('[AIBrowser] Window loaded, setting permissions...');

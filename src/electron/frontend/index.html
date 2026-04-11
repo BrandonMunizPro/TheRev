@@ -342,6 +342,7 @@
             <span class="tagline">The Rev starts with you!</span>
           </div>
           <nav class="nav">
+            <button id="messages-btn" class="nav-btn">Messages</button>
             <button id="threads-btn" class="nav-btn active">Threads</button>
             <button id="news-btn" class="nav-btn">News</button>
             <button id="friends-btn" class="nav-btn">Friends</button>
@@ -396,6 +397,126 @@
               </div>
               <div class="thread-meta">
                 <span class="author">Loading...</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Messages Section (Discord-style) -->
+        <section id="messages-section" class="content-section">
+          <div class="messages-container">
+            <!-- Servers Sidebar -->
+            <div class="messages-sidebar">
+              <div class="sidebar-section">
+                <h3 class="sidebar-title">Your Servers</h3>
+                <button
+                  id="create-server-btn"
+                  class="icon-btn"
+                  title="Create Server"
+                >
+                  +
+                </button>
+              </div>
+              <div id="servers-list" class="servers-list">
+                <!-- Servers will be loaded here -->
+                <div class="empty-state">No servers yet. Create one!</div>
+              </div>
+              <div class="sidebar-section">
+                <h3 class="sidebar-title">Direct Messages</h3>
+                <button
+                  id="new-dm-btn"
+                  class="icon-btn small"
+                  title="New Message"
+                >
+                  ✉️
+                </button>
+              </div>
+              <div id="conversations-list" class="conversations-list">
+                <!-- Conversations will be loaded here -->
+              </div>
+            </div>
+
+            <!-- Main Messages Area -->
+            <div class="messages-main">
+              <!-- No Server Selected State -->
+              <div id="messages-welcome" class="messages-welcome">
+                <div class="welcome-icon">💬</div>
+                <h2>Welcome to Messages</h2>
+                <p>
+                  Select a server to join the conversation, or start a direct
+                  message.
+                </p>
+              </div>
+
+              <!-- Server View -->
+              <div id="server-view" class="server-view" style="display: none">
+                <!-- Server Header -->
+                <div class="server-header">
+                  <div class="server-channels-toggle">
+                    <button id="toggle-channels-btn" class="toggle-btn">
+                      ☰
+                    </button>
+                  </div>
+                  <h3 id="server-name">Server Name</h3>
+                  <div class="server-actions">
+                    <button
+                      id="invite-users-btn"
+                      class="toggle-btn"
+                      title="Invite Users"
+                      onclick="theRevApp.showInviteUsersModal()"
+                    >
+                      ➕
+                    </button>
+                  </div>
+                  <div class="server-members-toggle">
+                    <button id="toggle-members-btn" class="toggle-btn">
+                      👥
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Channels Sidebar -->
+                <div id="channels-sidebar" class="channels-sidebar">
+                  <div class="channel-category">
+                    <div class="category-header">Text Channels</div>
+                    <div id="channels-list" class="channels-list">
+                      <!-- Channels will be loaded here -->
+                    </div>
+                  </div>
+                  <button id="add-channel-btn" class="add-channel-btn">
+                    + Add Channel
+                  </button>
+                </div>
+
+                <!-- Channel Messages -->
+                <div id="channel-view" class="channel-view">
+                  <div id="channel-header" class="channel-header">
+                    <span class="channel-hash">#</span>
+                    <span id="channel-name">general</span>
+                  </div>
+                  <div id="channel-messages" class="channel-messages">
+                    <!-- Messages will be loaded here -->
+                    <div class="empty-state">
+                      No messages yet. Start the conversation!
+                    </div>
+                  </div>
+                  <div class="message-input-container">
+                    <input
+                      type="text"
+                      id="message-input"
+                      placeholder="Message #general"
+                    />
+                    <button id="send-message-btn" class="send-btn">➤</button>
+                  </div>
+                </div>
+
+                <!-- Members Sidebar -->
+                <div id="members-sidebar" class="members-sidebar">
+                  <div class="members-header">Members</div>
+                  <div id="members-list" class="members-list">
+                    <!-- Members will be loaded here -->
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -564,9 +685,7 @@
               </button>
             </div>
             <div class="modal-body">
-              <!-- Unified Perspective Section - shows vote buttons OR post counts -->
               <div class="perspective-section" id="perspective-section">
-                <!-- Vote buttons (shown when no posts, or always clickable) -->
                 <div class="vote-label">What's your perspective?</div>
                 <div class="quick-vote-buttons">
                   <button
@@ -601,7 +720,6 @@
                   <span id="vote-total">0</span> perspectives
                 </div>
               </div>
-              <!-- Filter Tabs -->
               <div class="perspective-tabs" id="perspective-tabs">
                 <button
                   class="perspective-tab active"
@@ -784,6 +902,186 @@
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Server Modal -->
+        <div id="create-server-modal" class="modal">
+          <div class="modal-content thread-modal">
+            <div class="modal-header">
+              <h3>Create Server</h3>
+              <button
+                class="close-btn"
+                onclick="theRevApp.closeCreateServerModal()"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group" style="text-align: center">
+                <label>Server Icon</label>
+                <div
+                  id="server-icon-preview"
+                  class="avatar-preview-circle"
+                  style="
+                    width: 80px;
+                    height: 80px;
+                    margin: 0 auto 10px;
+                    border-radius: 50%;
+                    background: var(--bg-secondary);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    overflow: hidden;
+                    border: 2px solid var(--border-color);
+                  "
+                  onclick="
+                    document.getElementById('server-icon-upload').click()
+                  "
+                >
+                  <svg
+                    width="40"
+                    height="40"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    style="color: var(--text-secondary)"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                </div>
+                <input
+                  type="file"
+                  id="server-icon-upload"
+                  accept="image/*"
+                  style="display: none"
+                />
+                <small style="color: var(--text-secondary)"
+                  >Click icon to upload image</small
+                >
+              </div>
+              <div class="form-group">
+                <label for="server-name-input">Server Name</label>
+                <input
+                  type="text"
+                  id="server-name-input"
+                  placeholder="Enter server name..."
+                  maxlength="50"
+                />
+              </div>
+              <div class="form-group">
+                <label for="server-description-input"
+                  >Description (optional)</label
+                >
+                <textarea
+                  id="server-description-input"
+                  placeholder="What is this server about?"
+                  rows="3"
+                  maxlength="200"
+                ></textarea>
+              </div>
+              <div class="form-group">
+                <label>Server Type</label>
+                <select id="server-type-input">
+                  <option value="PUBLIC">Public - Anyone can join</option>
+                  <option value="PRIVATE">Private - Invite only</option>
+                  <option value="COMMUNITY">
+                    Community - Open with approval
+                  </option>
+                </select>
+              </div>
+              <button
+                class="primary-btn full-width"
+                onclick="theRevApp.submitCreateServer()"
+              >
+                Create Server
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Invite Users Modal -->
+        <div id="invite-users-modal" class="modal">
+          <div class="modal-content thread-modal">
+            <div class="modal-header">
+              <h3>Invite Users to Server</h3>
+              <button
+                class="close-btn"
+                onclick="theRevApp.closeInviteUsersModal()"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="modal-body">
+              <p class="search-hint">
+                Search for users to invite to this server
+              </p>
+              <div class="form-group">
+                <input
+                  type="text"
+                  id="invite-search-input"
+                  placeholder="Search by username..."
+                  oninput="theRevApp.searchUsersForInvite(this.value)"
+                />
+              </div>
+              <div id="invite-search-results" class="friend-search-results">
+                <!-- Search results will be populated here -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Channel Modal -->
+        <div id="create-channel-modal" class="modal">
+          <div class="modal-content thread-modal">
+            <div class="modal-header">
+              <h3>Create Channel</h3>
+              <button
+                class="close-btn"
+                onclick="theRevApp.closeCreateChannelModal()"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label for="channel-name-input">Channel Name</label>
+                <input
+                  type="text"
+                  id="channel-name-input"
+                  placeholder="Enter channel name..."
+                  maxlength="50"
+                />
+              </div>
+              <div class="form-group">
+                <label for="channel-description-input"
+                  >Description (optional)</label
+                >
+                <input
+                  type="text"
+                  id="channel-description-input"
+                  placeholder="What is this channel about?"
+                  maxlength="100"
+                />
+              </div>
+              <div class="form-group">
+                <label>Channel Type</label>
+                <select id="channel-type-input">
+                  <option value="TEXT">Text Channel</option>
+                  <option value="VOICE">Voice Channel</option>
+                  <option value="ANNOUNCEMENT">Announcements</option>
+                </select>
+              </div>
+              <button
+                class="primary-btn full-width"
+                onclick="theRevApp.submitCreateChannel()"
+              >
+                Create Channel
+              </button>
             </div>
           </div>
         </div>

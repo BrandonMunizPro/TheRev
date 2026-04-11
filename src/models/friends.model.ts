@@ -185,6 +185,26 @@ export class FriendsModel {
     return friend?.status === FriendStatus.ACCEPTED;
   }
 
+  async getFriendById(friendId: string): Promise<FriendWithUser | null> {
+    const friend = await this.dao.findById(friendId);
+    if (!friend) return null;
+
+    const isRequester = friend.requesterId !== undefined;
+    const otherUser = isRequester ? friend.recipient : friend.requester;
+
+    return {
+      id: friend.id,
+      userId: otherUser?.id || '',
+      userName: otherUser?.userName || '',
+      firstName: otherUser?.firstName || '',
+      lastName: otherUser?.lastName || '',
+      profilePicUrl: otherUser?.profilePicUrl,
+      avatarUrl: otherUser?.avatarUrl,
+      status: friend.status,
+      createdAt: friend.createdAt,
+    };
+  }
+
   private mapFriendToUser(
     friend: Friend,
     currentUserId: string

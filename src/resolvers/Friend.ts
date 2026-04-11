@@ -76,6 +76,13 @@ export class FriendResolver {
     return this.model.isFriend(userId, otherUserId);
   }
 
+  @Query(() => FriendWithUserOutput, { nullable: true })
+  async getFriend(
+    @Arg('friendId', () => ID) friendId: string
+  ): Promise<FriendWithUser | null> {
+    return this.model.getFriendById(friendId);
+  }
+
   @Mutation(() => Friend)
   async sendFriendRequest(
     @Arg('requesterId', () => ID) requesterId: string,
