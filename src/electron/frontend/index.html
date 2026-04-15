@@ -341,19 +341,20 @@
             <h1>TheRev</h1>
             <span class="tagline">The Rev starts with you!</span>
           </div>
-          <nav class="nav">
-            <button id="messages-btn" class="nav-btn">Messages</button>
-            <button id="threads-btn" class="nav-btn active">Threads</button>
+<nav class="nav">
+            <button id="social-btn" class="nav-btn">Social</button>
             <button id="news-btn" class="nav-btn">News</button>
-            <button id="friends-btn" class="nav-btn">Friends</button>
-            <button id="ai-settings-btn" class="nav-btn">AI Settings</button>
-            <button id="tasks-btn" class="nav-btn">Tasks</button>
-            <button id="analytics-btn" class="nav-btn">Analytics</button>
-            <button id="audit-btn" class="nav-btn">Audit Log</button>
-            <button id="shards-btn" class="nav-btn">Shards</button>
-            <button id="profile-btn" class="nav-btn">Profile</button>
             <button id="browser-btn" class="nav-btn">Browser</button>
             <button id="avatar-btn" class="nav-btn">Avatar</button>
+            <button id="ai-settings-btn" class="nav-btn">AI</button>
+            <!-- Social Dropdown -->
+            <div id="social-dropdown" class="nav-dropdown">
+              <button class="dropdown-item active" data-section="threads">🏠 Home (Threads)</button>
+              <button class="dropdown-item" data-section="messages">💬 Messages</button>
+              <button class="dropdown-item" data-section="friends">👥 Friends</button>
+              <button class="dropdown-item" data-section="profile">👤 Profile</button>
+            </div>
+            <!-- Hidden admin: Tasks, Analytics, Audit, Shards -->
           </nav>
           <div class="user-rev" id="user-rev-container">
             <!-- Default: show Sign In button -->

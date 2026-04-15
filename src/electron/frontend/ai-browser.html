@@ -1871,7 +1871,7 @@
             // Show navigation message
             addMessage('ai', result.context || `Navigating to ${result.url}`);
 
-            // Fetch AI context ASYNC (in background)
+            // ALWAYS fetch async context for navigation - this is where we want AI context!
             fetchContextAsync(message);
           } else if (result.response) {
             // Show AI response
@@ -2008,6 +2008,8 @@
             thinkingIndicator.remove();
           }
           console.log('Context fetch failed after retries:', e.message);
+          // Show user-friendly error (only if navigation didn't already work)
+          console.log('Context fetch error details:', e);
         }
       }
 

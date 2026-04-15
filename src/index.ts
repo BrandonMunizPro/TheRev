@@ -1123,44 +1123,67 @@ async function startServer() {
           );
 
         if (!isQuestion) {
-          return res.json({ success: false, context: null });
+          console.log(
+            '[AI Context] Not detected as question, skipping. Command:',
+            command
+          );
+          return res.json({ success: false, context: null, skipped: true });
         }
 
         console.log('[AI Context] Generating async response for:', command);
 
-        const provider =
-          adapterFactory.getBestAvailableProvider() || AIProvider.OPEN_SOURCE;
-        const adapter = adapterFactory.getAdapter(provider);
+        // Bypass adapter factory - call Ollama directly
+        let aiContent: string | null = null;
+        try {
+          console.log('[AI Context] Calling Ollama directly...');
+          const ollamaRes = await fetch('http://localhost:11434/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'llama3.2:3b',
+              prompt: `You are Rev, a helpful AI assistant. Answer this question briefly (2-3 sentences max): ${command}`,
+              stream: false,
+              options: { temperature: 0.7, num_predict: 256 },
+            }),
+            signal: AbortSignal.timeout(15000),
+          });
+          console.log('[AI Context] Ollama response status:', ollamaRes.status);
+          if (!ollamaRes.ok) {
+            console.log('[AI Context] Ollama response not OK');
+            return res.json({
+              success: false,
+              context: null,
+              error: `Ollama error: ${ollamaRes.status}`,
+            });
+          }
+          const ollamaData = await ollamaRes.json();
+          console.log(
+            '[AI Context] Ollama response data:',
+            JSON.stringify(ollamaData).substring(0, 100)
+          );
+          aiContent = ollamaData.response || null;
+        } catch (directError) {
+          console.error(
+            '[AI Context] Direct Ollama call failed:',
+            directError.message
+          );
+        }
 
-        if (!adapter) {
+        if (!aiContent || aiContent.trim() === '') {
           return res.json({
             success: false,
-            context: 'AI assistant is not available right now.',
+            context: 'AI assistant returned empty response.',
           });
         }
 
-        const aiResponse = (await Promise.race([
-          adapter.complete({
-            provider,
-            prompt: `You are Rev, a helpful AI assistant. Answer this question briefly (2-3 sentences max): ${command}`,
-            systemPrompt: 'You are Rev, a helpful AI assistant.',
-            maxTokens: 256,
-            temperature: 0.7,
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('AI timeout')), 15000)
-          ),
-        ])) as { content?: string };
-
-        if (aiResponse && aiResponse.content) {
-          console.log('[AI Context] Response generated');
-          res.json({ success: true, context: aiResponse.content });
-        } else {
-          res.json({ success: false, context: null });
-        }
+        console.log(
+          '[AI Context] Response generated:',
+          aiContent.substring(0, 50)
+        );
+        res.json({ success: true, context: aiContent });
       } catch (error) {
         console.error('[AI Context] Error:', error.message);
-        res.json({ success: false, context: null });
+        res.json({ success: false, context: null, error: error.message });
       }
     });
 

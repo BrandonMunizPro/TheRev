@@ -164,12 +164,40 @@ export class ServerResolver {
     @Arg('serverId', () => ID) serverId: string,
     @Arg('userId', () => ID, { nullable: true }) userId?: string
   ): Promise<ServerWithChannels | null> {
+    console.log('[getServer] Fetching server:', serverId);
+
     const server = await this.serverRepo.findOne({
       where: { id: serverId },
-      relations: ['channels'],
     });
 
-    if (!server) return null;
+    if (!server) {
+      console.log('[getServer] Server not found:', serverId);
+      return null;
+    }
+
+    console.log('[getServer] Server found:', server.name);
+
+    const channels = await this.channelRepo.find({
+      where: { serverId: server.id },
+      order: { createdAt: 'ASC' },
+    });
+
+    console.log(
+      '[getServer] Channels found:',
+      channels.length,
+      channels.map((c) => c.name)
+    );
+
+    const channelOutputs: ChannelOutput[] = channels.map((channel) => ({
+      id: channel.id,
+      name: channel.name,
+      description: channel.description,
+      type: channel.type,
+      serverId: channel.serverId,
+      parentChannelId: channel.parentChannelId,
+      lastMessage: null,
+      unreadCount: 0,
+    }));
 
     const memberCount = await this.memberRepo.count({
       where: { serverId: server.id },
@@ -185,7 +213,7 @@ export class ServerResolver {
 
     return {
       ...server,
-      channels: server.channels || [],
+      channels: channelOutputs,
       memberCount,
       userRole,
     };
@@ -318,8 +346,25 @@ export class ServerResolver {
 
   @Mutation(() => ChannelOutput)
   async createChannel(
-    @Arg('data') data: CreateChannelInput
+    @Arg('data') data: CreateChannelInput,
+    @Arg('userId', () => ID) userId: string
   ): Promise<ChannelOutput> {
+    const server = await this.serverRepo.findOne({
+      where: { id: data.serverId },
+    });
+
+    if (!server) {
+      throw ErrorHandler.notFound('Server', data.serverId);
+    }
+
+    const membership = await this.memberRepo.findOne({
+      where: { serverId: data.serverId, userId },
+    });
+
+    if (!membership) {
+      throw ErrorHandler.insufficientPermissions('create channel', 'server');
+    }
+
     const channel = await this.channelRepo.save({
       name: data.name,
       description: data.description,
@@ -328,11 +373,39 @@ export class ServerResolver {
       parentChannelId: data.parentChannelId,
     });
 
+    console.log('[ServerResolver] Channel created:', channel.id, channel.name);
+
     return {
       ...channel,
       lastMessage: null,
       unreadCount: 0,
     };
+  }
+
+  @Mutation(() => Boolean)
+  async deleteChannel(
+    @Arg('channelId', () => ID) channelId: string,
+    @Arg('userId', () => ID) userId: string
+  ): Promise<boolean> {
+    const channel = await this.channelRepo.findOne({
+      where: { id: channelId },
+      relations: ['server'],
+    });
+
+    if (!channel) {
+      throw ErrorHandler.notFound('Channel', channelId);
+    }
+
+    const membership = await this.memberRepo.findOne({
+      where: { serverId: channel.serverId, userId },
+    });
+
+    if (!membership || membership.role !== ServerRole.OWNER) {
+      throw ErrorHandler.insufficientPermissions('delete channel', 'channel');
+    }
+
+    await this.channelRepo.delete(channelId);
+    return true;
   }
 
   @Mutation(() => Boolean)

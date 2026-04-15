@@ -1407,6 +1407,38 @@ class TheRevApp {
       this.switchSection('avatar');
     });
 
+    // Social dropdown toggle
+    document.getElementById('social-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      console.log('[Nav] Social button clicked');
+      const dropdown = document.getElementById('social-dropdown');
+      dropdown?.classList.toggle('show');
+    });
+
+    // Social dropdown items
+    document.querySelectorAll('.dropdown-item').forEach((item) => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const section = item.dataset.section;
+        console.log('[Nav] Social dropdown item clicked:', section);
+        
+        // Update active state in dropdown
+        document.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        
+        // Close dropdown
+        document.getElementById('social-dropdown')?.classList.remove('show');
+        
+        // Switch to section
+        this.switchSection(section);
+      });
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', () => {
+      document.getElementById('social-dropdown')?.classList.remove('show');
+    });
+
     // News tabs
     document.querySelectorAll('.news-tab').forEach((tab) => {
       tab.addEventListener('click', () => {
@@ -3048,13 +3080,75 @@ class TheRevApp {
           ? `<img src="http://localhost:4000${server.iconUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
           : server.serverName.charAt(0).toUpperCase();
         return `
-          <div class="server-item" onclick="theRevApp.selectServer('${server.serverId}')">
+          <div class="server-item" onclick="theRevApp.selectServer('${server.serverId}')" oncontextmenu="theRevApp.showServerContextMenu(event, '${server.serverId}', '${server.serverName}')">
             <div class="server-icon">${iconHtml}</div>
             <span class="server-name">${server.serverName}</span>
           </div>
         `;
       })
       .join('');
+  }
+
+  showServerContextMenu(event, serverId, serverName) {
+    event.preventDefault();
+    this.hideContextMenus();
+
+    const menu = document.createElement('div');
+    menu.id = 'server-context-menu';
+    menu.className = 'context-menu';
+    menu.style.position = 'absolute';
+    menu.style.left = event.pageX + 'px';
+    menu.style.top = event.pageY + 'px';
+    menu.innerHTML = `
+      <div class="context-menu-item danger" onclick="theRevApp.deleteServer('${serverId}')">🗑️ Delete Server</div>
+    `;
+
+    document.body.appendChild(menu);
+
+    document.addEventListener('click', () => this.hideContextMenus(), {
+      once: true,
+    });
+  }
+
+  async deleteServer(serverId) {
+    if (!this.currentUser) return;
+
+    if (
+      !confirm(
+        'Are you sure you want to delete this server? This cannot be undone.'
+      )
+    )
+      return;
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation DeleteServer($serverId: ID!, $userId: ID!) {
+              deleteServer(serverId: $serverId, userId: $userId)
+            }
+          `,
+          variables: { serverId, userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.data?.deleteServer) {
+        this.showSpeechBubble('Server deleted!', 3000);
+        this.currentServerId = null;
+        this.loadUserServers();
+        this.showMessagesView();
+      } else if (result.errors) {
+        alert('Error: ' + result.errors[0].message);
+      }
+    } catch (error) {
+      console.error('[Messages] Error deleting server:', error);
+    }
   }
 
   async loadConversations() {
@@ -3165,7 +3259,10 @@ class TheRevApp {
               }
             }
           `,
-          variables: { serverId, userId: this.currentUser?.id },
+          variables: {
+            serverId,
+            userId: this.currentUser?.id || null,
+          },
         }),
       });
 
@@ -3196,13 +3293,72 @@ class TheRevApp {
       .map((channel) => {
         const icon = channel.type === 'ANNOUNCEMENT' ? '📌' : '#';
         return `
-          <div class="channel-item" onclick="theRevApp.selectChannel('${channel.id}', '${channel.name}')">
+          <div class="channel-item" onclick="theRevApp.selectChannel('${channel.id}', '${channel.name}')" oncontextmenu="theRevApp.showChannelContextMenu(event, '${channel.id}', '${channel.name}')">
             <span class="channel-hash">${icon}</span>
             <span>${channel.name}</span>
           </div>
         `;
       })
       .join('');
+  }
+
+  showChannelContextMenu(event, channelId, channelName) {
+    event.preventDefault();
+    this.hideContextMenus();
+
+    const menu = document.createElement('div');
+    menu.id = 'channel-context-menu';
+    menu.className = 'context-menu';
+    menu.style.position = 'absolute';
+    menu.style.left = event.pageX + 'px';
+    menu.style.top = event.pageY + 'px';
+    menu.innerHTML = `
+      <div class="context-menu-item" onclick="theRevApp.deleteChannel('${channelId}')">🗑️ Delete Channel</div>
+    `;
+
+    document.body.appendChild(menu);
+
+    document.addEventListener('click', () => this.hideContextMenus(), {
+      once: true,
+    });
+  }
+
+  hideContextMenus() {
+    document.querySelectorAll('.context-menu').forEach((m) => m.remove());
+  }
+
+  async deleteChannel(channelId) {
+    if (!this.currentUser) return;
+
+    if (!confirm('Are you sure you want to delete this channel?')) return;
+
+    try {
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query: `
+            mutation DeleteChannel($channelId: ID!, $userId: ID!) {
+              deleteChannel(channelId: $channelId, userId: $userId)
+            }
+          `,
+          variables: { channelId, userId: this.currentUser.id },
+        }),
+      });
+
+      const result = await response.json();
+      if (result.data?.deleteChannel) {
+        this.showSpeechBubble('Channel deleted!', 3000);
+        this.loadServerDetails(this.currentServerId);
+      } else if (result.errors) {
+        alert('Error: ' + result.errors[0].message);
+      }
+    } catch (error) {
+      console.error('[Messages] Error deleting channel:', error);
+    }
   }
 
   async selectChannel(channelId, channelName) {
@@ -3712,8 +3868,8 @@ class TheRevApp {
         },
         body: JSON.stringify({
           query: `
-            mutation CreateChannel($data: CreateChannelInput!) {
-              createChannel(data: $data) {
+            mutation CreateChannel($data: CreateChannelInput!, $userId: ID!) {
+              createChannel(data: $data, userId: $userId) {
                 id
                 name
               }
@@ -3726,6 +3882,7 @@ class TheRevApp {
               type,
               serverId: this.currentServerId,
             },
+            userId: this.currentUser.id,
           },
         }),
       });

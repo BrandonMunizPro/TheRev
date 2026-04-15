@@ -124,6 +124,7 @@ body {
 .nav {
   display: flex;
   gap: 4px;
+  position: relative;
 }
 
 .nav-btn {
@@ -165,6 +166,64 @@ body {
 .nav-btn span {
   position: relative;
   z-index: 1;
+}
+
+/* Social Dropdown */
+.nav-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 200px;
+  z-index: 1000;
+  padding: 8px 0;
+}
+
+.nav-dropdown.show {
+  display: block;
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all var(--transition-fast);
+}
+
+.dropdown-item:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.dropdown-item.active {
+  color: var(--primary-color);
+  background: rgba(230, 57, 70, 0.1);
+}
+
+/* Settings Button (future) */
+.settings-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 10px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  font-size: 18px;
+}
+
+.settings-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
 }
 
 .user-rev {
@@ -3664,6 +3723,36 @@ input:checked + .slider:before {
   text-align: center;
   padding: 40px;
   color: var(--text-secondary);
+}
+
+.context-menu {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 150px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+}
+
+.context-menu-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.context-menu-item:hover {
+  background: var(--bg-secondary);
+}
+
+.context-menu-item.danger {
+  color: var(--error-color);
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(255, 0, 0, 0.1);
 }
 
 .stat-card.warning {

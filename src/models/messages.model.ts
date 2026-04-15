@@ -52,9 +52,9 @@ export class MessagesModel {
       }
     }
 
-    // For server messages, recipientId can be null. For DMs, it's required
-    const finalRecipientId =
-      recipientId || (serverId ? 'server-broadcast' : null);
+    // For server messages, recipientId should be null (not needed)
+    // For DMs, recipientId is required
+    const finalRecipientId = serverId ? null : recipientId || null;
     const finalChannelId = channelId || null;
     const finalServerId = serverId || null;
 
