@@ -1,6 +1,9 @@
 import { Resolver, Query, Mutation, Arg, Ctx } from 'type-graphql';
 import { Post } from '../entities/Post';
 import { PostsModel } from '../models/posts.model';
+import { ThreadsModel } from '../models/threads.model';
+import { NotificationsModel } from '../models/notifications.model';
+import { UsersDao } from '../dao/users.dao';
 import { InputType, Field, ID } from 'type-graphql';
 import { GraphQLContext } from '../graphql/context';
 import { PostType } from '../graphql/enums/PostType';
@@ -100,6 +103,9 @@ export type returnedPost = {
 @Resolver()
 export class PostResolver {
   private model = new PostsModel();
+  private threadsModel = new ThreadsModel();
+  private notificationsModel = new NotificationsModel();
+  private usersDao = new UsersDao();
 
   @Mutation(() => Post)
   async createPost(
@@ -107,7 +113,31 @@ export class PostResolver {
     @Ctx() ctx: GraphQLContext
   ): Promise<returnedPost> {
     if (!ctx.user) throw ErrorHandler.notAuthenticated();
-    return this.model.createPost(data, ctx.user.userId);
+
+    const post = await this.model.createPost(data, ctx.user.userId);
+
+    // Send notification to thread author if this is a reply
+    if (data.parentId) {
+      const thread = await this.threadsModel.getThread({ id: data.threadId });
+      if (thread && thread.author?.id && thread.author.id !== ctx.user.userId) {
+        const author = await this.usersDao.findById(ctx.user.userId);
+        if (author) {
+          const authorName =
+            `${author.firstName} ${author.lastName}`.trim() || author.userName;
+          const threadTitle = thread.title || 'your thread';
+          await this.notificationsModel.notifyOnThreadReply(
+            thread.author.id,
+            ctx.user.userId,
+            authorName,
+            data.threadId,
+            threadTitle,
+            post.id
+          );
+        }
+      }
+    }
+
+    return post;
   }
 
   @Query(() => Post, { nullable: true })

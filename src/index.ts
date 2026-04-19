@@ -15,6 +15,7 @@ import { PostResolver } from './resolvers/Post';
 import { ThreadAdminResolver } from './resolvers/ThreadPermissions';
 import { ThreadVoteResolver } from './resolvers/ThreadVote';
 import { FriendResolver } from './resolvers/Friend';
+import { NotificationResolver } from './resolvers/Notification';
 import { ServerResolver } from './resolvers/Server';
 import { MessageResolver } from './resolvers/Message';
 import { GraphQLContext } from './graphql/context';
@@ -298,6 +299,7 @@ async function startServer() {
         PostResolver,
         ThreadVoteResolver,
         FriendResolver,
+        NotificationResolver,
         ServerResolver,
         MessageResolver,
       ],

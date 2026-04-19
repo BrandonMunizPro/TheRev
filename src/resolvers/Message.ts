@@ -1,6 +1,8 @@
 import { InputType, Field, ID, ObjectType } from 'type-graphql';
 import { Resolver, Query, Mutation, Arg, Ctx } from 'type-graphql';
 import { MessagesModel, MessageWithSender } from '../models/messages.model';
+import { NotificationsModel } from '../models/notifications.model';
+import { UsersDao } from '../dao/users.dao';
 import { ErrorHandler } from '../errors/ErrorHandler';
 
 @InputType()
@@ -114,6 +116,8 @@ export class ConversationOutput {
 @Resolver()
 export class MessageResolver {
   private model = new MessagesModel();
+  private notificationsModel = new NotificationsModel();
+  private usersDao = new UsersDao();
 
   @Query(() => [MessageOutput])
   async getChannelMessages(
@@ -156,6 +160,22 @@ export class MessageResolver {
       threadId: data.threadId,
       recipientId: data.recipientId,
     });
+
+    // Send notification for direct messages
+    if (data.recipientId) {
+      const sender = await this.usersDao.findById(senderId);
+      if (sender) {
+        const senderName =
+          `${sender.firstName} ${sender.lastName}`.trim() || sender.userName;
+        await this.notificationsModel.notifyOnMessage(
+          data.recipientId,
+          senderId,
+          senderName,
+          message.id,
+          data.content
+        );
+      }
+    }
 
     return {
       id: message.id,

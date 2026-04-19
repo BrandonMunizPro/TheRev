@@ -341,18 +341,37 @@
             <h1>TheRev</h1>
             <span class="tagline">The Rev starts with you!</span>
           </div>
-<nav class="nav">
+          <nav class="nav">
             <button id="social-btn" class="nav-btn">Social</button>
             <button id="news-btn" class="nav-btn">News</button>
             <button id="browser-btn" class="nav-btn">Browser</button>
-            <button id="avatar-btn" class="nav-btn">Avatar</button>
-            <button id="ai-settings-btn" class="nav-btn">AI</button>
+            <button id="settings-btn" class="nav-btn">Settings ⚙️</button>
             <!-- Social Dropdown -->
             <div id="social-dropdown" class="nav-dropdown">
-              <button class="dropdown-item active" data-section="threads">🏠 Home (Threads)</button>
-              <button class="dropdown-item" data-section="messages">💬 Messages</button>
-              <button class="dropdown-item" data-section="friends">👥 Friends</button>
-              <button class="dropdown-item" data-section="profile">👤 Profile</button>
+              <button class="dropdown-item active" data-section="threads">
+                🏠 Home (Threads)
+              </button>
+              <button class="dropdown-item" data-section="messages">
+                💬 Messages
+              </button>
+              <button class="dropdown-item" data-section="friends">
+                👥 Friends
+              </button>
+              <button class="dropdown-item" data-section="profile">
+                👤 Profile
+              </button>
+            </div>
+            <!-- Settings Dropdown -->
+            <div id="settings-dropdown" class="nav-dropdown">
+              <button class="dropdown-item" data-section="ai-settings">
+                🤖 AI Settings
+              </button>
+              <button class="dropdown-item" data-section="avatar">
+                🎭 Avatar
+              </button>
+              <button class="dropdown-item" data-action="open-voice-settings">
+                🎤 Voice Settings
+              </button>
             </div>
             <!-- Hidden admin: Tasks, Analytics, Audit, Shards -->
           </nav>
@@ -378,6 +397,40 @@
                 class="rev-avatar"
               />
               <div class="avatar-status online"></div>
+            </div>
+          </div>
+          <!-- Notification Bell (outside user-rev to avoid being overwritten) -->
+          <div
+            class="notification-bell-container"
+            id="notification-bell-container"
+            style="display: none"
+          >
+            <button class="notification-bell" id="notification-bell">
+              <span class="bell-icon">🔔</span>
+              <span
+                class="notification-badge"
+                id="notification-badge"
+                style="display: none"
+                >0</span
+              >
+            </button>
+            <!-- Notifications Dropdown -->
+            <div
+              id="notifications-dropdown"
+              class="nav-dropdown notifications-dropdown"
+            >
+              <div class="notifications-header">
+                <span>Notifications</span>
+                <button
+                  class="mark-all-read-btn"
+                  id="mark-all-notifications-read"
+                >
+                  Mark all read
+                </button>
+              </div>
+              <div class="notifications-list" id="notifications-list">
+                <div class="notifications-empty">No notifications yet</div>
+              </div>
             </div>
           </div>
         </div>

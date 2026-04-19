@@ -3,6 +3,8 @@ import { Resolver, Query, Mutation, Arg } from 'type-graphql';
 import { FriendsModel, FriendWithUser } from '../models/friends.model';
 import { Friend } from '../entities/Friend';
 import { FriendStatus } from '../graphql/enums/FriendStatus';
+import { NotificationsModel } from '../models/notifications.model';
+import { UsersDao } from '../dao/users.dao';
 import { ErrorHandler } from '../errors/ErrorHandler';
 
 @InputType()
@@ -44,6 +46,8 @@ export class FriendWithUserOutput {
 @Resolver()
 export class FriendResolver {
   private model = new FriendsModel();
+  private notificationsModel = new NotificationsModel();
+  private usersDao = new UsersDao();
 
   @Query(() => [FriendWithUserOutput])
   async getFriends(
@@ -88,7 +92,25 @@ export class FriendResolver {
     @Arg('requesterId', () => ID) requesterId: string,
     @Arg('data') data: SendFriendRequestInput
   ): Promise<Friend> {
-    return this.model.sendFriendRequest(requesterId, data.recipientId);
+    const friend = await this.model.sendFriendRequest(
+      requesterId,
+      data.recipientId
+    );
+
+    // Send notification to recipient
+    const requester = await this.usersDao.findById(requesterId);
+    if (requester) {
+      const requesterName =
+        `${requester.firstName} ${requester.lastName}`.trim() ||
+        requester.userName;
+      await this.notificationsModel.notifyOnFriendRequest(
+        data.recipientId,
+        requesterId,
+        requesterName
+      );
+    }
+
+    return friend;
   }
 
   @Mutation(() => Friend)
@@ -96,7 +118,24 @@ export class FriendResolver {
     @Arg('friendId', () => ID) friendId: string,
     @Arg('userId', () => ID) userId: string
   ): Promise<Friend> {
-    return this.model.acceptRequest(friendId, userId);
+    const friend = await this.model.acceptRequest(friendId, userId);
+
+    // Send notification to requester
+    if (friend.requesterId) {
+      const accepter = await this.usersDao.findById(userId);
+      if (accepter) {
+        const accepterName =
+          `${accepter.firstName} ${accepter.lastName}`.trim() ||
+          accepter.userName;
+        await this.notificationsModel.notifyOnFriendAccepted(
+          friend.requesterId,
+          userId,
+          accepterName
+        );
+      }
+    }
+
+    return friend;
   }
 
   @Mutation(() => Boolean)

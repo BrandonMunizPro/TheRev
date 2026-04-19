@@ -256,6 +256,15 @@ class TheRevApp {
             <button class="logout-btn" onclick="theRevApp.logout()">Sign Out</button>
           </div>
         `;
+        // Show notification bell when logged in
+        const notificationBellContainer = document.getElementById(
+          'notification-bell-container'
+        );
+        if (notificationBellContainer) {
+          notificationBellContainer.style.display = 'flex';
+        }
+        // Load unread count
+        this.updateNotificationBadge();
       }
     } else {
       // User is not logged in - show login page, hide main app
@@ -1411,33 +1420,89 @@ class TheRevApp {
     document.getElementById('social-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       console.log('[Nav] Social button clicked');
-      const dropdown = document.getElementById('social-dropdown');
-      dropdown?.classList.toggle('show');
+      const socialDropdown = document.getElementById('social-dropdown');
+      const settingsDropdown = document.getElementById('settings-dropdown');
+      socialDropdown?.classList.toggle('show');
+      settingsDropdown?.classList.remove('show');
     });
 
-    // Social dropdown items
+    // Settings dropdown toggle
+    document.getElementById('settings-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      console.log('[Nav] Settings button clicked');
+      const socialDropdown = document.getElementById('social-dropdown');
+      const settingsDropdown = document.getElementById('settings-dropdown');
+      settingsDropdown?.classList.toggle('show');
+      socialDropdown?.classList.remove('show');
+    });
+
+    // Dropdown items (shared for Social and Settings)
     document.querySelectorAll('.dropdown-item').forEach((item) => {
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         const section = item.dataset.section;
-        console.log('[Nav] Social dropdown item clicked:', section);
-        
-        // Update active state in dropdown
-        document.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
-        item.classList.add('active');
-        
-        // Close dropdown
-        document.getElementById('social-dropdown')?.classList.remove('show');
-        
-        // Switch to section
-        this.switchSection(section);
+        const action = item.dataset.action;
+
+        // Handle special actions (like opening modals)
+        if (action === 'open-voice-settings') {
+          console.log('[Nav] Opening voice settings modal');
+          this.openVoiceSettings();
+          document.getElementById('social-dropdown')?.classList.remove('show');
+          document
+            .getElementById('settings-dropdown')
+            ?.classList.remove('show');
+          return;
+        }
+
+        if (section) {
+          console.log('[Nav] Dropdown item clicked:', section);
+
+          // Update active state in dropdown
+          document
+            .querySelectorAll('.dropdown-item')
+            .forEach((i) => i.classList.remove('active'));
+          item.classList.add('active');
+
+          // Close both dropdowns
+          document.getElementById('social-dropdown')?.classList.remove('show');
+          document
+            .getElementById('settings-dropdown')
+            ?.classList.remove('show');
+
+          // Switch to section
+          this.switchSection(section);
+        }
       });
     });
 
-    // Close dropdown when clicking outside
+    // Close dropdowns when clicking outside
     document.addEventListener('click', () => {
       document.getElementById('social-dropdown')?.classList.remove('show');
+      document.getElementById('settings-dropdown')?.classList.remove('show');
+      document
+        .getElementById('notifications-dropdown')
+        ?.classList.remove('show');
     });
+
+    // Notification bell toggle
+    document
+      .getElementById('notification-bell')
+      ?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dropdown = document.getElementById('notifications-dropdown');
+        dropdown?.classList.toggle('show');
+        if (dropdown?.classList.contains('show')) {
+          this.loadNotifications();
+        }
+      });
+
+    // Mark all notifications as read
+    document
+      .getElementById('mark-all-notifications-read')
+      ?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.markAllNotificationsAsRead();
+      });
 
     // News tabs
     document.querySelectorAll('.news-tab').forEach((tab) => {
@@ -9958,6 +10023,299 @@ class TheRevApp {
       localStorage.setItem('therev_ai_preferences', JSON.stringify(prefs));
     } catch (e) {
       console.error('Error saving preference:', e);
+    }
+  }
+
+  // ===== NOTIFICATIONS =====
+  async loadNotifications() {
+    if (!this.currentUser) return;
+
+    try {
+      const query = `
+        query GetNotifications($userId: ID!) {
+          getNotifications(userId: $userId) {
+            id
+            userId
+            type
+            title
+            message
+            status
+            referenceId
+            referenceType
+            actorId
+            actorName
+            actorProfilePicUrl
+            createdAt
+          }
+        }
+      `;
+
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      const data = await response.json();
+      if (data.data?.getNotifications) {
+        this.renderNotifications(data.data.getNotifications);
+      }
+    } catch (e) {
+      console.error('Error loading notifications:', e);
+    }
+  }
+
+  renderNotifications(notifications) {
+    const list = document.getElementById('notifications-list');
+    if (!list) return;
+
+    if (!notifications || notifications.length === 0) {
+      list.innerHTML =
+        '<div class="notifications-empty">No notifications yet</div>';
+      return;
+    }
+
+    list.innerHTML = notifications
+      .map((n) => {
+        const icon = this.getNotificationIcon(n.type);
+        const timeAgo = this.formatTimeAgo(n.createdAt);
+        const isUnread = n.status === 'UNREAD';
+        const actorAvatar = n.actorProfilePicUrl
+          ? `<img src="${n.actorProfilePicUrl.startsWith('http') ? n.actorProfilePicUrl : `http://localhost:4000${n.actorProfilePicUrl}`}" alt="" class="notification-avatar" onerror="this.style.display='none'" />`
+          : `<span class="notification-icon">${icon}</span>`;
+
+        return `
+          <div class="notification-item ${isUnread ? 'unread' : ''}" 
+               data-id="${n.id}" 
+               data-reference-id="${n.referenceId || ''}" 
+               data-reference-type="${n.referenceType || ''}"
+               onclick="theRevApp.handleNotificationClick(this)">
+            ${actorAvatar}
+            <div class="notification-content">
+              <div class="notification-title">${n.title}</div>
+              <div class="notification-message">${n.message}</div>
+              <div class="notification-time">${timeAgo}</div>
+            </div>
+            <button class="notification-dismiss" onclick="event.stopPropagation(); theRevApp.dismissNotification('${n.id}')">✕</button>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  getNotificationIcon(type) {
+    const icons = {
+      MESSAGE: '💬',
+      THREAD_REPLY: '💭',
+      FRIEND_REQUEST: '👋',
+      FRIEND_ACCEPTED: '🤝',
+      THREAD_MENTION: '@',
+      POST_UPVOTE: '⬆️',
+      SERVER_INVITE: '🏠',
+      CHANNEL_MESSAGE: '📢',
+    };
+    return icons[type] || '🔔';
+  }
+
+  formatTimeAgo(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  async updateNotificationBadge() {
+    if (!this.currentUser) return;
+
+    try {
+      const query = `
+        query GetUnreadCount($userId: ID!) {
+          getUnreadNotificationCount(userId: $userId)
+        }
+      `;
+
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      const data = await response.json();
+      const count = data.data?.getUnreadNotificationCount || 0;
+
+      const badge = document.getElementById('notification-badge');
+      if (badge) {
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : count;
+          badge.style.display = 'flex';
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+    } catch (e) {
+      console.error('Error updating notification badge:', e);
+    }
+  }
+
+  async handleNotificationClick(element) {
+    const notificationId = element.dataset.id;
+    const referenceId = element.dataset.referenceId;
+    const referenceType = element.dataset.referenceType;
+
+    // Mark as read
+    await this.markNotificationAsRead(notificationId);
+    element.classList.remove('unread');
+
+    // Navigate based on reference type
+    if (referenceType && referenceId) {
+      switch (referenceType) {
+        case 'message':
+          // Open message/conversation
+          this.switchSection('messages');
+          break;
+        case 'post':
+        case 'thread':
+          // Open thread
+          this.switchSection('threads');
+          // TODO: Highlight/focus the specific thread/post
+          break;
+        case 'user':
+          // Open friend profile
+          this.switchSection('profile');
+          // TODO: Load specific user profile
+          break;
+        default:
+          // Stay on current section
+          break;
+      }
+    }
+
+    // Close dropdown
+    document.getElementById('notifications-dropdown')?.classList.remove('show');
+  }
+
+  async markNotificationAsRead(notificationId) {
+    if (!this.currentUser) return;
+
+    try {
+      const query = `
+        mutation MarkAsRead($notificationId: ID!, $userId: ID!) {
+          markNotificationAsRead(notificationId: $notificationId, userId: $userId) {
+            id
+            status
+          }
+        }
+      `;
+
+      await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query,
+          variables: { notificationId, userId: this.currentUser.id },
+        }),
+      });
+
+      // Update badge count
+      await this.updateNotificationBadge();
+    } catch (e) {
+      console.error('Error marking notification as read:', e);
+    }
+  }
+
+  async markAllNotificationsAsRead() {
+    if (!this.currentUser) return;
+
+    try {
+      const query = `
+        mutation MarkAllAsRead($userId: ID!) {
+          markAllNotificationsAsRead(userId: $userId)
+        }
+      `;
+
+      await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query,
+          variables: { userId: this.currentUser.id },
+        }),
+      });
+
+      // Update UI
+      const list = document.getElementById('notifications-list');
+      if (list) {
+        list.querySelectorAll('.notification-item.unread').forEach((item) => {
+          item.classList.remove('unread');
+        });
+      }
+
+      // Hide badge
+      const badge = document.getElementById('notification-badge');
+      if (badge) badge.style.display = 'none';
+    } catch (e) {
+      console.error('Error marking all notifications as read:', e);
+    }
+  }
+
+  async dismissNotification(notificationId) {
+    if (!this.currentUser) return;
+
+    try {
+      const query = `
+        mutation DismissNotification($notificationId: ID!, $userId: ID!) {
+          dismissNotification(notificationId: $notificationId, userId: $userId) {
+            id
+          }
+        }
+      `;
+
+      await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          query,
+          variables: { notificationId, userId: this.currentUser.id },
+        }),
+      });
+
+      // Remove from list
+      const item = document.querySelector(
+        `.notification-item[data-id="${notificationId}"]`
+      );
+      if (item) item.remove();
+
+      // Update badge
+      await this.updateNotificationBadge();
+    } catch (e) {
+      console.error('Error dismissing notification:', e);
     }
   }
 }
