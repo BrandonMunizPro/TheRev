@@ -830,10 +830,17 @@
             <div class="friends-tabs">
               <button
                 class="friends-tab active"
+                data-tab="online"
+                onclick="theRevApp.switchFriendsTab('online')"
+              >
+                Online <span class="tab-badge online" id="online-count">0</span>
+              </button>
+              <button
+                class="friends-tab"
                 data-tab="list"
                 onclick="theRevApp.switchFriendsTab('list')"
               >
-                My Friends <span class="tab-badge" id="friends-count">0</span>
+                All Friends <span class="tab-badge" id="friends-count">0</span>
               </button>
               <button
                 class="friends-tab"
@@ -843,6 +850,14 @@
                 Requests
                 <span class="tab-badge pending" id="requests-count">0</span>
               </button>
+            </div>
+
+            <!-- Online Friends -->
+            <div id="online-friends" class="friends-list" style="display: none">
+              <div class="online-header">
+                <div class="online-dot"></div>
+                <span>Online - Click to call</span>
+              </div>
             </div>
 
             <!-- Friends List -->
@@ -956,6 +971,91 @@
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Incoming Call Modal -->
+        <div id="incoming-call-modal" class="modal">
+          <div
+            class="modal-content"
+            style="max-width: 350px; text-align: center"
+          >
+            <div class="modal-header">
+              <h3>Incoming Call</h3>
+            </div>
+            <div class="modal-body" style="padding: 30px 20px">
+              <div class="call-caller-info">
+                <div class="caller-avatar-large" id="incoming-call-avatar">
+                  <img src="assets/default-avatar.svg" alt="Caller" />
+                </div>
+                <h2 id="incoming-callername">Calling...</h2>
+                <p id="incoming-call-type">Video Call</p>
+              </div>
+            </div>
+            <div
+              class="modal-footer"
+              style="justify-content: center; gap: 15px"
+            >
+              <button class="btn btn-danger" onclick="theRevApp.declineCall()">
+                Decline
+              </button>
+              <button class="btn btn-success" onclick="theRevApp.acceptCall()">
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Call Modal -->
+        <div id="active-call-modal" class="modal">
+          <div class="modal-content call-modal">
+            <div class="modal-header">
+              <h3 id="active-call-title">Call</h3>
+              <span id="call-status" class="call-status-badge">Connected</span>
+            </div>
+            <div class="modal-body">
+              <div class="call-container">
+                <div class="call-video-grid">
+                  <div class="video-remote" id="remote-video-container">
+                    <video id="remote-video" autoplay playsinline></video>
+                    <div class="video-placeholder" id="remote-placeholder">
+                      <img src="assets/default-avatar.svg" alt="Remote user" />
+                    </div>
+                  </div>
+                  <div class="video-local" id="local-video-container">
+                    <video id="local-video" autoplay playsinline muted></video>
+                  </div>
+                </div>
+                <div class="call-partner-info" id="call-partner-name">
+                  <span>Call with...</span>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer call-controls">
+              <button
+                class="call-btn"
+                id="mute-btn"
+                onclick="theRevApp.toggleMute()"
+              >
+                <span class="icon-mic">🎤</span>
+                <span>Mute</span>
+              </button>
+              <button
+                class="call-btn"
+                id="video-btn"
+                onclick="theRevApp.toggleVideo()"
+              >
+                <span class="icon-video">📹</span>
+                <span>Video</span>
+              </button>
+              <button
+                class="call-btn call-btn-danger"
+                onclick="theRevApp.endCall()"
+              >
+                <span class="icon-end">📞</span>
+                <span>End</span>
+              </button>
             </div>
           </div>
         </div>

@@ -69,4 +69,12 @@ export class User {
   @Field()
   @UpdateDateColumn()
   updatedAt?: Date;
+
+  @Field({ nullable: true })
+  @Column({ nullable: true, name: 'last_active' })
+  lastActive?: Date;
+
+  @Field()
+  @Column({ default: false, name: 'is_online' })
+  isOnline!: boolean;
 }

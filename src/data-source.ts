@@ -13,6 +13,7 @@ import { Server } from './entities/Server';
 import { Channel } from './entities/Channel';
 import { ServerMember } from './entities/ServerMember';
 import { Message } from './entities/Message';
+import { Call } from './entities/Call';
 import {
   MigrationState,
   UserStorageLocation,
@@ -55,6 +56,7 @@ export const AppDataSource = new DataSource({
     Channel,
     ServerMember,
     Message,
+    Call,
   ],
   migrations: isTest ? undefined : ['./src/migrations/*.ts'],
   subscribers: [],

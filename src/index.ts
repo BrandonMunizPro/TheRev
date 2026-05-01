@@ -18,7 +18,9 @@ import { FriendResolver } from './resolvers/Friend';
 import { NotificationResolver } from './resolvers/Notification';
 import { ServerResolver } from './resolvers/Server';
 import { MessageResolver } from './resolvers/Message';
+// import { CallResolver } from './resolvers/Call';
 import { GraphQLContext } from './graphql/context';
+import { callSignalingService } from './services/CallSignalingService';
 import { AIIntentClassifier } from './ai/AIIntentClassifier';
 import {
   AIIntentType,
@@ -302,6 +304,7 @@ async function startServer() {
         NotificationResolver,
         ServerResolver,
         MessageResolver,
+        // CallResolver,
       ],
       validate: false,
     });
@@ -335,13 +338,16 @@ async function startServer() {
     // AI Browser Command Endpoint
     app.post('/api/ai-browser-command', async (req, res) => {
       try {
-        const { command, preferredProvider } = req.body;
+        const { command, history, preferredProvider } = req.body;
 
         if (!command) {
           return res.json({ success: false, error: 'No command provided' });
         }
 
         console.log('[Ask Rev] Processing command:', command);
+        if (history && history.length > 0) {
+          console.log('[Ask Rev] History:', history.length, 'messages');
+        }
 
         // Classify the command intent
         const intentResult = intentClassifier.classify(command);
@@ -359,76 +365,91 @@ async function startServer() {
         ) {
           const route = websiteRouter.route(command);
 
-          // For conversational questions, generate an AI response AND navigate
+          // Check if it's a conversational question or follow-up (not a search command)
+          // Also treat as conversation if there's history - assume follow-up discussion
           const isQuestion =
-            /^(what|who|how|when|where|why|can|could|would|should|tell|explain|describe|define)/i.test(
+            /^(what|who|how|when|where|why|can|could|would|should|tell|explain|describe|define|i feel|i think|i believe|yes|no|thats|thats|thats)/i.test(
               command
-            );
+            ) ||
+            (history && history.length > 0);
 
-          if (route.url && route.url !== 'https://www.google.com/search?q=') {
-            console.log(
-              '[Ask Rev] Low confidence - routing as search:',
-              route.url
-            );
+          // For conversational questions or follow-ups in existing conversation, generate AI response WITHOUT auto-navigating
+          let response = '';
+          if (isQuestion) {
+            try {
+              console.log('[Ask Rev] Generating conversational response...');
+              const provider =
+                adapterFactory.getBestAvailableProvider() ||
+                AIProvider.OPEN_SOURCE;
+              const adapter = adapterFactory.getAdapter(provider);
+              if (adapter) {
+                // Add timeout to prevent hanging
+                const timeoutPromise = new Promise((_, reject) => {
+                  setTimeout(() => reject(new Error('AI timeout')), 30000);
+                });
 
-            // Generate conversational response for questions
-            let response = '';
-            if (isQuestion) {
-              try {
-                console.log('[Ask Rev] Generating conversational response...');
-                const provider =
-                  adapterFactory.getBestAvailableProvider() ||
-                  AIProvider.OPEN_SOURCE;
-                const adapter = adapterFactory.getAdapter(provider);
-                if (adapter) {
-                  // Add timeout to prevent hanging
-                  const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('AI timeout')), 30000);
-                  });
-
-                  const aiResponse = await Promise.race([
-                    adapter.complete({
-                      provider,
-                      prompt: `You are Rev, a helpful AI assistant. Answer this question briefly (2-3 sentences max): ${command}`,
-                      systemPrompt: 'You are Rev, a helpful AI assistant.',
-                      maxTokens: 256,
-                      temperature: 0.7,
-                    }),
-                    timeoutPromise,
-                  ]);
-
-                  if (
-                    aiResponse &&
-                    typeof aiResponse === 'object' &&
-                    'content' in aiResponse
-                  ) {
-                    response =
-                      (aiResponse as { content?: string }).content || '';
-                    console.log('[Ask Rev] AI response:', response);
-                  }
+                // Build prompt with conversation history
+                let promptText = `You are Rev, a helpful AI assistant. `;
+                if (history && history.length > 0) {
+                  const context = history
+                    .map(
+                      (h) =>
+                        `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`
+                    )
+                    .join('\n');
+                  promptText += `Conversation so far:\n${context}\n\nUser's new question: ${command}`;
+                } else {
+                  promptText += `Answer briefly (2-3 sentences): ${command}`;
                 }
 
-                // If no response from AI, use a generic response
-                if (!response) {
-                  response = `That's a great question! Let me search for the latest information about that for you.`;
+                const aiResponse = await Promise.race([
+                  adapter.complete({
+                    provider,
+                    prompt: promptText,
+                    systemPrompt: 'You are Rev, a helpful AI assistant.',
+                    maxTokens: 256,
+                    temperature: 0.7,
+                  }),
+                  timeoutPromise,
+                ]);
+
+                if (
+                  aiResponse &&
+                  typeof aiResponse === 'object' &&
+                  'content' in aiResponse
+                ) {
+                  response = (aiResponse as { content?: string }).content || '';
+                  console.log('[Ask Rev] AI response:', response);
                 }
-              } catch (err) {
-                console.error('[Ask Rev] AI response error:', err.message);
-                response = `That's a great question! Let me search for information about that for you.`;
               }
+
+              // If no response from AI, use a generic response
+              if (!response) {
+                response = `That's a great question! Let me search for the latest information about that for you.`;
+              }
+            } catch (err) {
+              console.error('[Ask Rev] AI response error:', err.message);
+              response = `That's a great question! Let me search for information about that for you.`;
             }
 
+            // Return response ONLY - let user choose to search via suggestion bubbles
             return res.json({
               success: true,
-              url: route.url,
-              website: route.website,
-              intent: AIIntentType.NAVIGATE_URL,
-              response: response || undefined,
-              context: route.query
-                ? `Searching ${route.website} for "${route.query}"...`
-                : `Opening ${route.website}...`,
+              response: response,
+              intent: 'question',
             });
           }
+
+          // For non-question commands (like searches), still navigate
+          return res.json({
+            success: true,
+            url: route.url,
+            website: route.website,
+            intent: AIIntentType.NAVIGATE_URL,
+            context: route.query
+              ? `Searching ${route.website} for "${route.query}"...`
+              : `Opening ${route.website}...`,
+          });
         }
 
         // For navigation intents - return immediately, context is async
@@ -533,13 +554,24 @@ async function startServer() {
           });
         }
 
+        // Build prompt with conversation history for persistent memory
+        let fullPrompt = command;
+        if (history && history.length > 0) {
+          const context = history
+            .map(
+              (h) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`
+            )
+            .join('\n');
+          fullPrompt = `Conversation so far:\n${context}\n\nUser's latest question: ${command}`;
+        }
+
         const systemPrompt =
           intentResult.processingHints?.systemPrompt ||
           'You are Rev, a helpful AI assistant. Respond directly and concisely to the user request.';
 
         const aiResponse = await adapter.complete({
           provider,
-          prompt: command,
+          prompt: fullPrompt,
           systemPrompt,
           maxTokens: intentResult.processingHints?.maxTokens || 1024,
           temperature: intentResult.processingHints?.temperature || 0.7,
@@ -1194,6 +1226,10 @@ async function startServer() {
         console.log(`🧠 NEXUS core listening on http://localhost:${PORT}`);
         console.log(`🚀 GraphQL ready at http://localhost:${PORT}/graphql`);
       }
+
+      // Start call signaling service
+      callSignalingService.start(4002);
+      console.log(`📞 Call signaling ready on ws://localhost:4002`);
     });
   } catch (error) {
     console.error('DB init error:', error);

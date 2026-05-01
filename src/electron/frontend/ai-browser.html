@@ -1715,7 +1715,10 @@
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ command: message }),
+              body: JSON.stringify({
+                command: message,
+                history: getHistory(),
+              }),
             }
           );
 
@@ -1864,21 +1867,63 @@
                 );
               }, 500);
             }
-          } else if (result.url) {
-            // Navigate to URL - IMMEDIATELY (sync)
-            browserFrame.loadURL(result.url);
+          } else if (result.url && !result.response) {
+            // URL only (no AI response) - show URL-based actions
 
-            // Show navigation message
-            addMessage('ai', result.context || `Navigating to ${result.url}`);
+            // Check if explicit navigation command
+            const msgLower = message.toLowerCase();
+            const isExplicitNav =
+              msgLower.includes('go to') ||
+              msgLower.includes('open') ||
+              msgLower.includes('navigate') ||
+              msgLower.includes('youtube') ||
+              msgLower.includes('watch') ||
+              msgLower.includes('search for') ||
+              msgLower.includes('find video');
 
-            // ALWAYS fetch async context for navigation - this is where we want AI context!
-            fetchContextAsync(message);
+            if (isExplicitNav) {
+              // User explicitly wants to navigate
+              browserFrame.loadURL(result.url);
+              addMessage('ai', result.context || 'Opening...');
+              fetchContextAsync(message);
+            } else if (result.response) {
+              // AI already answered - just show the response, no bubbles needed
+              // (this won't be reached since result.response path handles it above)
+            } else {
+              // No response but has URL - offer to search
+              addMessage(
+                'ai',
+                result.context || 'Would you like me to search for that?'
+              );
+              showSuggestionBubbles([
+                {
+                  label: '🔍 Search online',
+                  action: () => handleSearchFromBubble(result.url),
+                },
+                { label: '💤 No thanks', action: clearSuggestions },
+              ]);
+            }
           } else if (result.response) {
             // Show AI response
             addMessage('ai', result.response);
 
-            // Also show context if available
-            if (result.context && result.context !== result.response) {
+            // Only show suggestion bubbles if user explicitly used search keywords
+            // AND there was no answer (no result.response), NOT when AI already answered
+            // The intent: 'question' from backend means AI answered without searching
+            if (
+              result.url &&
+              !result.response &&
+              result.intent !== 'question'
+            ) {
+              showSuggestionBubbles([
+                {
+                  label: '🔍 Search online',
+                  action: () => handleSearchFromBubble(result.url),
+                },
+                { label: '💤 Got it', action: clearSuggestions },
+              ]);
+            } else if (result.context && result.intent !== 'question') {
+              // Show context if available (no URL means user just asked a question)
               setTimeout(() => {
                 addMessage(
                   'ai',
@@ -2787,6 +2832,62 @@
 
         chatAvatarRenderer.render(chatAvatarScene, chatAvatarCamera);
         requestAnimationFrame(animateChatAvatar);
+      }
+
+      // Suggestion bubbles - show options instead of auto-navigate
+      let suggestionContainer = null;
+      function showSuggestionBubbles(options) {
+        if (suggestionContainer) suggestionContainer.remove();
+        const chatArea = document.querySelector('.chat-input-area');
+        if (!chatArea) return;
+        suggestionContainer = document.createElement('div');
+        suggestionContainer.style.cssText =
+          'display:flex;gap:8px;padding:8px 15px;background:var(--surface);border-top:1px solid #404040;';
+        options.forEach((opt) => {
+          const btn = document.createElement('button');
+          btn.textContent = opt.label;
+          btn.style.cssText =
+            'background:var(--primary);border:1px solid #ff6600;color:#fff;padding:8px 16px;border-radius:20px;cursor:pointer;font-size:13px;';
+          btn.onclick = () => opt.action();
+          suggestionContainer.appendChild(btn);
+        });
+        chatArea.parentNode.insertBefore(suggestionContainer, chatArea);
+      }
+      function clearSuggestions() {
+        if (suggestionContainer) {
+          suggestionContainer.remove();
+          suggestionContainer = null;
+        }
+      }
+      function handleSearchFromBubble(url) {
+        clearSuggestions();
+        addMessage('ai', '🔍 Opening...');
+        browserFrame.loadURL(url);
+      }
+
+      // Get conversation history for persistent memory
+      function getHistory() {
+        const chatContainer = document.getElementById('chatMessages');
+        if (!chatContainer) return [];
+        const history = [];
+        // Look for user messages (red gradient bubbles)
+        const userMessages = chatContainer.querySelectorAll(
+          '.user-message-bubble'
+        );
+        userMessages.forEach((msg) => {
+          const text = msg.textContent.trim();
+          if (text) history.push({ role: 'user', content: text });
+        });
+        // Look for AI messages (speech bubbles with avatar)
+        const aiMessages = chatContainer.querySelectorAll(
+          '.ai-message-bubble .speech-bubble'
+        );
+        aiMessages.forEach((msg) => {
+          const text = msg.textContent.trim();
+          if (text) history.push({ role: 'assistant', content: text });
+        });
+        // Keep last 10 messages for context
+        return history.slice(-10);
       }
 
       // Initialize avatar on load

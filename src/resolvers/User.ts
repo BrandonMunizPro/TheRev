@@ -2,6 +2,7 @@ import { InputType, Field, ID, Int, ObjectType } from 'type-graphql';
 import { Resolver, Query, Mutation, Arg } from 'type-graphql';
 import { User } from '../entities/User';
 import { UsersModel } from '../models/users.model';
+import { FriendsModel } from '../models/friends.model';
 import { IsOptional, IsString, IsEmail } from 'class-validator';
 import { AppDataSource } from '../data-source';
 import { ErrorHandler } from '../errors/ErrorHandler';
@@ -109,6 +110,7 @@ export type returnedUser = {
   bio?: string;
   ideology?: string;
   profilePicUrl?: string;
+  isOnline?: boolean;
   password?: string; // only internal
   jwt?: string; // returned after login
   createdAt?: Date;
@@ -207,5 +209,38 @@ export class UserResolver {
       .getCount();
 
     return { threads, posts, replies };
+  }
+
+  @Mutation(() => Boolean)
+  async setOnlineStatus(
+    @Arg('userId', () => ID) userId: string,
+    @Arg('isOnline') isOnline: boolean
+  ): Promise<boolean> {
+    const userRepo = AppDataSource.getRepository(User);
+    await userRepo.update(userId, {
+      isOnline,
+      lastActive: new Date(),
+    });
+    return true;
+  }
+
+  @Query(() => [User])
+  async getOnlineFriends(
+    @Arg('userId', () => ID) userId: string
+  ): Promise<User[]> {
+    const friendsModel = new FriendsModel();
+    const friends = await friendsModel.getFriendsList(userId);
+
+    const friendUserIds = friends.map((f) => f.userId);
+
+    if (friendUserIds.length === 0) return [];
+
+    const users = await AppDataSource.getRepository(User)
+      .createQueryBuilder('user')
+      .where('user.id IN (:...friendUserIds)', { friendUserIds })
+      .andWhere('user.isOnline = true')
+      .getMany();
+
+    return users;
   }
 }

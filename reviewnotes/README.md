@@ -3566,27 +3566,32 @@ TheRev as a "super app" - social platform + marketplace + services all connected
 
 #### Products & Services
 ```
+
 Products:
+
 - Physical goods (buy/sell)
 - Categories: Electronics, Clothing, Home, etc.
 - Listing: title, description, price, images
 - Cart + checkout flow
 
 Services:
+
 - Laundry pickup/delivery
 - Food ordering
 - Task services (groceries, etc.)
 - Provider profiles + ratings
-```
+
+````
 
 #### Feature Flags
 ```env
 # In .env
 MARKETPLACE_ENABLED=false  # Hidden by default
 MARKETPLACE_ADMIN_VIEW=true  # Only admins see it
-```
+````
 
 #### UI Placement
+
 - New "Marketplace" tab in sidebar
 - Hidden unless MARKETPLACE_ENABLED=true
 - Profile badge showing "Seller" status
@@ -3594,6 +3599,7 @@ MARKETPLACE_ADMIN_VIEW=true  # Only admins see it
 ---
 
 ### Revenue Model (Initial)
+
 - **Service Fee**: 5-10% on transactions
 - **Premium Listings**: Sellers pay for promotion
 - **AI Agent Fee**: Optional assistant for purchase help
@@ -3601,12 +3607,14 @@ MARKETPLACE_ADMIN_VIEW=true  # Only admins see it
 ### Payment Processing: Stripe
 
 #### Why Stripe
+
 - Developer-friendly APIs
 - Handles PCI compliance
 - Supports marketplace (Connect)
 - Webhooks for order completion
 
 #### Integration Plan
+
 ```
 Stripe Products:
 - Stripe Connect (marketplace sellers)
@@ -3622,6 +3630,7 @@ Flow:
 ```
 
 #### Stripe Connect (Marketplace Model)
+
 ```
 - Express accounts for sellers
 - Platform collects fee (application_fee_amount)
@@ -3629,6 +3638,7 @@ Flow:
 ```
 
 #### Environment Variables
+
 ```env
 STRIPE_SECRET_KEY=sk_...
 STRIPE_PUBLISHABLE_KEY=pk_...
@@ -3637,6 +3647,7 @@ STRIPE_PLATFORM_FEE_PERCENT=10
 ```
 
 #### Key Files to Create
+
 ```
 src/payment/
 ├── StripeService.ts      # Payment processing
@@ -3650,26 +3661,31 @@ src/payment/
 ### Stories to Build Later (Epic: Marketplace)
 
 #### Story 1: Marketplace UI Shell
+
 - Add "Marketplace" tab to navigation
 - Create placeholder page (hidden by default)
 - Add feature flag check
 
 #### Story 2: Product Listings
+
 - Product entity (name, description, price, images, seller)
 - Create listing form
 - Product grid view
 
-#### Story 3: Service Listings  
+#### Story 3: Service Listings
+
 - Service entity (name, description, price, provider, location)
 - Category: Laundry, Food, Tasks, Goods
 - Provider profile page
 
 #### Story 4: Cart & Checkout
+
 - Shopping cart functionality
 - Order summary
 - Place order flow
 
 #### Story 5: Seller Dashboard
+
 - My listings management
 - Orders received
 - Earnings view
@@ -3679,6 +3695,7 @@ src/payment/
 ## UI Redesign: Tab Navigation
 
 ### Current Tabs (from index.html line 344-356)
+
 ```
 <nav class="nav">
   [Messages] [Threads] [News] [Friends] [AI Settings] [Tasks]
@@ -3689,11 +3706,13 @@ src/payment/
 ### Proposed Structure
 
 **Keep these as top-level** (they stay as is):
+
 - 🔥 News - stays separate
-- 🌐 Browser - stays separate  
+- 🌐 Browser - stays separate
 - 🎭 Avatar - stays separate (but move to settings later)
 
 **Group under "Social" container**:
+
 - 💬 Messages
 - 📋 Threads
 - 👥 Friends
@@ -3702,6 +3721,7 @@ src/payment/
 - 📊 Analytics (maybe leave as is)
 
 **Group under "Settings"**:
+
 - 🤖 AI Settings
 - 🎭 Avatar Settings (move from top level)
 - 🔒 Audit Log (admin, maybe keep or move)
@@ -3710,11 +3730,13 @@ src/payment/
 ---
 
 ### New Layout
+
 ```
 [Logo]  [Social] [News] [Browser]  [Settings ⚙️]
 ```
 
 Or possibly:
+
 ```
 [Logo]  [Social] [News] [Browser] [Avatar] [Settings ⚙️]
 ```
@@ -3726,6 +3748,7 @@ Where Settings opens to: AI Settings | Voice Settings | Account
 ---
 
 ### Affected Files
+
 ```
 src/electron/frontend/
 ├── index.html        # Change nav structure (lines 344-356)
@@ -3738,7 +3761,9 @@ src/electron/frontend/
 ### Implementation Plan
 
 #### Step 1: Update HTML (index.html lines 344-356)
+
 Change from:
+
 ```html
 <nav class="nav">
   <button id="messages-btn" class="nav-btn">Messages</button>
@@ -3757,6 +3782,7 @@ Change from:
 ```
 
 To:
+
 ```html
 <nav class="nav">
   <button id="social-btn" class="nav-btn">Social</button>
@@ -3775,11 +3801,13 @@ To:
 Then add Social dropdown container after nav
 
 #### Step 2: Update CSS (styles.css)
+
 - Add `.nav-dropdown` styles
 - Add `.nav-group` styles for grouping
 - Update `.nav` to handle grouped buttons
 
 #### Step 3: Update JS (app.js)
+
 - Add event listener for `#social-btn`
 - Add click handling for dropdown items
 - Keep existing button handlers but update routing
@@ -3789,14 +3817,16 @@ Then add Social dropdown container after nav
 ### Sub-navigation for Social
 
 When "Social" is clicked → show dropdown with:
+
 - 🏠 Home (Threads)
-- 💬 Messages  
+- 💬 Messages
 - 👥 Friends
 - 👤 Profile
 
 ---
 
 ### Hidden/Admin Tabs (keep working, hide from nav)
+
 - Tasks
 - Analytics
 - Audit Log
@@ -3807,10 +3837,118 @@ These can be accessed via settings or remain hidden unless admin
 ---
 
 ### Implementation Tasks
+
 1. [ ] Update index.html nav structure
 2. [ ] Add Social dropdown container HTML
 3. [ ] Add CSS for dropdown/modal styling
 4. [ ] Update app.js for social button click
 5. [ ] Reorder tabs to be cleaner
 6. [ ] Test all navigation still works
+
+```
+
+---
+
+## Production Readiness Checklist
+
+> **Goal**: Once MVP is running locally, these must be addressed before production deployment.
+
+### Security & Access Control
+- [ ] **Authentication Middleware** - Verify JWT tokens, handle expiration, refresh tokens
+- [ ] **Authorization Middleware** - Role-based access control (RBAC) for all endpoints
+- [ ] **Input Validation** - Sanitize all user inputs, prevent SQL injection, XSS
+- [ ] **Rate Limiting** - Prevent abuse on all public endpoints
+- [ ] **CORS Configuration** - Proper origin validation in production
+- [ ] **Security Headers** - CSP, X-Frame-Options, HSTS, etc.
+- [ ] **Audit Logs** - Track all sensitive operations (login, password change, admin actions)
+- [ ] **Data Encryption** - Encrypt sensitive data at rest, TLS for transit
+- [ ] **Secret Management** - Never commit .env, use proper secret storage (Vault, AWS Secrets Manager)
+- [ ] **Idempotency** - Prevent duplicate operations on retry
+
+### Data Integrity & Consistency
+- [ ] **Transaction Boundaries** - Wrap multi-table operations in transactions
+- [ ] **Rollback Strategies** - Proper error handling with rollback on failure
+- [ ] **Concurrency Handling** - Optimistic locking / version fields to prevent race conditions
+- [ ] **Multi-tenant Isolation** - Ensure users can ONLY see their own data
+- [ ] **Database Constraints** - Enforce invariants at DB level (unique, foreign keys, check constraints)
+- [ ] **Migration Safety** - Backward compatible migrations, never destructive without backup
+- [ ] **Data Validation** - Domain invariants that don't corrupt under concurrent access
+
+### Reliability & Resilience
+- [ ] **Background Jobs** - Move heavy operations (notifications, emails) to job queues
+- [ ] **Retry Logic** - Exponential backoff for transient failures
+- [ ] **Dead Letter Queue** - Handle failed jobs gracefully
+- [ ] **Circuit Breakers** - Don't cascade failures from external services
+- [ ] **Webhook Verification** - Validate signatures, replay protection
+- [ ] **External API Resilience** - Stripe, Google, OpenAI failures shouldn't crash the app
+- [ ] **Graceful Degradation** - App usable even if some features are down
+- [ ] **Health Checks** - `/health` endpoint for load balancers
+
+### Caching & Performance
+- [ ] **Query Optimization** - Indexes on all frequently queried columns
+- [ ] **N+1 Prevention** - Use DataLoader or batch queries
+- [ ] **Response Caching** - Cache expensive queries (with invalidation)
+- [ ] **Cache Invalidation** - Don't serve stale data
+- [ ] **Connection Pooling** - Database connection limits
+- [ ] **Pagination** - Never return unbounded result sets
+- [ ] **Load Testing** - Verify performance under realistic load (k6, Artillery)
+- [ ] **Profiling** - Identify slow endpoints, memory leaks
+
+### Observability
+- [ ] **Structured Logging** - JSON logs with context (userId, requestId, correlationId)
+- [ ] **Distributed Tracing** - Trace requests across services
+- [ ] **Metrics** - Request latency, error rates, business metrics
+- [ ] **Correlation IDs** - Link logs from frontend → backend → database
+- [ ] **Alerting** - PagerDuty/OpsGenie for critical failures
+- [ ] **Dashboard** - Grafana/Kibana for visibility
+- [ ] **Error Tracking** - Sentry/Bugsnag for exceptions
+
+### Deployment & Operations
+- [ ] **CI/CD Pipeline** - Automated testing, linting, building, deploying
+- [ ] **Environment Parity** - Dev/staging/prod as similar as possible
+- [ ] **Blue/Green Deploys** - Zero-downtime deployments
+- [ ] **Rollback Strategy** - Quick rollback if deployment fails
+- [ ] **Database Migrations** - Run migrations before deploy, have rollback plan
+- [ ] **Configuration Management** - Externalize config, no hardcoded values
+- [ ] **Feature Flags** - Toggle features without redeploying
+- [ ] **Containerization** - Docker for consistent environments
+
+### Compliance & Data Governance
+- [ ] **Data Retention** - Policies for how long data is kept
+- [ ] **PII Handling** - Don't log sensitive data, GDPR compliance
+- [ ] **User Consent** - Privacy policy, cookie consent
+- [ ] **Data Export** - Users can export their data (GDPR right)
+- [ ] **Account Deletion** - Proper data deletion flow (right to be forgotten)
+- [ ] **API Rate Limits** - Document and enforce per-client limits
+
+### Incident Response
+- [ ] **Runbooks** - Documented procedures for common failures
+- [ ] **On-call Rotation** - 24/7 coverage plan
+- [ ] **Post-mortems** - blameless reviews after incidents
+- [ ] **Disaster Recovery** - Backup/restore procedures, RTO/RPO defined
+- [ ] **Communication Plan** - Status page, customer notifications
+
+---
+
+## Current MVP Status
+
+### Working ✅
+- Basic CRUD for threads, posts, messages, friends
+- User authentication (login/register)
+- Real-time notifications (basic)
+- AI avatar with animations
+- Browser automation
+- News feed
+
+### TODO Before Production 🔧
+1. Fix notification system (cutscene animations planned)
+2. Direct Messages (full implementation)
+3. Server/Channel system polish
+4. Complete profile features
+5. Address all items in Production Readiness Checklist above
+
+---
+
+*Last updated: April 2026*
+
 ```

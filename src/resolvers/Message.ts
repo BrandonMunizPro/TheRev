@@ -64,6 +64,9 @@ export class MessageOutput implements MessageWithSender {
   @Field({ nullable: true })
   senderAvatarUrl?: string;
 
+  @Field({ nullable: true })
+  senderProfilePicUrl?: string;
+
   @Field(() => ID, { nullable: true })
   channelId?: string;
 

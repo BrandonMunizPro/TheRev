@@ -1,7 +1,9 @@
-import { AppDataSource } from '../data-source';
 import { Message } from '../entities/Message';
 import { ServerMember } from '../entities/ServerMember';
 import { User } from '../entities/User';
+import { MessagesDao } from '../dao/messages.dao';
+import { UsersDao } from '../dao/users.dao';
+import { ServerMembersDao } from '../dao/serverMembers.dao';
 import { ErrorHandler } from '../errors/ErrorHandler';
 
 export type MessageWithSender = {
@@ -21,9 +23,9 @@ export type MessageWithSender = {
 };
 
 export class MessagesModel {
-  private messageRepo = AppDataSource.getRepository(Message);
-  private memberRepo = AppDataSource.getRepository(ServerMember);
-  private userRepo = AppDataSource.getRepository(User);
+  private readonly messagesDao = new MessagesDao();
+  private readonly usersDao = new UsersDao();
+  private readonly membersDao = new ServerMembersDao();
 
   async sendMessage(
     senderId: string,
@@ -37,56 +39,39 @@ export class MessagesModel {
   ): Promise<Message> {
     const { channelId, serverId, threadId, recipientId } = options;
 
-    // Validate sender exists
     if (!senderId) {
       throw ErrorHandler.notAuthenticated();
     }
 
     // If in a server/channel, check membership
     if (serverId) {
-      const membership = await this.memberRepo.findOne({
-        where: { serverId, userId: senderId },
-      });
+      const membership = await this.membersDao.findByUserAndServer(
+        senderId,
+        serverId
+      );
       if (!membership) {
         throw ErrorHandler.insufficientPermissions('send message in', 'server');
       }
     }
 
-    // For server messages, recipientId should be null (not needed)
-    // For DMs, recipientId is required
-    const finalRecipientId = serverId ? null : recipientId || null;
-    const finalChannelId = channelId || null;
-    const finalServerId = serverId || null;
-
-    const message = this.messageRepo.create({
+    const message = await this.messagesDao.create({
       senderId,
       content,
-      recipientId: finalRecipientId,
-      channelId: finalChannelId,
-      serverId: finalServerId,
+      recipientId: serverId ? null : recipientId || null,
+      channelId: channelId || null,
+      serverId: serverId || null,
       threadId: threadId || null,
       isRead: false,
     });
 
-    return this.messageRepo.save(message);
+    return message;
   }
 
   async getChannelMessages(
     channelId: string,
     options: { limit?: number; before?: string }
   ): Promise<MessageWithSender[]> {
-    const query = this.messageRepo
-      .createQueryBuilder('message')
-      .leftJoinAndSelect('message.sender', 'sender')
-      .where('message.channelId = :channelId', { channelId })
-      .orderBy('message.createdAt', 'DESC')
-      .take(options.limit || 50);
-
-    if (options.before) {
-      query.andWhere('message.id < :before', { before: options.before });
-    }
-
-    const messages = await query.getMany();
+    const messages = await this.messagesDao.findByChannel(channelId, options);
 
     return messages.map((m) => ({
       id: m.id,
@@ -110,23 +95,11 @@ export class MessagesModel {
     otherUserId: string,
     options: { limit?: number; before?: string }
   ): Promise<MessageWithSender[]> {
-    const query = this.messageRepo
-      .createQueryBuilder('message')
-      .leftJoinAndSelect('message.sender', 'sender')
-      .where(
-        '(message.senderId = :userId AND message.recipientId = :otherUserId) OR (message.senderId = :otherUserId AND message.recipientId = :userId)',
-        { userId, otherUserId }
-      )
-      .andWhere('message.serverId IS NULL')
-      .andWhere('message.channelId IS NULL')
-      .orderBy('message.createdAt', 'DESC')
-      .take(options.limit || 50);
-
-    if (options.before) {
-      query.andWhere('message.id < :before', { before: options.before });
-    }
-
-    const messages = await query.getMany();
+    const messages = await this.messagesDao.findDirectMessages(
+      userId,
+      otherUserId,
+      options
+    );
 
     return messages.map((m) => ({
       id: m.id,
@@ -143,47 +116,25 @@ export class MessagesModel {
   }
 
   async getConversations(userId: string): Promise<any[]> {
-    // Get all unique conversations (other users user has messaged with)
-    const messages = await this.messageRepo
-      .createQueryBuilder('message')
-      .select(
-        'DISTINCT CASE WHEN message.senderId = :userId THEN message.recipientId ELSE message.senderId END',
-        'otherUserId'
-      )
-      .setParameter('userId', userId)
-      .where('message.serverId IS NULL')
-      .andWhere('message.channelId IS NULL')
-      .andWhere(
-        '(message.senderId = :userId OR message.recipientId = :userId)',
-        { userId }
-      )
-      .getRawMany();
+    const rawConversations = await this.messagesDao.findConversations(userId);
 
     const conversations = [];
-    for (const msg of messages) {
-      const otherUser = await this.userRepo.findOne({
-        where: { id: msg.otherUserId },
-      });
+    for (const msg of rawConversations) {
+      const otherUser = await this.usersDao.findById(msg.otherUserId);
       if (otherUser) {
         // Get last message
-        const lastMessage = await this.messageRepo
-          .createQueryBuilder('message')
-          .where(
-            '(message.senderId = :userId AND message.recipientId = :otherUserId) OR (message.senderId = :otherUserId AND message.recipientId = :userId)',
-            { userId, otherUserId: msg.otherUserId }
-          )
-          .orderBy('message.createdAt', 'DESC')
-          .limit(1)
-          .getOne();
+        const lastMessages = await this.messagesDao.findDirectMessages(
+          userId,
+          msg.otherUserId,
+          { limit: 1 }
+        );
+        const lastMessage = lastMessages[0];
 
         // Get unread count
-        const unreadCount = await this.messageRepo.count({
-          where: {
-            senderId: msg.otherUserId,
-            recipientId: userId,
-            isRead: false,
-          },
-        });
+        const unreadCount = await this.messagesDao.countUnread(
+          userId,
+          msg.otherUserId
+        );
 
         conversations.push({
           odlFriendId: otherUser.id,
@@ -211,17 +162,13 @@ export class MessagesModel {
     userId: string,
     emoji: string
   ): Promise<Message> {
-    const message = await this.messageRepo.findOne({
-      where: { id: messageId },
-    });
+    const message = await this.messagesDao.findById(messageId);
 
     if (!message) {
       throw ErrorHandler.notFound('Message', 'Message not found');
     }
 
     const reactions = message.reactions || [];
-
-    // Find existing emoji reaction
     const existingReaction = reactions.find((r) => r.emoji === emoji);
     if (existingReaction) {
       if (!existingReaction.users.includes(userId)) {
@@ -232,7 +179,7 @@ export class MessagesModel {
     }
 
     message.reactions = reactions;
-    return this.messageRepo.save(message);
+    return this.messagesDao.save(message);
   }
 
   async removeReaction(
@@ -240,9 +187,7 @@ export class MessagesModel {
     userId: string,
     emoji: string
   ): Promise<Message> {
-    const message = await this.messageRepo.findOne({
-      where: { id: messageId },
-    });
+    const message = await this.messagesDao.findById(messageId);
 
     if (!message) {
       throw ErrorHandler.notFound('Message', 'Message not found');
@@ -261,29 +206,22 @@ export class MessagesModel {
     }
 
     message.reactions = reactions;
-    return this.messageRepo.save(message);
+    return this.messagesDao.save(message);
   }
 
   async markAsRead(messageId: string, userId: string): Promise<boolean> {
-    const message = await this.messageRepo.findOne({
-      where: { id: messageId },
-    });
+    const message = await this.messagesDao.findById(messageId);
 
     if (!message) return false;
-
-    if (message.recipientId !== userId) {
-      return false;
-    }
+    if (message.recipientId !== userId) return false;
 
     message.isRead = true;
-    await this.messageRepo.save(message);
+    await this.messagesDao.save(message);
     return true;
   }
 
   async deleteMessage(messageId: string, userId: string): Promise<boolean> {
-    const message = await this.messageRepo.findOne({
-      where: { id: messageId },
-    });
+    const message = await this.messagesDao.findById(messageId);
 
     if (!message) return false;
 
@@ -291,7 +229,7 @@ export class MessagesModel {
       throw ErrorHandler.insufficientPermissions('delete', 'message');
     }
 
-    await this.messageRepo.remove(message);
+    await this.messagesDao.remove(message);
     return true;
   }
 }

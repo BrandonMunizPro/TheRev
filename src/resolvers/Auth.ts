@@ -56,6 +56,7 @@ export class AuthResolver {
         bio: user.bio,
         ideology: user.ideology,
         profilePicUrl: user.profilePicUrl,
+        isOnline: user.isOnline || false,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
