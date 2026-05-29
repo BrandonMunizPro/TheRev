@@ -790,7 +790,7 @@ _"I'd start with a more incremental approach. I built too much infrastructure up
 
 ## The Story So Far
 
-TheRev represents the journey of a solo developer learning enterprise patterns in real-time. Starting with a simple idea - an AI-powered avatar that browses the web - the project grew into a comprehensive demonstration of:
+TheRev represents the journey of a solo developer, Starting with a simple idea - an AI-powered avatar that browses the web - the project grew into a comprehensive demonstration of:
 
 - **System design** through database sharding
 - **API architecture** through GraphQL
