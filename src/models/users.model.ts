@@ -90,7 +90,7 @@ export class UsersModel {
       userName: input.userName,
       firstName: input.firstName,
       lastName: input.lastName,
-      email: input.email,
+      email: input.email.toLowerCase(),
       password: hashedPassword,
       bio: input.bio,
       ideology: input.ideology,
