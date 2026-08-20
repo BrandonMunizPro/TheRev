@@ -4,19 +4,19 @@
 
 **TheRev (The Revolution)** is a privacy-first, AI-powered desktop social media platform. It combines an AI browsing companion with a 3D VRM avatar, voice control, local AI (Ollama), multi-provider AI support (OpenAI, Claude, Gemini, Perplexity), and a community platform with threads, servers, and friends.
 
-> *"Browse the web with your privacy-first AI companion who reacts to content alongside you."*
+> _"Browse the web with your privacy-first AI companion who reacts to content alongside you."_
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| **Backend** | Node.js + TypeScript, Express, GraphQL Yoga, Type-GraphQL |
-| **Database** | PostgreSQL 16 + TypeORM with horizontal sharding (4 shards) + read replicas |
-| **Cache/Queue** | Redis (single instance + 3-node cluster), PgBouncer connection pool |
-| **Frontend** | Electron desktop app with Three.js + three-vrm for 3D avatars |
-| **AI** | Adapter pattern: Ollama (local), OpenAI, Claude, Gemini, Perplexity |
-| **Browser** | Playwright automation server + WebView2 user browser |
-| **Voice** | Web Speech API + Whisper STT (local), server.cjs STT server |
+| Layer           | Technology                                                                  |
+| --------------- | --------------------------------------------------------------------------- |
+| **Backend**     | Node.js + TypeScript, Express, GraphQL Yoga, Type-GraphQL                   |
+| **Database**    | PostgreSQL 16 + TypeORM with horizontal sharding (4 shards) + read replicas |
+| **Cache/Queue** | Redis (single instance + 3-node cluster), PgBouncer connection pool         |
+| **Frontend**    | Electron desktop app with Three.js + three-vrm for 3D avatars               |
+| **AI**          | Adapter pattern: Ollama (local), OpenAI, Claude, Gemini, Perplexity         |
+| **Browser**     | Playwright automation server + WebView2 user browser                        |
+| **Voice**       | Web Speech API + Whisper STT (local), server.cjs STT server                 |
 
 ## Core Architecture
 
@@ -34,6 +34,9 @@ TheRev/
 │   │   ├── SmartFallbackService.ts  # Provider fallback routing
 │   │   ├── AITaskManager.ts         # Task orchestration
 │   │   ├── BrowserAgent.ts          # AI browser automation agent
+│   │   ├── MemoryExtractor.ts      # Async post-response memory extraction
+│   │   ├── MemoryRetriever.ts      # Relevance retrieval for prompt injection
+│   │   ├── MemoryPromptBuilder.ts  # Formats memories into prompt context
 │   │   ├── adapters/                # AIAdapter interface + 5 provider adapters
 │   │   │   ├── AIAdapter.ts         # Common interface
 │   │   │   ├── ChatGPTAdapter.ts
@@ -67,23 +70,26 @@ TheRev/
 │   │   ├── ThreadVote.ts, ThreadAdmin.ts
 │   │   ├── Notification.ts, NewsArticle.ts
 │   │   ├── Task.ts, MigrationState.ts
+│   │   ├── UserMemory.ts           # Persistent long-term memory entity
 │   │
-│   ├── dao/                      # 9 data access objects
+│   ├── dao/                      # 10 data access objects
 │   │   ├── users.dao.ts, threads.dao.ts, posts.dao.ts
 │   │   ├── friends.dao.ts, messages.dao.ts
 │   │   ├── notifications.dao.ts, threadAdmin.dao.ts
 │   │   ├── threadVotes.dao.ts, serverMembers.dao.ts
+│   │   ├── userMemories.dao.ts     # Memory CRUD + full-text search
 │   │   └── sharding/              # Sharded DAOs
 │   │       ├── BaseShardedDao.ts
 │   │       ├── ShardedUsersDao.ts
 │   │       ├── ShardedThreadsDao.ts
 │   │       └── ShardedPostsDao.ts
 │   │
-│   ├── models/                   # 8 business logic models
+│   ├── models/                   # 9 business logic models
 │   │   ├── users.model.ts, threads.model.ts, posts.model.ts
 │   │   ├── friends.model.ts, messages.model.ts
 │   │   ├── notifications.model.ts, calls.model.ts
-│   │   └── threadAdmin.model.ts
+│   │   ├── threadAdmin.model.ts
+│   │   └── userMemories.model.ts  # Memory business logic + contradiction resolution
 │   │
 │   ├── database/                 # Sharding infrastructure (17 files)
 │   │   ├── sharding/
@@ -113,6 +119,7 @@ TheRev/
 │   │   ├── TaskAnalyticsService.ts
 │   │   ├── WorkerAutoScaler.ts
 │   │   ├── WorkerCoordinationService.ts
+│   │   ├── MemoryPrivacyFilter.ts  # Provider-aware memory filtering
 │   │   └── local-stt-server.js       # Whisper STT
 │   │
 │   ├── gateway/                  # GraphQL gateway
@@ -197,6 +204,7 @@ TheRev/
 ## Infrastructure (Docker)
 
 ### Full Stack (docker-compose.yml)
+
 - `postgres` — PostgreSQL 15 primary
 - `redis` — Redis 7 cache/queue
 - `app` — Node.js application
@@ -204,6 +212,7 @@ TheRev/
 - `integration-tests` — Test runner (DOCKER_ENV=true)
 
 ### Infrastructure (docker-compose.infra.yml)
+
 - `postgres-primary` — Write master (port 5433)
 - `postgres-replica-1/2` — Hot standbys (ports 5435, 5434)
 - `redis` — Single instance (port 6379)
@@ -213,12 +222,14 @@ TheRev/
 ## Key Features
 
 ### Voice-Controlled AI Browser
+
 - Natural language commands: "Go to YouTube and find latest news"
 - 30+ website routing patterns (deterministic, no AI needed)
 - Smart action planning with user approval workflow
 - Sync navigation + async AI context loading
 
 ### Multi-AI Provider with Smart Fallback
+
 - Ollama (local, default) — privacy-first, works offline
 - ChatGPT, Claude, Gemini, Perplexity — premium providers
 - Adapter pattern with common interface
@@ -226,6 +237,7 @@ TheRev/
 - Provider health monitoring every 30s
 
 ### VRM Avatar System
+
 - 50 VRMA animations (idle, dances, actions, emotions, sports, music)
 - FBX to VRMA converter pipeline (Mixamo integration)
 - Three.js + three-vrm rendering
@@ -234,18 +246,21 @@ TheRev/
 - AI-triggered emotional reactions
 
 ### Perspective Threads
+
 - Pro / Against / Neutral discussion format
 - Nested replies with media support
 - Vote-based community moderation
 - Thread admin permissions system
 
 ### Servers & Channels (Discord-like)
+
 - Create servers with custom icons
 - Text channels (general, announcements, topics)
 - Server member management
 - Messages and calls
 
 ### Database Sharding
+
 - 4 shards with modulo routing (hash(user_id) % shard_count)
 - SmartShardRouter for intelligent query routing
 - Data co-location (user content on same shard)
@@ -255,6 +270,7 @@ TheRev/
 - Dual-write migration strategy
 
 ### Distributed Task Queue
+
 - Redis-backed priority queue
 - Worker pool with auto-scaling
 - Retry with exponential backoff (max 3)
@@ -263,12 +279,14 @@ TheRev/
 - Task lifecycle: CREATED → QUEUED → PROCESSING → COMPLETED/FAILED
 
 ### News Ingestion
+
 - RSS feed syncing from multiple sources
 - AI-powered article summarization
 - Content categorization
 - News article entity with AI summaries
 
 ### Voice Control
+
 - Whisper STT (local, tiny.en model, 39MB)
 - Web Speech API as fallback
 - Voice settings panel with microphone test
@@ -276,18 +294,21 @@ TheRev/
 - Text input fallback when voice unavailable
 
 ### Enterprise Error Handling
+
 - 6 typed error classes (Authentication, Authorization, Validation, NotFound, BusinessLogic, System)
 - 40+ error codes covering auth, validation, sharding, AI, and system errors
 - 40+ helper methods in ErrorHandler class
 - Used across 30+ files, 80+ error instances
 
 ### Security
+
 - AI permission service (approve/deny AI actions)
 - Credential encryption for API keys
 - Security monitoring and incident response
 - Shard security policy service
 
 ### Enterprise Audit
+
 - Full audit logging for AI actions
 - Provider health monitoring
 - Rate limiting and quota management
@@ -295,45 +316,45 @@ TheRev/
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `npm run start:dev` | Start backend only |
-| `npm run electron:dev` | Start Electron only |
-| `npm run electron:full:dev` | Start full app (Docker + Backend + Browser + Electron) |
-| `npm run docker:up` | Start infrastructure (Postgres + Redis) |
-| `npm run docker:down` | Stop infrastructure |
-| `npm test` | Run unit tests |
-| `npm run test:integration:docker` | Run integration tests in Docker |
-| `npm run typecheck` | TypeScript check |
-| `npm run lint` | ESLint |
-| `npm run format` | Prettier |
-| `npm run migration:run` | Run database migrations |
-| `npm run migration:generate` | Create new migration |
-| `npm run worker` | Start AI task worker |
-| `npm run convert:animation` | Convert FBX to VRMA animation |
-| `npm run dev` | Docker up + Electron full |
+| Command                           | Description                                            |
+| --------------------------------- | ------------------------------------------------------ |
+| `npm run start:dev`               | Start backend only                                     |
+| `npm run electron:dev`            | Start Electron only                                    |
+| `npm run electron:full:dev`       | Start full app (Docker + Backend + Browser + Electron) |
+| `npm run docker:up`               | Start infrastructure (Postgres + Redis)                |
+| `npm run docker:down`             | Stop infrastructure                                    |
+| `npm test`                        | Run unit tests                                         |
+| `npm run test:integration:docker` | Run integration tests in Docker                        |
+| `npm run typecheck`               | TypeScript check                                       |
+| `npm run lint`                    | ESLint                                                 |
+| `npm run format`                  | Prettier                                               |
+| `npm run migration:run`           | Run database migrations                                |
+| `npm run migration:generate`      | Create new migration                                   |
+| `npm run worker`                  | Start AI task worker                                   |
+| `npm run convert:animation`       | Convert FBX to VRMA animation                          |
+| `npm run dev`                     | Docker up + Electron full                              |
 
 ## API Endpoints
 
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/graphql` | POST | GraphQL API |
-| `/api/ai-browser-command` | POST | Process voice/text commands |
-| `/api/ai-chat` | POST | Chat with AI |
-| `/api/ai-context` | POST | Async AI response after navigation |
-| `/api/ai-providers` | GET | List AI provider status |
-| `/api/ai-providers/configure` | POST | Configure AI provider |
-| `/api/summarize-text` | POST | Summarize page content |
-| `/api/news` | GET | Fetch news articles |
-| `/api/news/sources` | GET | List news sources |
-| `/api/news/sync` | POST | Trigger RSS feed sync |
-| `/api/news/summarize` | POST | Summarize news article |
-| `/api/ollama/status` | GET | Check Ollama status |
-| `/api/ollama/diagnostics` | GET | Ollama diagnostics |
-| `/api/ollama/repair` | POST | Trigger Ollama repair |
-| `/api/ollama/refresh-models` | POST | Reinstall Ollama models |
-| `/api/profile/upload` | POST | Upload profile picture |
-| `/api/server/icon/upload` | POST | Upload server icon |
+| Endpoint                      | Method | Purpose                            |
+| ----------------------------- | ------ | ---------------------------------- |
+| `/graphql`                    | POST   | GraphQL API                        |
+| `/api/ai-browser-command`     | POST   | Process voice/text commands        |
+| `/api/ai-chat`                | POST   | Chat with AI                       |
+| `/api/ai-context`             | POST   | Async AI response after navigation |
+| `/api/ai-providers`           | GET    | List AI provider status            |
+| `/api/ai-providers/configure` | POST   | Configure AI provider              |
+| `/api/summarize-text`         | POST   | Summarize page content             |
+| `/api/news`                   | GET    | Fetch news articles                |
+| `/api/news/sources`           | GET    | List news sources                  |
+| `/api/news/sync`              | POST   | Trigger RSS feed sync              |
+| `/api/news/summarize`         | POST   | Summarize news article             |
+| `/api/ollama/status`          | GET    | Check Ollama status                |
+| `/api/ollama/diagnostics`     | GET    | Ollama diagnostics                 |
+| `/api/ollama/repair`          | POST   | Trigger Ollama repair              |
+| `/api/ollama/refresh-models`  | POST   | Reinstall Ollama models            |
+| `/api/profile/upload`         | POST   | Upload profile picture             |
+| `/api/server/icon/upload`     | POST   | Upload server icon                 |
 
 ## Working Features
 
@@ -359,6 +380,7 @@ TheRev/
 
 ## In Progress
 
+- Persistent Long-Term Memory (V1) — backend complete, frontend UI + tests remaining
 - Avatar emotional reactions (sentiment-driven expressions)
 - Privacy indicator
 - Demo flow polish
@@ -367,11 +389,10 @@ TheRev/
 
 ## Vision
 
-> *"The Rev gives everyone access to AI-powered understanding. Not just for tech people. Not just for news junkies. For EVERYONE."*
+> _"The Rev gives everyone access to AI-powered understanding. Not just for tech people. Not just for news junkies. For EVERYONE."_
 
 The avatar is the bridge between the complex world and simple understanding. Meeting people where they already are (social media), simplifying complex information with AI, and building community around understanding.
 
 ---
 
-*Last updated: July 2026*
-
+_Last updated: August 2026_
