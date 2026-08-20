@@ -41,12 +41,22 @@ import { NewsIngestionService } from './services/news/NewsIngestionService';
 import { ollamaRepair, RepairResult } from './ai/OllamaRepairService';
 import { createOllamaAdapter } from './ai/adapters/OllamaAdapter';
 import { websiteRouter } from './ai/WebsiteRouter';
+import { MemoryExtractor } from './ai/MemoryExtractor';
+import { MemoryRetriever } from './ai/MemoryRetriever';
+import { MemoryPrivacyFilter } from './services/MemoryPrivacyFilter';
+import { MemoryPromptBuilder } from './ai/MemoryPromptBuilder';
+import { UserMemoriesModel } from './models/userMemories.model';
 
 const app = express();
 const PORT = 4000;
 
 const intentClassifier = new AIIntentClassifier();
 const fallbackService = new SmartFallbackService();
+const memoryExtractor = new MemoryExtractor();
+const memoryRetriever = new MemoryRetriever();
+const memoryPrivacyFilter = new MemoryPrivacyFilter();
+const memoryPromptBuilder = new MemoryPromptBuilder();
+const userMemoriesModel = new UserMemoriesModel();
 
 // Track configured providers
 const configuredProviders: Map<
@@ -420,6 +430,17 @@ async function startServer() {
                 ) {
                   response = (aiResponse as { content?: string }).content || '';
                   console.log('[Ask Rev] AI response:', response);
+
+                  // Memory write path (fire-and-forget)
+                  const memUserId = req.body.userId || 'local-user';
+                  memoryExtractor
+                    .extract(memUserId, command, response, 'conversation')
+                    .catch((err) =>
+                      console.error(
+                        '[Memory] Extraction failed (non-fatal):',
+                        err
+                      )
+                    );
                 }
               }
 
@@ -565,9 +586,31 @@ async function startServer() {
           fullPrompt = `Conversation so far:\n${context}\n\nUser's latest question: ${command}`;
         }
 
-        const systemPrompt =
+        const systemPromptBase =
           intentResult.processingHints?.systemPrompt ||
           'You are Rev, a helpful AI assistant. Respond directly and concisely to the user request.';
+
+        // Memory read path: retrieve relevant memories before response
+        let systemPrompt = systemPromptBase;
+        const memoryUserId = req.body.userId || 'local-user';
+        try {
+          const memResult = await memoryRetriever.retrieveRelevant(
+            memoryUserId,
+            command
+          );
+          if (memResult.memories.length > 0) {
+            const filtered = memoryPrivacyFilter.filter(
+              memResult.memories,
+              provider as string
+            );
+            const memoryContext = memoryPromptBuilder.build(filtered);
+            if (memoryContext) {
+              systemPrompt = `${systemPromptBase}\n\n${memoryContext}`;
+            }
+          }
+        } catch (memErr) {
+          console.error('[Memory] Retrieval failed (non-fatal):', memErr);
+        }
 
         const aiResponse = await adapter.complete({
           provider,
@@ -581,6 +624,13 @@ async function startServer() {
           '[Ask Rev] AI response:',
           aiResponse.content.substring(0, 100) + '...'
         );
+
+        // Memory write path: fire-and-forget extraction
+        memoryExtractor
+          .extract(memoryUserId, command, aiResponse.content, 'conversation')
+          .catch((err) =>
+            console.error('[Memory] Extraction failed (non-fatal):', err)
+          );
 
         return res.json({
           success: true,
@@ -1218,6 +1268,64 @@ async function startServer() {
       } catch (error) {
         console.error('[AI Context] Error:', error.message);
         res.json({ success: false, context: null, error: error.message });
+      }
+    });
+
+    // --- Memory REST Endpoints ---
+    app.get('/api/memories', async (req, res) => {
+      try {
+        const userId = (req.query.userId as string) || 'local-user';
+        const memories = await userMemoriesModel.getUserMemories(userId);
+        res.json({ success: true, memories });
+      } catch (error: any) {
+        res.json({ success: false, error: error.message });
+      }
+    });
+
+    app.post('/api/memories', async (req, res) => {
+      try {
+        const { userId = 'local-user', type, content, importance } = req.body;
+        if (!type || !content) {
+          return res.json({
+            success: false,
+            error: 'type and content are required',
+          });
+        }
+        const memory = await userMemoriesModel.manualAdd(
+          userId,
+          type,
+          content,
+          importance
+        );
+        res.json({ success: true, memory });
+      } catch (error: any) {
+        res.json({ success: false, error: error.message });
+      }
+    });
+
+    app.put('/api/memories/:id', async (req, res) => {
+      try {
+        const { content, importance, type } = req.body;
+        const updated = await userMemoriesModel.updateMemory(req.params.id, {
+          ...(content && { content }),
+          ...(importance && { importance }),
+          ...(type && { type }),
+        });
+        if (!updated) {
+          return res.json({ success: false, error: 'Memory not found' });
+        }
+        res.json({ success: true, memory: updated });
+      } catch (error: any) {
+        res.json({ success: false, error: error.message });
+      }
+    });
+
+    app.delete('/api/memories/:id', async (req, res) => {
+      try {
+        const deleted = await userMemoriesModel.softDelete(req.params.id);
+        res.json({ success: deleted });
+      } catch (error: any) {
+        res.json({ success: false, error: error.message });
       }
     });
 

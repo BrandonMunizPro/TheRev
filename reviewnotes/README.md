@@ -3949,6 +3949,84 @@ These can be accessed via settings or remain hidden unless admin
 
 ---
 
-*Last updated: April 2026*
+## Persistent Long-Term Memory — Implementation Progress
 
+### Architecture
+Full architecture doc was designed (see conversation history for V1 architecture document). Key decisions:
+- Postgres-backed `user_memory` table with ts_vector full-text search (no vector DB needed for V1)
+- Write path: async fire-and-forget extraction AFTER AI response (never blocks user)
+- Read path: synchronous retrieval BEFORE AI response (Postgres query, sub-10ms)
+- 6 memory types: fact, preference, interest, relationship, goal, project
+- Privacy filter: full context for Ollama (local), conservative filter for external providers
+- Fallback behavior: when no keyword matches, inject NOTHING (not random important memories)
+
+### Completed ✅
+
+**Step 1: Entity + Migration + DAO**
+- `src/entities/UserMemory.ts` — TypeORM entity with all fields (id, userId, type, content, normalizedKey, searchVector, confidence, importance, etc.)
+- `src/migrations/1785000000000-CreateUserMemoryTable.ts` — Creates table, enum, GIN index on search_vector, auto-update trigger
+- `src/dao/userMemories.dao.ts` — Full CRUD + full-text search via ts_rank, normalizedKey duplicate detection, soft delete. Includes normalizeContent() with stop words + simple stemmer
+- `src/data-source.ts` — UserMemory entity registered
+
+**Step 2: Model Layer**
+- `src/models/userMemories.model.ts` — Wraps DAO with business logic: processCandidate() (duplicate detection, contradiction resolution via Jaccard similarity, persist), manualAdd(), softDelete()
+
+**Step 3: Memory Extraction**
+- `src/ai/MemoryExtractor.ts` — Makes isolated adapter.complete() call with extraction prompt, parses JSON candidates, feeds through model.processCandidate(). Uses SmartFallbackService for cheapest available provider
+
+**Step 4: Memory Retrieval**
+- `src/ai/MemoryRetriever.ts` — Keyword extraction from user message, Postgres full-text search with ts_rank, composite scoring (0.5×rank + 0.3×importance + 0.2×recency), fallback to top-important memories if <3 matches, background access metadata updates
+
+**Step 5: Privacy Filter + Prompt Builder**
+- `src/services/MemoryPrivacyFilter.ts` — Filters memories for external providers (excludes relationships, personal identifiers, low-confidence non-important facts)
+- `src/ai/MemoryPromptBuilder.ts` — Formats memories into "Things Rev knows about this user:" section, capped at ~300 tokens
+
+**Step 6: Backend Wiring**
+- `src/index.ts` — Memory read path (retrieve + filter + inject into systemPrompt) wired into `/api/ai-browser-command` main AI path. Memory write path (fire-and-forget extract after response) wired into both main AI path and low-confidence conversational fallback path. Memory instances instantiated at top of file.
+
+**Step 7 (partial): Enum Updates**
+- `src/ai/AIIntentTypes.ts` — Added MEMORY_EXTRACTION to AIIntentType enum + all 4 Record maps
+- `src/audit/EnterpriseAuditTypes.ts` — Added MEMORY to AuditCategory enum
+
+**Step 8: REST Endpoints**
+- `GET /api/memories` — List user's active memories
+- `POST /api/memories` — Manually add a memory
+- `PUT /api/memories/:id` — Edit memory content/type/importance
+- `DELETE /api/memories/:id` — Soft delete a memory
+
+### Remaining 🔧
+
+**Step 7 (remaining): Audit Integration**
+- Need: `src/services/MemoryAuditLogger.ts` — Wrap existing audit infra for memory events
+- Need: Add MemoryEventType enum to EnterpriseAuditTypes.ts (memory_extracted, memory_retrieved, memory_injected, memory_created, memory_updated, memory_deleted, memory_skipped)
+
+**Step 9: Frontend Memory UI**
+- Need: Add memory section to Settings dropdown in `src/electron/frontend/app.js`
+- List view of memories with edit/delete per memory
+- Manual add form (type dropdown, content input, importance slider)
+- No visualization/timeline/analytics for V1
+
+**Step 10: Tests**
+- `src/tests/memory/MemoryExtractor.test.ts` — processCandidates(), normalizeContent(), normalizedKey generation, duplicate detection
+- `src/tests/memory/MemoryRetriever.test.ts` — Ranking, empty results, token budget
+- `src/tests/memory/MemoryPrivacyFilter.test.ts` — External vs local provider filtering
+- `src/tests/memory/MemoryPromptBuilder.test.ts` — Format correctness, token cap
+- `src/tests/memory/userMemories.dao.test.ts` — CRUD, full-text search, soft delete
+
+**Step 11: Browser Context Integration**
+- Pass browser context to extraction in `/api/ai-browser-command`
+- Wire retrieval into the AI context endpoint (~line 1220)
+- Set source="browser" and sourceInteractionId=URL for browser-sourced memories
+
+### Design Notes
+- Normalization uses sorted deduped stemmed keywords for duplicate detection (e.g., "My son lives in Thailand" and "My son is living in thailand" → same key)
+- Contradiction resolution: Jaccard similarity >0.5 on same type = UPDATE existing memory (new supersedes old)
+- No vector embeddings for V1 — ts_vector + GIN index sufficient for <1000 memories/user
+- No automatic memory decay for V1 — let lastAccessedAt data accumulate first
+- Extraction is fire-and-forget with .catch() — failures are invisible to user
+- userId defaults to 'local-user' since browser-command endpoint has no auth middleware
+
+---
+
+*Last updated: August 2026*
 ```

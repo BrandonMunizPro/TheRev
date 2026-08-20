@@ -19,6 +19,7 @@ export enum AIIntentType {
   DATA_ENTRY = 'data_entry',
   SCREEN_SCRAPE = 'screen_scrape',
   API_INTEGRATION = 'api_integration',
+  MEMORY_EXTRACTION = 'memory_extraction',
   UNKNOWN = 'unknown',
 }
 
@@ -51,7 +52,15 @@ export interface IntentParameter {
 }
 
 export interface ExtractedEntity {
-  type: 'url' | 'email' | 'number' | 'date' | 'topic' | 'person' | 'location' | 'custom';
+  type:
+    | 'url'
+    | 'email'
+    | 'number'
+    | 'date'
+    | 'topic'
+    | 'person'
+    | 'location'
+    | 'custom';
   value: string;
   confidence: number;
   startIndex?: number;
@@ -92,10 +101,16 @@ export const DEFAULT_INTENT_CONFIG: IntentClassifierConfig = {
   enableHybridDetection: true,
   providerCapabilities: new Map([
     [AIProvider.CHATGPT, ['generation', 'analysis', 'reasoning']],
-    [AIProvider.CLAUDE, ['generation', 'analysis', 'reasoning', 'long_context']],
+    [
+      AIProvider.CLAUDE,
+      ['generation', 'analysis', 'reasoning', 'long_context'],
+    ],
     [AIProvider.GEMINI, ['generation', 'analysis', 'multimodal']],
     [AIProvider.PERPLEXITY, ['search', 'research', 'fact_checking']],
-    [AIProvider.DETERMINISTIC, ['automation', 'form_filling', 'data_entry', 'scraping']],
+    [
+      AIProvider.DETERMINISTIC,
+      ['automation', 'form_filling', 'data_entry', 'scraping'],
+    ],
     [AIProvider.OPEN_SOURCE, ['generation', 'analysis', 'reasoning', 'free']],
   ]),
 };
@@ -121,10 +136,14 @@ export const INTENT_TASK_TYPE_MAP: Record<AIIntentType, TaskType> = {
   [AIIntentType.DATA_ENTRY]: TaskType.AUTOMATION,
   [AIIntentType.SCREEN_SCRAPE]: TaskType.AUTOMATION,
   [AIIntentType.API_INTEGRATION]: TaskType.AUTOMATION,
+  [AIIntentType.MEMORY_EXTRACTION]: TaskType.ANALYSIS,
   [AIIntentType.UNKNOWN]: TaskType.GENERATION,
 };
 
-export const INTENT_CLASSIFICATION_MAP: Record<AIIntentType, IntentClassification> = {
+export const INTENT_CLASSIFICATION_MAP: Record<
+  AIIntentType,
+  IntentClassification
+> = {
   [AIIntentType.WRITE_POST]: IntentClassification.AI_POWERED,
   [AIIntentType.REPLY_TO_THREAD]: IntentClassification.AI_POWERED,
   [AIIntentType.SUMMARIZE_CONTENT]: IntentClassification.AI_POWERED,
@@ -145,6 +164,7 @@ export const INTENT_CLASSIFICATION_MAP: Record<AIIntentType, IntentClassificatio
   [AIIntentType.DATA_ENTRY]: IntentClassification.DETERMINISTIC,
   [AIIntentType.SCREEN_SCRAPE]: IntentClassification.DETERMINISTIC,
   [AIIntentType.API_INTEGRATION]: IntentClassification.DETERMINISTIC,
+  [AIIntentType.MEMORY_EXTRACTION]: IntentClassification.AI_POWERED,
   [AIIntentType.UNKNOWN]: IntentClassification.AI_POWERED,
 };
 
@@ -169,10 +189,14 @@ export const DEFAULT_PROVIDER_MAP: Record<AIIntentType, AIProvider> = {
   [AIIntentType.DATA_ENTRY]: AIProvider.DETERMINISTIC,
   [AIIntentType.SCREEN_SCRAPE]: AIProvider.DETERMINISTIC,
   [AIIntentType.API_INTEGRATION]: AIProvider.DETERMINISTIC,
+  [AIIntentType.MEMORY_EXTRACTION]: AIProvider.OPEN_SOURCE,
   [AIIntentType.UNKNOWN]: AIProvider.CHATGPT,
 };
 
-export const COMPLEXITY_MAP: Record<AIIntentType, 'simple' | 'moderate' | 'complex'> = {
+export const COMPLEXITY_MAP: Record<
+  AIIntentType,
+  'simple' | 'moderate' | 'complex'
+> = {
   [AIIntentType.WRITE_POST]: 'moderate',
   [AIIntentType.REPLY_TO_THREAD]: 'simple',
   [AIIntentType.SUMMARIZE_CONTENT]: 'simple',
@@ -193,5 +217,6 @@ export const COMPLEXITY_MAP: Record<AIIntentType, 'simple' | 'moderate' | 'compl
   [AIIntentType.DATA_ENTRY]: 'simple',
   [AIIntentType.SCREEN_SCRAPE]: 'moderate',
   [AIIntentType.API_INTEGRATION]: 'complex',
+  [AIIntentType.MEMORY_EXTRACTION]: 'simple',
   [AIIntentType.UNKNOWN]: 'moderate',
 };

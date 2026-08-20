@@ -19,6 +19,7 @@ import {
   UserStorageLocation,
   MigrationBatchLog,
 } from './entities/MigrationState';
+import { UserMemory } from './entities/UserMemory';
 
 const isTest = process.env.NODE_ENV === 'test';
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -57,6 +58,7 @@ export const AppDataSource = new DataSource({
     ServerMember,
     Message,
     Call,
+    UserMemory,
   ],
   migrations: isTest ? undefined : ['./src/migrations/*.ts'],
   subscribers: [],

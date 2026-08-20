@@ -8,6 +8,7 @@ export enum AuditCategory {
   GATEWAY = 'gateway',
   SECURITY = 'security',
   COMPLIANCE = 'compliance',
+  MEMORY = 'memory',
 }
 
 export enum AuthenticationEventType {
@@ -104,7 +105,14 @@ export interface EnterpriseAuditEvent {
   targetUserId?: string;
   resourceType?: string;
   resourceId?: string;
-  action: 'create' | 'read' | 'update' | 'delete' | 'execute' | 'access' | 'deny';
+  action:
+    | 'create'
+    | 'read'
+    | 'update'
+    | 'delete'
+    | 'execute'
+    | 'access'
+    | 'deny';
   outcome: 'success' | 'failure' | 'blocked';
   ipAddress?: string;
   userAgent?: string;
@@ -190,13 +198,55 @@ export interface DataRetentionRule {
 }
 
 export const DEFAULT_RETENTION_RULES: DataRetentionRule[] = [
-  { category: AuditCategory.AUTHENTICATION, eventType: AuthenticationEventType.LOGIN_SUCCESS, retentionDays: 365, PIIFieldsToRedact: ['password'], requiresEncryption: false },
-  { category: AuditCategory.AUTHENTICATION, eventType: AuthenticationEventType.LOGIN_FAILED, retentionDays: 730, PIIFieldsToRedact: [], requiresEncryption: false },
-  { category: AuditCategory.AUTHORIZATION, eventType: AuthorizationEventType.ACCESS_DENIED, retentionDays: 365, PIIFieldsToRedact: [], requiresEncryption: false },
-  { category: AuditCategory.SECURITY, eventType: SecurityEventType.SUSPICIOUS_ACTIVITY, retentionDays: 2555, PIIFieldsToRedact: [], requiresEncryption: true },
-  { category: AuditCategory.COMPLIANCE, eventType: ComplianceEventType.CONSENT_RECORDED, retentionDays: 2555, PIIFieldsToRedact: [], requiresEncryption: false },
-  { category: AuditCategory.AI_TASKS, eventType: null as any, retentionDays: 730, PIIFieldsToRedact: ['input.prompt', 'output.content'], requiresEncryption: false },
-  { category: AuditCategory.DATA_ACCESS, eventType: DataAccessEventType.BULK_EXPORT, retentionDays: 2555, PIIFieldsToRedact: [], requiresEncryption: true },
+  {
+    category: AuditCategory.AUTHENTICATION,
+    eventType: AuthenticationEventType.LOGIN_SUCCESS,
+    retentionDays: 365,
+    PIIFieldsToRedact: ['password'],
+    requiresEncryption: false,
+  },
+  {
+    category: AuditCategory.AUTHENTICATION,
+    eventType: AuthenticationEventType.LOGIN_FAILED,
+    retentionDays: 730,
+    PIIFieldsToRedact: [],
+    requiresEncryption: false,
+  },
+  {
+    category: AuditCategory.AUTHORIZATION,
+    eventType: AuthorizationEventType.ACCESS_DENIED,
+    retentionDays: 365,
+    PIIFieldsToRedact: [],
+    requiresEncryption: false,
+  },
+  {
+    category: AuditCategory.SECURITY,
+    eventType: SecurityEventType.SUSPICIOUS_ACTIVITY,
+    retentionDays: 2555,
+    PIIFieldsToRedact: [],
+    requiresEncryption: true,
+  },
+  {
+    category: AuditCategory.COMPLIANCE,
+    eventType: ComplianceEventType.CONSENT_RECORDED,
+    retentionDays: 2555,
+    PIIFieldsToRedact: [],
+    requiresEncryption: false,
+  },
+  {
+    category: AuditCategory.AI_TASKS,
+    eventType: null as any,
+    retentionDays: 730,
+    PIIFieldsToRedact: ['input.prompt', 'output.content'],
+    requiresEncryption: false,
+  },
+  {
+    category: AuditCategory.DATA_ACCESS,
+    eventType: DataAccessEventType.BULK_EXPORT,
+    retentionDays: 2555,
+    PIIFieldsToRedact: [],
+    requiresEncryption: true,
+  },
 ];
 
 export interface AuditAlert {
