@@ -10,7 +10,7 @@ import {
   ShardHealthMetrics,
   ShardType,
 } from './IShardRouter';
-import { SystemError, ErrorCode } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export class ShardHealthMonitor
   extends EventEmitter
@@ -172,10 +172,7 @@ export class ShardHealthMonitor
     // Simulate occasional failures
     if (Math.random() < 0.05) {
       // 5% failure rate
-      throw new SystemError(
-        'Simulated connection failure',
-        ErrorCode.SHARD_HEALTH_CHECK_FAILED
-      );
+      throw ErrorHandler.shardHealthCheckFailed('Simulated connection failure');
     }
 
     await new Promise((resolve) => setTimeout(resolve, simulatedResponseTime));

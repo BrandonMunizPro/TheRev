@@ -12,7 +12,7 @@ import {
 } from '../../database/sharding/IShardRouter';
 import { DataCoLocationService } from '../../database/sharding/DataCoLocationService';
 import { ShardConnectionManager } from '../../database/sharding/ShardConnectionManager';
-import { NotFoundError, ErrorCode } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export interface ShardedDaoConfig {
   entityShardType: ShardType;
@@ -128,19 +128,20 @@ export abstract class BaseShardedDao {
 
     if (!updated) {
       const entityName = this.getEntityName();
-      const errorCode =
-        entityName === 'User'
-          ? ErrorCode.USER_NOT_FOUND
-          : entityName === 'Thread'
-            ? ErrorCode.THREAD_NOT_FOUND
-            : entityName === 'Post'
-              ? ErrorCode.POST_NOT_FOUND
-              : ErrorCode.INVALID_INPUT;
-      throw new NotFoundError(
-        `${entityName} with id ${id} not found`,
-        errorCode,
-        { field: 'id', value: id }
-      );
+      switch (entityName) {
+        case 'User':
+          throw ErrorHandler.userNotFound(id);
+        case 'Thread':
+          throw ErrorHandler.threadNotFound(id);
+        case 'Post':
+          throw ErrorHandler.postNotFound(id);
+        default:
+          throw ErrorHandler.invalidInput(
+            `${entityName} with id ${id} not found`,
+            'id',
+            id
+          );
+      }
     }
     return updated;
   }

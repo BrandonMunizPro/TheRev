@@ -10,10 +10,9 @@ import {
   ShardEntityType,
 } from './IShardRouter';
 import {
-  ValidationError,
+  ErrorHandler,
   ErrorCode,
-  INVALID_SHARD_CONFIGURATION,
-} from '../../errors/AppError';
+} from '../../errors/ErrorHandler';
 import { ShardHealthMonitor } from './ShardHealthMonitor';
 import { ShardConnectionManager } from './ShardConnectionManager';
 
@@ -152,13 +151,11 @@ class BasicShardRouter extends BaseShardRouter {
   ): Promise<ShardRouteResult> {
     const config = this.getShardConfigForEntity(entityType);
     if (!config) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `No shard configuration found for entity type: ${entityType}`,
-        {
-          field: 'entityType',
-          value: entityType,
-          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'entityType',
+        entityType,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
 
@@ -247,26 +244,22 @@ export class ShardUtils {
         return entityKey;
 
       default:
-        throw new ValidationError(
+        throw ErrorHandler.invalidInput(
           `Cannot extract user ID from entity type: ${entityType}`,
-          {
-            field: 'entityType',
-            value: entityType,
-            errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-          }
+          'entityType',
+          entityType,
+          { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
         );
     }
   }
 
   static validateShardId(shardId: number, totalShards: number): void {
     if (shardId < 0 || shardId >= totalShards) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `Invalid shard ID ${shardId}. Must be between 0 and ${totalShards - 1}`,
-        {
-          field: 'shardId',
-          value: shardId,
-          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'shardId',
+        shardId,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
   }
@@ -326,11 +319,12 @@ export class ShardUtils {
         return ShardType.AI_TASKS;
 
       default:
-        throw new ValidationError(`Unknown entity type: ${entityType}`, {
-          field: 'entityType',
-          value: entityType,
-          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-        });
+        throw ErrorHandler.invalidInput(
+          `Unknown entity type: ${entityType}`,
+          'entityType',
+          entityType,
+          { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+        );
     }
   }
 
@@ -352,11 +346,12 @@ export class ShardUtils {
     const shardId = parseInt(shardIdStr);
 
     if (!shardType || isNaN(shardId)) {
-      throw new ValidationError(`Invalid shard key format: ${shardKey}`, {
-        field: 'shardKey',
-        value: shardKey,
-        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        `Invalid shard key format: ${shardKey}`,
+        'shardKey',
+        shardKey,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
 
     return {

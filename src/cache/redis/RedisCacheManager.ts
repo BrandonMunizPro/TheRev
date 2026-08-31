@@ -7,11 +7,7 @@
 import { EventEmitter } from 'events';
 import { RedisCacheMetrics, RedisHealthMetrics } from './RedisTypes';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  SystemError,
-  ValidationError,
-  DATABASE_ERROR,
-} from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 /**
  * Cache entry with metadata
@@ -93,9 +89,8 @@ export class RedisCacheManager extends EventEmitter {
       console.log(`Initialized cache: ${config.name}`);
       this.emit('cache:initialized', { config });
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to initialize cache ${config.name}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'cacheName',
           value: config.name,
@@ -192,9 +187,8 @@ export class RedisCacheManager extends EventEmitter {
       );
       this.emit('cache:set', { cacheName, key, ttl: effectiveTTL });
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to set cache ${cacheName}:${key}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'cacheKey',
           value: key,
@@ -227,9 +221,8 @@ export class RedisCacheManager extends EventEmitter {
 
       return redisResult > 0;
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to delete cache ${cacheName}:${key}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'cacheKey',
           value: key,
@@ -269,9 +262,8 @@ export class RedisCacheManager extends EventEmitter {
       console.log(`Cache cleared: ${cacheName} (${keys.length} keys)`);
       this.emit('cache:cleared', { cacheName, keyCount: keys.length });
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to clear cache ${cacheName}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'cacheName',
           value: cacheName,
@@ -318,9 +310,8 @@ export class RedisCacheManager extends EventEmitter {
 
       return keys.length;
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to invalidate cache ${cacheName}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'cacheName',
           value: cacheName,
@@ -361,9 +352,8 @@ export class RedisCacheManager extends EventEmitter {
       console.log(`🔥Cache warmed up: ${cacheName} (${data.size} entries)`);
       this.emit('cache:warmed-up', { cacheName, entryCount: data.size });
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to warm up cache ${cacheName}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'cacheName',
           value: cacheName,
@@ -507,27 +497,30 @@ export class RedisCacheManager extends EventEmitter {
    */
   private validateCacheConfig(config: CacheConfig): void {
     if (!config.name || config.name.trim().length === 0) {
-      throw new ValidationError('Cache name is required', {
-        field: 'name',
-        value: config.name,
-        action: 'validateCacheConfig',
-      });
+      throw ErrorHandler.invalidInput(
+        'Cache name is required',
+        'name',
+        config.name,
+        { action: 'validateCacheConfig' }
+      );
     }
 
     if (config.maxSize <= 0) {
-      throw new ValidationError('Max size must be greater than 0', {
-        field: 'maxSize',
-        value: config.maxSize,
-        action: 'validateCacheConfig',
-      });
+      throw ErrorHandler.invalidInput(
+        'Max size must be greater than 0',
+        'maxSize',
+        config.maxSize,
+        { action: 'validateCacheConfig' }
+      );
     }
 
     if (config.defaultTTL < 0) {
-      throw new ValidationError('Default TTL must be non-negative', {
-        field: 'defaultTTL',
-        value: config.defaultTTL,
-        action: 'validateCacheConfig',
-      });
+      throw ErrorHandler.invalidInput(
+        'Default TTL must be non-negative',
+        'defaultTTL',
+        config.defaultTTL,
+        { action: 'validateCacheConfig' }
+      );
     }
   }
 
@@ -536,11 +529,12 @@ export class RedisCacheManager extends EventEmitter {
    */
   private validateCacheExists(cacheName: string): void {
     if (!this.caches.has(cacheName)) {
-      throw new ValidationError(`Cache not found: ${cacheName}`, {
-        field: 'cacheName',
-        value: cacheName,
-        action: 'validateCacheExists',
-      });
+      throw ErrorHandler.invalidInput(
+        `Cache not found: ${cacheName}`,
+        'cacheName',
+        cacheName,
+        { action: 'validateCacheExists' }
+      );
     }
   }
 

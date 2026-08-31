@@ -57,7 +57,7 @@ export class CallsModel {
     });
 
     if (!call) {
-      throw ErrorHandler.notFound('Call not found');
+      throw ErrorHandler.notFound('Call', callId);
     }
 
     if (call.calleeId !== userId && call.callerId !== userId) {
@@ -82,7 +82,7 @@ export class CallsModel {
     const call = await this.callRepo.findOne({ where: { id: callId } });
 
     if (!call) {
-      throw ErrorHandler.notFound('Call not found');
+      throw ErrorHandler.notFound('Call', callId);
     }
 
     if (call.calleeId !== userId && call.callerId !== userId) {
@@ -98,7 +98,7 @@ export class CallsModel {
     const call = await this.callRepo.findOne({ where: { id: callId } });
 
     if (!call) {
-      throw ErrorHandler.notFound('Call not found');
+      throw ErrorHandler.notFound('Call', callId);
     }
 
     if (call.callerId !== userId) {
@@ -114,7 +114,7 @@ export class CallsModel {
     const call = await this.callRepo.findOne({ where: { id: callId } });
 
     if (!call) {
-      throw ErrorHandler.notFound('Call not found');
+      throw ErrorHandler.notFound('Call', callId);
     }
 
     if (call.callerId !== userId && call.calleeId !== userId) {
@@ -173,7 +173,7 @@ export class CallsModel {
     const call = await this.callRepo.findOne({ where: { id: callId } });
 
     if (!call) {
-      throw ErrorHandler.notFound('Call not found');
+      throw ErrorHandler.notFound('Call', callId);
     }
 
     if (call.callerId !== userId && call.calleeId !== userId) {
@@ -198,7 +198,7 @@ export class CallsModel {
     const call = await this.callRepo.findOne({ where: { id: callId } });
 
     if (!call) {
-      throw ErrorHandler.notFound('Call not found');
+      throw ErrorHandler.notFound('Call', callId);
     }
 
     if (call.callerId !== userId && call.calleeId !== userId) {
@@ -218,7 +218,7 @@ export class CallsModel {
       return this.callRepo.save(call);
     }
 
-    throw ErrorHandler.notFound('Call not found');
+    throw ErrorHandler.notFound('Call', callId);
   }
 }
 

@@ -13,7 +13,8 @@ import {
   ShardType,
   ShardEntityType,
 } from './IShardRouter';
-import { ValidationError, ErrorCode } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface ModuloShardRouterConfig {
   enableMetrics: boolean;
@@ -105,48 +106,47 @@ export class ModuloShardRouterFactory {
    */
   static validateConfig(config: ModuloShardRouterConfig): void {
     if (config.healthCheckInterval < 1000) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         'Health check interval must be at least 1000ms',
-        {
-          field: 'healthCheckInterval',
-          value: config.healthCheckInterval,
-          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'healthCheckInterval',
+        config.healthCheckInterval,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
 
     if (config.connectionTimeout < 100) {
-      throw new ValidationError('Connection timeout must be at least 100ms', {
-        field: 'connectionTimeout',
-        value: config.connectionTimeout,
-        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        'Connection timeout must be at least 100ms',
+        'connectionTimeout',
+        config.connectionTimeout,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
 
     if (config.maxConnections < 1 || config.maxConnections > 100) {
-      throw new ValidationError('Max connections must be between 1 and 100', {
-        field: 'maxConnections',
-        value: config.maxConnections,
-        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        'Max connections must be between 1 and 100',
+        'maxConnections',
+        config.maxConnections,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
 
     if (config.maxRetries < 0 || config.maxRetries > 10) {
-      throw new ValidationError('Max retries must be between 0 and 10', {
-        field: 'maxRetries',
-        value: config.maxRetries,
-        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        'Max retries must be between 0 and 10',
+        'maxRetries',
+        config.maxRetries,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
 
     if (config.routingTimeout < 10 || config.routingTimeout > 10000) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         'Routing timeout must be between 10ms and 10s',
-        {
-          field: 'routingTimeout',
-          value: config.routingTimeout,
-          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'routingTimeout',
+        config.routingTimeout,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
   }

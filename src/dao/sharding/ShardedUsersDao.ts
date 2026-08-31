@@ -10,7 +10,7 @@ import { BaseShardedDao, ShardedDaoConfig } from './BaseShardedDao';
 import { IShardRouter } from '../../database/sharding/IShardRouter';
 import { ShardConnectionManager } from '../../database/sharding/ShardConnectionManager';
 import { DataCoLocationService } from '../../database/sharding/DataCoLocationService';
-import { NotFoundError, ErrorCode } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export class ShardedUsersDao extends BaseShardedDao {
   constructor(
@@ -67,11 +67,7 @@ export class ShardedUsersDao extends BaseShardedDao {
     const repo = await this.getRepository(shardId, shardType);
     const user = await repo.findOne({ where: { userName } });
     if (!user) {
-      throw new NotFoundError(
-        `User ${userName} not found`,
-        ErrorCode.USER_NOT_FOUND,
-        { field: 'userName', value: userName }
-      );
+      throw ErrorHandler.userNotFound(userName, { field: 'userName' });
     }
     user.password = hashedPassword;
     await repo.save(user);

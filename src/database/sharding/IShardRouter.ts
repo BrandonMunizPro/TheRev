@@ -4,21 +4,8 @@
  * based on different sharding strategies and entity types.
  */
 
-import {
-  AppError,
-  SystemError,
-  ValidationError,
-  ErrorCode,
-  ErrorCategory,
-  SERVICE_UNAVAILABLE,
-} from '../../errors/AppError';
-
-const SHARD_NOT_FOUND = ErrorCode.SHARD_NOT_FOUND;
-const SHARD_UNAVAILABLE = ErrorCode.SHARD_UNAVAILABLE;
-const SHARD_ROUTING_ERROR = ErrorCode.SHARD_ROUTING_ERROR;
-const SHARD_HEALTH_CHECK_FAILED = ErrorCode.SHARD_HEALTH_CHECK_FAILED;
-const CONNECTION_POOL_EXHAUSTED = ErrorCode.CONNECTION_POOL_EXHAUSTED;
-const INVALID_SHARD_CONFIGURATION = ErrorCode.INVALID_SHARD_CONFIGURATION;
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export enum ShardEntityType {
   USER = 'user',
@@ -274,13 +261,11 @@ export abstract class BaseShardRouter implements IShardRouter {
   async getShardsByType(shardType: ShardType): Promise<ShardInfo[]> {
     const config = this.shardConfigs.get(shardType);
     if (!config) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `No configuration found for shard type: ${shardType}`,
-        {
-          field: 'shardType',
-          value: shardType,
-          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'shardType',
+        shardType,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
 
@@ -305,24 +290,20 @@ export abstract class BaseShardRouter implements IShardRouter {
   ): Promise<ShardInfo> {
     const config = this.shardConfigs.get(shardType);
     if (!config) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `No configuration found for shard type: ${shardType}`,
-        {
-          field: 'shardType',
-          value: shardType,
-          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'shardType',
+        shardType,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
 
     if (shardId >= config.totalShards) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `Shard ID ${shardId} exceeds total shards ${config.totalShards}`,
-        {
-          field: 'shardId',
-          value: shardId,
-          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'shardId',
+        shardId,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
 
@@ -356,13 +337,11 @@ export abstract class BaseShardRouter implements IShardRouter {
   async addShard(shardInfo: ShardInfo): Promise<void> {
     const config = this.shardConfigs.get(shardInfo.shardType);
     if (!config) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `No configuration found for shard type: ${shardInfo.shardType}`,
-        {
-          field: 'shardType',
-          value: shardInfo.shardType,
-          errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'shardType',
+        shardInfo.shardType,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
 
@@ -377,13 +356,11 @@ export abstract class BaseShardRouter implements IShardRouter {
   async removeShard(shardId: number, shardType: ShardType): Promise<void> {
     const config = this.shardConfigs.get(shardType);
     if (!config) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `No configuration found for shard type: ${shardType}`,
-        {
-          field: 'shardType',
-          value: shardType,
-          errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-        }
+        'shardType',
+        shardType,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
       );
     }
 
@@ -395,10 +372,10 @@ export abstract class BaseShardRouter implements IShardRouter {
     );
 
     if (!healthMetrics) {
-      throw new SystemError(
-        `Cannot decommission unknown shard: ${shardType}:${shardId}`,
-        SHARD_NOT_FOUND
-      );
+      throw ErrorHandler.shardNotFound({
+        shardId,
+        shardType: String(shardType),
+      });
     }
 
     // Mark shard for decommissioning - this allows graceful shutdown
@@ -528,18 +505,14 @@ export abstract class BaseShardRouter implements IShardRouter {
 
     // Use synchronous check on cached metrics - no async allowed in routing path
     if (!metrics || !metrics.isHealthy) {
-      throw new SystemError(
-        `Shard ${shardType}:${shardId} unavailable for routing`,
-        SHARD_UNAVAILABLE,
-        {
-          field: 'shardId',
-          value: shardId,
-          resource: `${shardType}:${shardId}`,
-          originalError: metrics
-            ? `Error rate: ${metrics.errorRate}`
-            : 'No metrics available',
-        }
-      );
+      throw ErrorHandler.shardUnavailable({
+        field: 'shardId',
+        value: shardId,
+        resource: `${shardType}:${shardId}`,
+        originalError: metrics
+          ? `Error rate: ${metrics.errorRate}`
+          : 'No metrics available',
+      });
     }
   }
 

@@ -16,10 +16,7 @@ import {
   CacheConfig,
   CacheInvalidationStrategy,
 } from './RedisTypes';
-import {
-  ValidationError,
-  INVALID_SHARD_CONFIGURATION,
-} from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export class RedisIntegrationFactory {
   /**
@@ -322,18 +319,20 @@ export class RedisIntegrationFactory {
     const clusterConfig = this.getClusterConfigFromEnv();
 
     if (clusterConfig.nodes.length === 0) {
-      throw new ValidationError('At least one Redis node must be configured', {
-        field: 'nodes',
-        value: 'empty',
-      });
+      throw ErrorHandler.invalidInput(
+        'At least one Redis node must be configured',
+        'nodes',
+        'empty'
+      );
     }
 
     // Validate each node
     for (const node of clusterConfig.nodes) {
       if (!node.host || node.port < 1 || node.port > 65535) {
-        throw new ValidationError(
+        throw ErrorHandler.invalidInput(
           'Each Redis node must have valid host and port',
-          { field: 'node', value: node }
+          'node',
+          node
         );
       }
     }
@@ -342,16 +341,18 @@ export class RedisIntegrationFactory {
     const queueConfigs = this.getDefaultQueueConfigs();
     for (const config of queueConfigs) {
       if (config.maxRetries < 0 || config.maxRetries > 10) {
-        throw new ValidationError(
+        throw ErrorHandler.invalidInput(
           'Queue max retries must be between 0 and 10',
-          { field: 'maxRetries', value: config.maxRetries }
+          'maxRetries',
+          config.maxRetries
         );
       }
 
       if (config.visibilityTimeout < 1000) {
-        throw new ValidationError(
+        throw ErrorHandler.invalidInput(
           'Queue visibility timeout must be at least 1000ms',
-          { field: 'visibilityTimeout', value: config.visibilityTimeout }
+          'visibilityTimeout',
+          config.visibilityTimeout
         );
       }
     }
@@ -360,17 +361,19 @@ export class RedisIntegrationFactory {
     const cacheConfigs = this.getDefaultCacheConfigs();
     for (const config of cacheConfigs) {
       if (config.maxSize <= 0) {
-        throw new ValidationError('Cache max size must be greater than 0', {
-          field: 'maxSize',
-          value: config.maxSize,
-        });
+        throw ErrorHandler.invalidInput(
+          'Cache max size must be greater than 0',
+          'maxSize',
+          config.maxSize
+        );
       }
 
       if (config.defaultTTL < 0) {
-        throw new ValidationError('Cache default TTL must be non-negative', {
-          field: 'defaultTTL',
-          value: config.defaultTTL,
-        });
+        throw ErrorHandler.invalidInput(
+          'Cache default TTL must be non-negative',
+          'defaultTTL',
+          config.defaultTTL
+        );
       }
     }
   }

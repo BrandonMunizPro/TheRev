@@ -11,11 +11,7 @@ import {
   RedisQueueMetrics,
 } from './RedisTypes';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  SystemError,
-  ValidationError,
-  DATABASE_ERROR,
-} from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export interface AITaskMessage {
   id: string;
@@ -74,9 +70,8 @@ export class AITaskQueueManager extends EventEmitter {
       console.log(`Registered AI task queue: ${config.name}`);
       this.emit('queue:registered', { queueName: config.name, config });
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to register queue ${config.name}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'queueName',
           value: config.name,
@@ -117,9 +112,8 @@ export class AITaskQueueManager extends EventEmitter {
 
       return message.id;
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to enqueue task: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           action: 'enqueueTask',
           originalError: error instanceof Error ? error.message : String(error),
@@ -135,11 +129,12 @@ export class AITaskQueueManager extends EventEmitter {
     try {
       const config = this.queues.get(queueName);
       if (!config) {
-        throw new ValidationError(`Queue not found: ${queueName}`, {
-          field: 'queueName',
-          value: queueName,
-          action: 'dequeue',
-        });
+        throw ErrorHandler.invalidInput(
+          `Queue not found: ${queueName}`,
+          'queueName',
+          queueName,
+          { action: 'dequeue' }
+        );
       }
 
       const priorities = [0, 1, 2, 3, 4] as const;
@@ -162,9 +157,8 @@ export class AITaskQueueManager extends EventEmitter {
 
       return null;
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to dequeue task from ${queueName}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'queueName',
           value: queueName,
@@ -184,13 +178,11 @@ export class AITaskQueueManager extends EventEmitter {
   ): Promise<void> {
     const config = this.queues.get(queueName);
     if (!config) {
-      throw new ValidationError(
+      throw ErrorHandler.invalidInput(
         `Cannot register processor for unknown queue: ${queueName}`,
-        {
-          field: 'queueName',
-          value: queueName,
-          action: 'registerProcessor',
-        }
+        'queueName',
+        queueName,
+        { action: 'registerProcessor' }
       );
     }
 
@@ -214,9 +206,8 @@ export class AITaskQueueManager extends EventEmitter {
       console.log(`Completed AI task: ${taskId}`);
       this.emit('task:completed', { queueName, taskId, result });
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to complete task ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           action: 'completeTask',
           field: 'taskId',
@@ -272,9 +263,8 @@ export class AITaskQueueManager extends EventEmitter {
       await this.redis.hdel(`${queueName}:active`, taskId);
       this.updateQueueMetrics(queueName, 'failed');
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to handle task failure for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           action: 'failTask',
           field: 'taskId',
@@ -342,9 +332,8 @@ export class AITaskQueueManager extends EventEmitter {
 
       return metrics;
     } catch (error: unknown) {
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Failed to get queue metrics for ${queueName}: ${error instanceof Error ? error.message : String(error)}`,
-        DATABASE_ERROR,
         {
           field: 'queueName',
           value: queueName,
@@ -600,24 +589,27 @@ export class AITaskQueueManager extends EventEmitter {
 
   private validateQueueConfig(config: AITaskQueueConfig): void {
     if (!config.name || config.name.trim().length === 0) {
-      throw new ValidationError('Queue name is required', {
-        field: 'name',
-        value: config.name,
-      });
+      throw ErrorHandler.invalidInput(
+        'Queue name is required',
+        'name',
+        config.name
+      );
     }
 
     if (config.maxRetries < 0 || config.maxRetries > 10) {
-      throw new ValidationError('Max retries must be between 0 and 10', {
-        field: 'maxRetries',
-        value: config.maxRetries,
-      });
+      throw ErrorHandler.invalidInput(
+        'Max retries must be between 0 and 10',
+        'maxRetries',
+        config.maxRetries
+      );
     }
 
     if (config.visibilityTimeout < 1000) {
-      throw new ValidationError('Visibility timeout must be at least 1000ms', {
-        field: 'visibilityTimeout',
-        value: config.visibilityTimeout,
-      });
+      throw ErrorHandler.invalidInput(
+        'Visibility timeout must be at least 1000ms',
+        'visibilityTimeout',
+        config.visibilityTimeout
+      );
     }
   }
 

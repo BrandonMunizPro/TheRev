@@ -7,7 +7,7 @@ import { Pool, PoolClient, PoolConfig } from 'pg';
 import { ShardType, ShardStatus } from './IShardRouter';
 import { DualWriteMigrationService } from './DualWriteMigrationService';
 import { UserStorageLocation } from '../../entities/MigrationState';
-import { SystemError, ValidationError, ErrorCode } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 /**
  * Connection pool statistics
@@ -135,11 +135,7 @@ export class DatabaseConnectionPoolManager {
     const pool = this.pools.get(poolKey);
 
     if (!pool) {
-      throw new SystemError(
-        `No connection pool found for shard ${shardId ?? 'unknown'}`,
-        ErrorCode.SHARD_NOT_FOUND,
-        { shardId, shardType: ShardType.USERS }
-      );
+      throw ErrorHandler.shardNotFound({ shardId, shardType: ShardType.USERS });
     }
 
     return await pool.getConnection();

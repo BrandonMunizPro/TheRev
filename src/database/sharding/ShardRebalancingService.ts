@@ -9,7 +9,8 @@ import { ShardType, ShardEntityType } from './IShardRouter';
 import { ShardHealthMonitor } from './ShardHealthMonitor';
 import { ShardMetricsCollector } from './ShardMetricsCollector';
 import { SmartShardRouter } from './SmartShardRouter';
-import { ValidationError, ErrorCode } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface RebalancingConfig {
   enableAutoRebalancing: boolean;
@@ -797,11 +798,12 @@ export class ShardRebalancingService extends EventEmitter {
     const analysis = allAnalyses.find((a) => a.id === analysisId);
 
     if (!analysis) {
-      throw new ValidationError(`Analysis not found: ${analysisId}`, {
-        field: 'analysisId',
-        value: analysisId,
-        errorCode: ErrorCode.INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        `Analysis not found: ${analysisId}`,
+        'analysisId',
+        analysisId,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
 
     const selected = analysis.suggestions.filter((s) =>

@@ -16,9 +16,9 @@ import {
 import {
   ValidationError,
   SystemError,
-  SHARD_ROUTING_ERROR,
-  INVALID_SHARD_CONFIGURATION,
+  ErrorCode,
 } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 import { ShardHealthMonitor } from './ShardHealthMonitor';
 import { ShardConnectionManager } from './ShardConnectionManager';
 import { v4 as uuidv4 } from 'uuid';
@@ -92,13 +92,11 @@ export class ModuloShardRouter extends BaseShardRouter {
       this.validateRoutingInput(entityType, entityKey);
       const config = this.getShardConfigForEntity(entityType);
       if (!config) {
-        throw new ValidationError(
+        throw ErrorHandler.invalidInput(
           `No shard configuration found for entity type: ${entityType}`,
-          {
-            field: 'entityType',
-            value: entityType,
-            errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-          }
+          'entityType',
+          entityType,
+          { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
         );
       }
 
@@ -165,13 +163,11 @@ export class ModuloShardRouter extends BaseShardRouter {
         return this.extractAuthorFromContentKey(entityKey);
 
       default:
-        throw new ValidationError(
+        throw ErrorHandler.invalidInput(
           `Unsupported entity type for routing: ${entityType}`,
-          {
-            field: 'entityType',
-            value: entityType,
-            errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-          }
+          'entityType',
+          entityType,
+          { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
         );
     }
   }
@@ -191,11 +187,12 @@ export class ModuloShardRouter extends BaseShardRouter {
    */
   private computeModuloHash(routingKey: string, totalShards: number): number {
     if (totalShards <= 0) {
-      throw new ValidationError('Invalid shard count for modulo operation', {
-        field: 'totalShards',
-        value: totalShards,
-        errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        'Invalid shard count for modulo operation',
+        'totalShards',
+        totalShards,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
 
     // Use the improved hash function from BaseShardRouter
@@ -235,9 +232,8 @@ export class ModuloShardRouter extends BaseShardRouter {
     entityKey: string
   ): void {
     if (shardId < 0 || shardId >= totalShards) {
-      throw new SystemError(
+      throw ErrorHandler.shardRoutingError(
         `Invalid shard selection: ${shardId} for ${totalShards} shards`,
-        SHARD_ROUTING_ERROR,
         {
           field: 'shardId',
           value: shardId,
@@ -253,19 +249,21 @@ export class ModuloShardRouter extends BaseShardRouter {
     entityKey: string
   ): void {
     if (!entityKey || entityKey.trim().length === 0) {
-      throw new ValidationError('Entity key cannot be empty', {
-        field: 'entityKey',
-        value: entityKey,
-        errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        'Entity key cannot be empty',
+        'entityKey',
+        entityKey,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
 
     if (!Object.values(ShardEntityType).includes(entityType)) {
-      throw new ValidationError(`Invalid entity type: ${entityType}`, {
-        field: 'entityType',
-        value: entityType,
-        errorCode: INVALID_SHARD_CONFIGURATION.toString(),
-      });
+      throw ErrorHandler.invalidInput(
+        `Invalid entity type: ${entityType}`,
+        'entityType',
+        entityType,
+        { errorCode: String(ErrorCode.INVALID_SHARD_CONFIGURATION) }
+      );
     }
   }
 
@@ -281,9 +279,8 @@ export class ModuloShardRouter extends BaseShardRouter {
       shardInfo.status !== ShardStatus.ACTIVE &&
       shardInfo.status !== ShardStatus.READ_ONLY
     ) {
-      throw new SystemError(
+      throw ErrorHandler.shardRoutingError(
         `Shard ${shardInfo.shardType}:${shardInfo.shardId} is not available (status: ${shardInfo.status})`,
-        SHARD_ROUTING_ERROR,
         {
           field: 'shardId',
           value: shardInfo.shardId,
@@ -298,9 +295,8 @@ export class ModuloShardRouter extends BaseShardRouter {
       entityType === ShardEntityType.CONTENT &&
       shardInfo.shardType !== ShardType.CONTENT
     ) {
-      throw new SystemError(
+      throw ErrorHandler.shardRoutingError(
         `Content entity routed to non-content shard: ${shardInfo.shardType}`,
-        SHARD_ROUTING_ERROR,
         {
           field: 'shardType',
           value: shardInfo.shardType,
@@ -321,7 +317,7 @@ export class ModuloShardRouter extends BaseShardRouter {
   ): Error {
     if (error instanceof SystemError || error instanceof ValidationError) {
       // Add routing context to existing structured errors
-      return new SystemError(error.message, error.errorCode, {
+      return ErrorHandler.shardRoutingError(error.message, {
         ...error.details,
         entityType,
         entityKey,
@@ -330,9 +326,8 @@ export class ModuloShardRouter extends BaseShardRouter {
     }
 
     // Wrap unstructured errors
-    return new SystemError(
+    return ErrorHandler.shardRoutingError(
       `Routing failed for ${entityType}:${entityKey} - ${error.message}`,
-      SHARD_ROUTING_ERROR,
       {
         entityType,
         entityKey,

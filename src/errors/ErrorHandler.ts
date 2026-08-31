@@ -315,6 +315,37 @@ export class ErrorHandler {
     );
   }
 
+  static shardNotFound(details?: ErrorDetails): SystemError {
+    return new SystemError('Shard not found', ErrorCode.SHARD_NOT_FOUND, details);
+  }
+
+  static shardUnavailable(details?: ErrorDetails): SystemError {
+    return new SystemError(
+      'Shard unavailable',
+      ErrorCode.SHARD_UNAVAILABLE,
+      details
+    );
+  }
+
+  static shardRoutingError(message: string, details?: ErrorDetails): SystemError {
+    return new SystemError(
+      message || 'Shard routing error',
+      ErrorCode.SHARD_ROUTING_ERROR,
+      details
+    );
+  }
+
+  static shardHealthCheckFailed(
+    message: string = 'Shard health check failed',
+    details?: ErrorDetails
+  ): SystemError {
+    return new SystemError(
+      message,
+      ErrorCode.SHARD_HEALTH_CHECK_FAILED,
+      details
+    );
+  }
+
   // Utility methods
   static handleUnknownError(error: unknown): AppError {
     if (AppError.isAppError(error)) {

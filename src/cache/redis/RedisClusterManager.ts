@@ -16,12 +16,7 @@ import {
   RedisAlertThresholds,
 } from './RedisTypes';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  SystemError,
-  ValidationError,
-  SERVICE_UNAVAILABLE,
-  DATABASE_ERROR,
-} from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
 
 export class RedisClusterManager extends EventEmitter {
   private cluster: ReturnType<typeof Redis.createCluster> | null = null;
@@ -78,23 +73,16 @@ export class RedisClusterManager extends EventEmitter {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error('Failed to initialize Redis cluster:', error);
-      throw new SystemError(
-        `Redis cluster initialization failed: ${errorMessage}`,
-        SERVICE_UNAVAILABLE,
-        {
-          originalError: errorMessage,
-          timestamp: new Date().toISOString(),
-        }
-      );
+      throw ErrorHandler.serviceUnavailable('Redis cluster', {
+        originalError: errorMessage,
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 
   getCluster(): Redis.Cluster {
     if (!this.cluster || !this.isInitialized) {
-      throw new SystemError(
-        'Redis cluster not initialized',
-        SERVICE_UNAVAILABLE
-      );
+      throw ErrorHandler.serviceUnavailable('Redis cluster not initialized');
     }
     return this.cluster;
   }
@@ -117,9 +105,8 @@ export class RedisClusterManager extends EventEmitter {
         timestamp: new Date().toISOString(),
       });
 
-      throw new SystemError(
+      throw ErrorHandler.databaseError(
         `Redis command execution failed: ${errorMessage}`,
-        DATABASE_ERROR,
         {
           originalError: errorMessage,
           timestamp: new Date().toISOString(),
@@ -248,7 +235,7 @@ export class RedisClusterManager extends EventEmitter {
       this.emit('cluster:shutdown');
     } catch (error) {
       console.error('Error during Redis cluster shutdown:', error);
-      throw error;
+      throw ErrorHandler.handleUnknownError(error);
     }
   }
 
@@ -324,13 +311,15 @@ export class RedisClusterManager extends EventEmitter {
         await node.ping();
         this.nodes.set(nodeId, node);
         console.log(`Connected to Redis node: ${nodeId}`);
-      } catch (error) {
-        console.error(`Failed to connect to Redis node: ${nodeId}`, error);
-        throw new SystemError(
-          `Failed to connect to Redis node ${nodeId}: ${error.message}`,
-          SERVICE_UNAVAILABLE
-        );
-      }
+    } catch (error) {
+      console.error(`Failed to connect to Redis node: ${nodeId}`, error);
+      throw ErrorHandler.serviceUnavailable(
+        `Redis node ${nodeId}`,
+        {
+          originalError: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
     }
   }
 
@@ -524,10 +513,11 @@ export class RedisClusterManager extends EventEmitter {
 
   private validateConfig(): void {
     if (!this.config.nodes || this.config.nodes.length === 0) {
-      throw new ValidationError('Redis cluster must have at least one node', {
-        field: 'nodes',
-        value: this.config.nodes,
-      });
+      throw ErrorHandler.invalidInput(
+        'Redis cluster must have at least one node',
+        'nodes',
+        this.config.nodes
+      );
     }
 
     if (!this.config.monitoring) {
@@ -549,10 +539,11 @@ export class RedisClusterManager extends EventEmitter {
     // Validate each node configuration
     for (const node of this.config.nodes) {
       if (!node.host || !node.port) {
-        throw new ValidationError('Each Redis node must have host and port', {
-          field: 'node',
-          value: node,
-        });
+        throw ErrorHandler.invalidInput(
+          'Each Redis node must have host and port',
+          'node',
+          node
+        );
       }
     }
   }

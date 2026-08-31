@@ -11,7 +11,8 @@ import {
   MigrationBatchLog,
 } from '../../entities/MigrationState';
 import { ModuloShardRouter } from './ModuloShardRouter';
-import { SystemError, ValidationError, ErrorCode } from '../../errors/AppError';
+import { ErrorHandler } from '../../errors/ErrorHandler';
+import { ErrorCode } from '../../errors/AppError';
 
 export interface MigrationConfig {
   chunkSize: number;
@@ -393,11 +394,7 @@ export class MigrationRunner {
     const shardPool = this.shardPools.get(shardId);
 
     if (!shardPool) {
-      throw new SystemError(
-        `No shard pool for shard ${shardId}`,
-        ErrorCode.SHARD_NOT_FOUND,
-        { shardId, shardType: 'users' }
-      );
+      throw ErrorHandler.shardNotFound({ shardId, shardType: 'users' });
     }
 
     const legacyClient = await this.legacyPool.connect();
@@ -413,11 +410,12 @@ export class MigrationRunner {
       );
 
       if (userResult.rows.length === 0) {
-        throw new ValidationError(`User ${userId} not found`, {
-          field: 'userId',
-          value: userId,
-          errorCode: ErrorCode.USER_NOT_FOUND.toString(),
-        });
+        throw ErrorHandler.invalidInput(
+          `User ${userId} not found`,
+          'userId',
+          userId,
+          { errorCode: String(ErrorCode.USER_NOT_FOUND) }
+        );
       }
 
       const user = userResult.rows[0];
