@@ -30,11 +30,13 @@ class TranscriptThrottle {
     const text = String(event.text).trim();
     if (!text) return;
 
+    const arrivedAt = Date.now();
+
     if (event.isFinal) {
       this._cancelTimer();
       this._clearPending();
       if (this._isDuplicate(text)) return;
-      this._emit({ text, source: event.source, isFinal: true });
+      this._emit({ text, source: event.source, isFinal: true, correlationId: event.correlationId, arrivedAt });
       return;
     }
 
@@ -50,7 +52,7 @@ class TranscriptThrottle {
       return;
     }
 
-    this._pending = { text, source: event.source, isFinal: false, _key: this._keyFor(text) };
+    this._pending = { text, source: event.source, isFinal: false, correlationId: event.correlationId, arrivedAt, _key: this._keyFor(text) };
     this._schedulePartial();
   }
 
@@ -60,7 +62,7 @@ class TranscriptThrottle {
     this._clearPending();
     if (!pending) return;
     if (this._isDuplicate(pending.text)) return;
-    this._emit({ text: pending.text, source: pending.source, isFinal: pending.isFinal });
+    this._emit({ text: pending.text, source: pending.source, isFinal: pending.isFinal, correlationId: pending.correlationId, arrivedAt: pending.arrivedAt });
   }
 
   dispose() {
@@ -92,7 +94,12 @@ class TranscriptThrottle {
   _emit(event) {
     this._lastEmittedKey = this._keyFor(event.text);
     this._lastEmittedAt = Date.now();
-    if (this.onEmit) this.onEmit(event);
+    const forwarded = { ...event };
+    if (forwarded.arrivedAt !== undefined) {
+      forwarded.throttleLatencyMs = this._lastEmittedAt - forwarded.arrivedAt;
+      delete forwarded.arrivedAt;
+    }
+    if (this.onEmit) this.onEmit(forwarded);
   }
 
   _isDuplicate(text) {

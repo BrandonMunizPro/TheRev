@@ -21,8 +21,28 @@ export interface ConceptEntry {
   id: string;
   label: string;
   domain: TechnicalDomain;
+  topic: string;
   keywords: string[];
   relatedConcepts: string[];
+}
+
+export interface TopicDefinition {
+  id: string;
+  domain: TechnicalDomain;
+  label: string;
+  keywords: string[];
+}
+
+export interface ScoredDomain {
+  domain: TechnicalDomain;
+  score: number;
+}
+
+export interface ScoredTopic {
+  topic: string;
+  domain: TechnicalDomain;
+  score: number;
+  matchedKeywords: string[];
 }
 
 export interface ClassificationResult {
@@ -30,6 +50,69 @@ export interface ClassificationResult {
   domain: TechnicalDomain;
   confidence: number;
   matchedKeywords: string[];
+  topics?: string[];
+  domainScores?: ScoredDomain[];
+  topicScores?: ScoredTopic[];
+  normalizedText?: string;
+}
+
+export interface RankedConcept {
+  id: string;
+  label: string;
+  score: number;
+  topic: string;
+  reasons: string[];
+}
+
+export enum PromptBoundaryType {
+  QUESTION = 'question',
+  IMPERATIVE = 'imperative',
+  SCENARIO = 'scenario',
+}
+
+export interface PromptDetection {
+  isTechnicalPrompt: boolean;
+  promptText: string | null;
+  confidence: number;
+  reason: string;
+  boundaryType: PromptBoundaryType | null;
+  evidence: string[];
+  rejectReasons: string[];
+}
+
+export type PromptPhase =
+  | 'idle'
+  | 'listening'
+  | 'candidate'
+  | 'stabilizing'
+  | 'emitted'
+  | 'suppressed';
+
+export interface RejectedTopic {
+  topic: string;
+  score: number;
+  matchedKeywords: string[];
+}
+
+export interface CopilotDiagnostics {
+  normalizedText?: string;
+  promptText?: string;
+  boundaryType?: PromptBoundaryType;
+  detectorConfidence?: number;
+  detectorReason?: string;
+  detectorEvidence?: string[];
+  rejectReasons?: string[];
+  domains: ScoredDomain[];
+  topics: ScoredTopic[];
+  rejectedTopics?: RejectedTopic[];
+  matchedEvidence?: string[];
+  rankedConcepts: RankedConcept[];
+  suppressionReason?: string;
+  dedupeDecision?: string;
+  contextAgeMs?: number;
+  detectMs?: number;
+  classifyMs?: number;
+  retrieveMs?: number;
 }
 
 export interface ConceptCue {
@@ -39,6 +122,7 @@ export interface ConceptCue {
   confidence: number;
   sessionId: string;
   timestamp: number;
+  diagnostics?: CopilotDiagnostics;
 }
 
 export interface TranscriptFragment {
@@ -52,6 +136,11 @@ export interface SessionConfig {
   sessionTimeoutMs: number;
   minConfidenceThreshold: number;
   maxConcepts: number;
+  promptStabilizationMs: number;
+  promptDedupeWindowMs: number;
+  emitConfidenceHigh: number;
+  emitConfidenceTopicBacked: number;
+  detectorMinConfidence: number;
 }
 
 export const DEFAULT_SESSION_CONFIG: SessionConfig = {
@@ -59,6 +148,20 @@ export const DEFAULT_SESSION_CONFIG: SessionConfig = {
   sessionTimeoutMs: readEnvInt('COPILOT_SESSION_TIMEOUT_MS', 10 * 60 * 1000),
   minConfidenceThreshold: readEnvFloat('COPILOT_CONFIDENCE_THRESHOLD', 0.4),
   maxConcepts: readEnvInt('COPILOT_MAX_CONCEPTS', 6),
+  promptStabilizationMs: readEnvInt('COPILOT_PROMPT_STABILIZATION_MS', 2500),
+  promptDedupeWindowMs: readEnvInt(
+    'COPILOT_PROMPT_DEDUPE_WINDOW_MS',
+    60 * 1000
+  ),
+  emitConfidenceHigh: readEnvFloat('COPILOT_EMIT_CONFIDENCE_HIGH', 0.7),
+  emitConfidenceTopicBacked: readEnvFloat(
+    'COPILOT_EMIT_CONFIDENCE_TOPIC_BACKED',
+    0.55
+  ),
+  detectorMinConfidence: readEnvFloat(
+    'COPILOT_DETECTOR_MIN_CONFIDENCE',
+    0.55
+  ),
 };
 
 function readEnvInt(name: string, fallback: number): number {
@@ -80,5 +183,8 @@ export interface CopilotSession {
   lastActivityAt: number;
   fragments: TranscriptFragment[];
   lastCue?: ConceptCue;
+  lastEmittedPromptText?: string;
+  lastEmittedAt?: number;
+  lastSpeaker?: string;
   isActive: boolean;
 }

@@ -27,25 +27,11 @@ app.commandLine.appendSwitch('ignore-certificate-errors');
 
 // Set up permission handler for microphone
 app.whenReady().then(() => {
-  // Set content settings for Web Speech API (modern Electron approach)
-  session.defaultSession.setPermissionHandler((details) => {
-    if (details.permission === 'media') {
-      return true;
-    }
-    if (details.permission === 'microphone') {
-      return true;
-    }
-    if (details.permission === 'display-capture') {
-      return true;
-    }
-    return false;
-  });
-
   // Provide system audio loopback via getDisplayMedia (Windows native loopback).
   // The renderer stops the video track immediately and keeps only the audio
   // loopback. On platforms without loopback support the request fails and the
   // renderer surfaces a clear error.
-  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+  session.fromPartition('persist:main').setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer
       .getSources({ types: ['screen', 'window'] })
       .then((sources) => {
@@ -71,7 +57,7 @@ app.whenReady().then(() => {
   }));
 
   // Pre-grant microphone permission for the main window
-  session.defaultSession.setDevicePermissionHandler((details) => {
+  session.fromPartition('persist:main').setDevicePermissionHandler((details) => {
     console.log('[DevicePermission]', details.deviceType, details.origin);
     if (details.deviceType === 'microphone') {
       return true; // Always allow microphone
@@ -79,7 +65,7 @@ app.whenReady().then(() => {
     return false;
   });
 
-  session.defaultSession.setPermissionRequestHandler(
+  session.fromPartition('persist:main').setPermissionRequestHandler(
     (webContents, permission, callback) => {
       console.log(
         '[Permission] Requested:',
@@ -103,7 +89,7 @@ app.whenReady().then(() => {
   );
 
   // Allow access to Google's speech services and other APIs
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  session.fromPartition('persist:main').webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
@@ -112,9 +98,6 @@ app.whenReady().then(() => {
       },
     });
   });
-
-  // Allow HTTPS requests to speech.googleapis.com
-  session.defaultSession.allowSecurityOrigin('https://speech.googleapis.com');
 
   console.log('[App] Security settings configured for speech API');
 });

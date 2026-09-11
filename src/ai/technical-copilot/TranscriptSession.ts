@@ -88,7 +88,9 @@ export class TranscriptSessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
 
-    session.isActive = false;
+    // Sessions are fully removed so closed/expired state never accumulates in
+    // memory across long-lived listening sessions.
+    this.sessions.delete(sessionId);
     console.log(`[CopilotSession] Closed session ${sessionId}`);
     return true;
   }
@@ -124,9 +126,9 @@ export class TranscriptSessionManager {
 
   private cleanupExpiredSessions(): void {
     for (const [id, session] of this.sessions.entries()) {
-      if (this.isSessionExpired(session) && session.isActive) {
+      if (this.isSessionExpired(session)) {
         console.log(`[CopilotSession] Cleaning up expired session ${id}`);
-        session.isActive = false;
+        this.sessions.delete(id);
       }
     }
   }

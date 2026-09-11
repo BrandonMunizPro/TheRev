@@ -41,6 +41,9 @@ class TheRevApp {
     this._copilotPipeline = null;
     this._copilotListening = false;
     this._copilotListenSource = 'system';
+    this._lastCopilotEvent = null;
+    // Dev-only latency tracing: enable with localStorage['copilot-debug']='1'.
+    this.isDev = window.localStorage.getItem('copilot-debug') === '1';
     this._avatarMixer = null;
     this._avatarActions = {};
     this._currentAvatarAction = null;
@@ -10389,7 +10392,7 @@ class TheRevApp {
 
   async startCopilotSession() {
     try {
-      const response = await fetch('/api/copilot/session', {
+      const response = await fetch('http://localhost:4000/api/copilot/session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -10433,6 +10436,7 @@ class TheRevApp {
   async submitCopilotTranscript(textOverride, speakerOverride) {
     if (!this._copilotSession) return;
 
+    const submitStart = Date.now();
     const input = document.getElementById('copilot-transcript-input');
     const speakerInput = document.getElementById('copilot-speaker-input');
     const text =
@@ -10452,7 +10456,7 @@ class TheRevApp {
     if (input) input.value = '';
 
     try {
-      const response = await fetch('/api/copilot/transcript', {
+      const response = await fetch('http://localhost:4000/api/copilot/transcript', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -10478,14 +10482,23 @@ class TheRevApp {
       if (data.cue) {
         this._copilotCues.unshift(data.cue);
         if (this._copilotCues.length > 12) this._copilotCues.pop();
+        // The pipeline captures system loopback; silence it while the cue
+        // audio renders so the copilot never hears its own output.
+        if (this._copilotPipeline) {
+          this._copilotPipeline.suppressUntil(Date.now() + 1800);
+        }
         this.renderCopilotCues();
       }
 
-      console.log(
-        '[Copilot] Transcript processed in',
-        data.processingTimeMs,
-        'ms'
-      );
+      if (this.isDev) {
+        const apiMs = Date.now() - submitStart;
+        const ev = this._lastCopilotEvent || {};
+        console.log(
+          `[CopilotLatency] api=${data.processingTimeMs}ms render=${apiMs}ms ` +
+            `whisper=${ev.whisperMs ?? '?'}ms queue=${ev.queueWaitMs ?? '?'}ms throttle=${ev.throttleLatencyMs ?? '?'}ms total=${ev.totalLatencyMs ?? '?'}ms`,
+          ev.correlationId || ''
+        );
+      }
     } catch (e) {
       console.error('[Copilot] Error submitting transcript:', e);
       this.setCopilotErrorState('Could not process transcript');
@@ -10498,7 +10511,7 @@ class TheRevApp {
     this.stopCopilotListening(true);
 
     try {
-      await fetch(`/api/copilot/session/${this._copilotSession.id}/end`, {
+      await fetch(`http://localhost:4000/api/copilot/session/${this._copilotSession.id}/end`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -10591,7 +10604,7 @@ class TheRevApp {
   _buildCopilotPipeline() {
     return new CopilotListeningPipeline({
       capture: new AudioCaptureService(),
-      transcriber: new SegmentTranscriber(),
+      transcriber: new SegmentTranscriber({ devTrace: !!this.isDev }),
       source: this._copilotListenSource,
       onEvent: (event) => this._handleCopilotListeningEvent(event),
       onError: (err) => this._handleCopilotListeningError(err),
@@ -10603,6 +10616,7 @@ class TheRevApp {
     if (!event || !event.text) return;
 
     const speaker = this._copilotSourceLabel(event.source);
+    this._lastCopilotEvent = event;
 
     if (event.isFinal) {
       this._setCopilotLiveLine('');
@@ -10775,6 +10789,10 @@ class TheRevApp {
         <div class="copilot-cue-confidence">confidence ${Math.round((cue.confidence || 0) * 100)}%</div>
       `;
       cuesList.appendChild(cueEl);
+    }
+
+    if (cuesList.scrollHeight > cuesList.clientHeight) {
+      cuesList.scrollTop = cuesList.scrollHeight;
     }
   }
 

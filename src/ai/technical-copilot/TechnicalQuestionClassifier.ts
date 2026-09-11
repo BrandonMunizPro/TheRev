@@ -4,8 +4,10 @@ import {
   TranscriptFragment,
   DEFAULT_SESSION_CONFIG,
   SessionConfig,
+  ScoredTopic,
 } from './types';
-import { findConceptsByKeywords } from './ConceptCatalog';
+import { findConceptsByKeywords, findTopicsByKeywords } from './ConceptCatalog';
+import { normalizeTranscript } from './TranscriptNormalizer';
 
 interface DomainPattern {
   domain: TechnicalDomain;
@@ -41,13 +43,13 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
       /rest\s+api/i,
       /graphql/i,
       /rate\s+limit/i,
-      /pagination/i,
+      /pagination|paginate|paging/i,
       /too\s+many\s+requests/i,
       /429/i,
     ],
     keywords: [
       'api', 'endpoint', 'rate limit', 'graphql', 'rest', 'pagination',
-      'throttle', 'version', 'api design', 'http status',
+      'paginate', 'paging', 'throttle', 'version', 'api design', 'http status',
     ],
     weight: 1.0,
   },
@@ -113,11 +115,19 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
       /graceful\s+degrad/i,
       /bulkhead/i,
       /cascade\s+failure/i,
+      /unreliab/i,
+      /stabl/i,
+      /depend/i,
+      /outage/i,
+      /external\s+(provider|service|dependency|api)/i,
+      /third[\s-]party/i,
+      /keep.*(stable|up|running)/i,
     ],
     keywords: [
       'circuit breaker', 'backoff', 'retry', 'health check', 'degradation',
       'bulkhead', 'unavailable', 'timeout', 'fallback', 'fault tolerance',
-      'resilience', 'recover', 'failure',
+      'resilience', 'recover', 'failure', 'unreliable', 'reliable', 'stable',
+      'stability', 'depend', 'outage', 'down',
     ],
     weight: 1.0,
   },
@@ -215,8 +225,8 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
       /embedding/i,
     ],
     keywords: [
-      'llm', 'rag', 'embedding', 'vector', 'prompt', 'fine-tune',
-      'model', 'token', 'context window', 'inference',
+      'llm', 'rag', 'embedding', 'prompt', 'fine-tune',
+      'context window', 'inference',
     ],
     weight: 1.0,
   },
@@ -299,7 +309,11 @@ export class TechnicalQuestionClassifier {
   }
 
   classify(text: string): ClassificationResult | null {
-    const normalized = text.trim().toLowerCase();
+    const trimmed = text.trim();
+    if (trimmed.length < 5) return null;
+
+    const original = normalizeTranscript(trimmed);
+    const normalized = original.toLowerCase();
     if (normalized.length < 5) return null;
 
     const questionScore = this.scoreQuestionLikelihood(normalized);
@@ -308,16 +322,24 @@ export class TechnicalQuestionClassifier {
     const domainScores = this.scoreDomains(normalized);
     if (domainScores.length === 0) return null;
 
+    const topicScores = this.scoreTopics(normalized);
+
     const best = domainScores[0];
-    if (best.score < this.config.minConfidenceThreshold) return null;
+    if (best.score < this.config.minConfidenceThreshold && topicScores.length === 0) {
+      return null;
+    }
 
     const matchedKeywords = this.findMatchedKeywords(normalized, best.domain);
 
     return {
-      detectedQuestion: text.trim(),
+      detectedQuestion: original,
       domain: best.domain,
       confidence: Math.min(best.score * questionScore, 1.0),
       matchedKeywords,
+      topics: topicScores.map((t) => t.topic),
+      domainScores,
+      topicScores,
+      normalizedText: original,
     };
   }
 
@@ -328,6 +350,18 @@ export class TechnicalQuestionClassifier {
     const combinedText = recentFragments.map((f) => f.text).join(' ');
 
     return this.classify(combinedText);
+  }
+
+  private scoreTopics(text: string): ScoredTopic[] {
+    const results = findTopicsByKeywords(text);
+    return results
+      .filter((t) => t.score >= 0.75)
+      .map((t) => ({
+        topic: t.topic.id,
+        domain: t.topic.domain,
+        score: t.score,
+        matchedKeywords: t.matchedKeywords.slice(0, 6),
+      }));
   }
 
   private scoreQuestionLikelihood(text: string): number {

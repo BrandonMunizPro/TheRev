@@ -25,6 +25,8 @@ class CopilotListeningPipeline {
     this.state = 'idle'; // idle | starting | listening | stopped | error
     this._wired = false;
     this._disposed = false;
+    this._suppressUntil = 0;
+    this._suppressedCount = 0;
   }
 
   async start(sourceOverride) {
@@ -56,7 +58,12 @@ class CopilotListeningPipeline {
   _wire() {
     this.capture.onSegment = (segment) => {
       if (this._disposed) return;
-      this.transcriber.push({ ...segment, source: this.source });
+      if (this._isSuppressed(segment)) return;
+      this.transcriber.push({
+        ...segment,
+        source: this.source,
+        capturedAt: segment.capturedAt || Date.now(),
+      });
     };
 
     this.capture.onError = (err) => {
@@ -75,6 +82,33 @@ class CopilotListeningPipeline {
     this.throttle.onEmit = (event) => {
       if (this.onEvent) this.onEvent(event);
     };
+  }
+
+  // Suppresses audio segments that begin inside the window after a copilot cue
+  // was rendered. The pipeline listens to system loopback, so the copilot's own
+  // cue chime/speech is picked up by the mic-equivalent capture and would
+  // otherwise be transcribed back as a fake "prompt" (self-feedback). Visual
+  // callers should call suppressUntil(Date.now() + N) right before rendering
+  // cue audio.
+  suppressUntil(timestamp) {
+    if (timestamp > this._suppressUntil) {
+      this._suppressUntil = timestamp;
+    }
+  }
+
+  _isSuppressed(segment) {
+    if (this._suppressUntil <= 0) return false;
+    const capturedAt = segment.capturedAt || Date.now();
+    if (capturedAt < this._suppressUntil) {
+      this._suppressedCount += 1;
+      return true;
+    }
+    this._suppressUntil = 0;
+    return false;
+  }
+
+  get suppressedCount() {
+    return this._suppressedCount;
   }
 
   stop() {

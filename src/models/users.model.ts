@@ -70,6 +70,8 @@ export class UsersModel {
       bio: user.bio,
       ideology: user.ideology,
       profilePicUrl: user.profilePicUrl,
+      role: user.role,
+      isOnline: user.isOnline,
       password: user.password,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,

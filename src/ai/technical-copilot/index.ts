@@ -2,7 +2,10 @@ export { TechnicalQuestionClassifier } from './TechnicalQuestionClassifier';
 export { ConceptRetriever } from './ConceptRetriever';
 export { TranscriptSessionManager } from './TranscriptSession';
 export { TechnicalCopilotService } from './TechnicalCopilotService';
-export { TECHNICAL_CONCEPT_CATALOG, findConceptsByKeywords, findRelatedConcepts, findConceptsByDomain } from './ConceptCatalog';
+export { PromptDetector, extractPromptText } from './PromptDetector';
+export { PromptLifecycle } from './PromptLifecycle';
+export { normalizeTranscript } from './TranscriptNormalizer';
+export { TECHNICAL_CONCEPT_CATALOG, findConceptsByKeywords, findRelatedConcepts, findConceptsByDomain, findConceptsByTopics, findTopicsByKeywords } from './ConceptCatalog';
 export {
   TechnicalDomain,
   DEFAULT_SESSION_CONFIG,
@@ -14,5 +17,8 @@ export type {
   TranscriptFragment,
   SessionConfig,
   CopilotSession,
+  PromptDetection,
+  CopilotDiagnostics,
 } from './types';
+export { PromptBoundaryType } from './types';
 export type { CopilotProcessResult } from './TechnicalCopilotService';
