@@ -46,6 +46,7 @@ import { MemoryRetriever } from './ai/MemoryRetriever';
 import { MemoryPrivacyFilter } from './services/MemoryPrivacyFilter';
 import { MemoryPromptBuilder } from './ai/MemoryPromptBuilder';
 import { UserMemoriesModel } from './models/userMemories.model';
+import { technicalCopilotRouter } from './technicalCopilotRoutes';
 
 const app = express();
 const PORT = 4000;
@@ -344,6 +345,9 @@ async function startServer() {
       fs.mkdirSync(uploadsServersDir, { recursive: true });
     }
     app.use('/uploads', express.static(uploadsDir));
+
+    // Technical Copilot routes
+    app.use(technicalCopilotRouter);
 
     // AI Browser Command Endpoint
     app.post('/api/ai-browser-command', async (req, res) => {

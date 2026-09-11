@@ -7,6 +7,10 @@ import {
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
 import { WhisperSpeech } from './WhisperSpeech.js';
+import { AudioCaptureService } from './copilot/AudioCaptureService.js';
+import { SegmentTranscriber } from './copilot/SegmentTranscriber.js';
+import { TranscriptThrottle } from './copilot/TranscriptThrottle.js';
+import { CopilotListeningPipeline } from './copilot/CopilotListeningPipeline.js';
 
 class TheRevApp {
   constructor() {
@@ -28,6 +32,15 @@ class TheRevApp {
       'ai-settings',
     ];
     this.adminSections = ['tasks', 'analytics', 'audit', 'shards'];
+
+    // Technical Copilot state
+    this._copilotSession = null;
+    this._copilotFragmentCount = 0;
+    this._copilotCues = [];
+    this._copilotConnected = false;
+    this._copilotPipeline = null;
+    this._copilotListening = false;
+    this._copilotListenSource = 'system';
     this._avatarMixer = null;
     this._avatarActions = {};
     this._currentAvatarAction = null;
@@ -296,6 +309,9 @@ class TheRevApp {
           this.currentUser && this.currentUser.role === 'ADMIN' ? '' : 'none';
       }
     });
+
+    // Update Technical Copilot nav visibility
+    this.updateCopilotVisibility();
   }
 
   showLoginModal() {
@@ -1544,6 +1560,10 @@ class TheRevApp {
       console.log('[Nav] Browser button clicked');
       this.switchSection('browser');
     });
+    document.getElementById('copilot-btn')?.addEventListener('click', () => {
+      console.log('[Nav] Copilot button clicked');
+      this.switchSection('copilot');
+    });
 
     // Use delegation for browser section elements (they may not exist yet)
     document.addEventListener('click', (e) => {
@@ -1567,6 +1587,37 @@ class TheRevApp {
     });
     document.getElementById('ai-deny-btn')?.addEventListener('click', () => {
       this.respondToApproval(false);
+    });
+
+    // Technical Copilot controls
+    document
+      .getElementById('copilot-start-btn')
+      ?.addEventListener('click', () => this.startCopilotSession());
+    document
+      .getElementById('copilot-end-btn')
+      ?.addEventListener('click', () => this.endCopilotSession());
+    document
+      .getElementById('copilot-submit-btn')
+      ?.addEventListener('click', () => this.submitCopilotTranscript());
+    document
+      .getElementById('copilot-transcript-input')
+      ?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          this.submitCopilotTranscript();
+        }
+      });
+    document
+      .getElementById('copilot-listen-btn')
+      ?.addEventListener('click', () => this.toggleCopilotListening());
+    const copilotSourceSelect = document.getElementById('copilot-source-select');
+    copilotSourceSelect?.addEventListener('change', (e) => {
+      this._copilotListenSource = e.target.value;
+    });
+
+    // Release capture resources when the window is torn down.
+    window.addEventListener('beforeunload', () => {
+      this.stopCopilotListening(true);
     });
 
     // Avatar customizer
@@ -10317,6 +10368,421 @@ class TheRevApp {
     } catch (e) {
       console.error('Error dismissing notification:', e);
     }
+  }
+
+  updateCopilotVisibility() {
+    const btn = document.getElementById('copilot-btn');
+    if (!btn) return;
+
+    const isAuthorized =
+      this.currentUser &&
+      (this.currentUser.role === 'ADMIN' ||
+        (this.currentUser.capabilities &&
+          this.currentUser.capabilities.includes('TECHNICAL_COPILOT')));
+
+    btn.style.display = isAuthorized ? '' : 'none';
+
+    if (!isAuthorized && this.currentSection === 'copilot') {
+      this.switchSection('threads');
+    }
+  }
+
+  async startCopilotSession() {
+    try {
+      const response = await fetch('/api/copilot/session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+      });
+      const data = await response.json();
+
+      if (!data.success) {
+        console.error('[Copilot] Failed to start session:', data.error);
+        this.setCopilotErrorState(data.error || 'Failed to start session');
+        return false;
+      }
+
+      this._copilotSession = data.session;
+      this._copilotFragmentCount = 0;
+      this._copilotCues = [];
+      this._copilotConnected = true;
+
+      document.getElementById('copilot-start-btn').style.display = 'none';
+      document.getElementById('copilot-end-btn').style.display = '';
+      document.getElementById('copilot-input-area').style.display = '';
+      document.getElementById('copilot-empty-state').style.display = 'none';
+      document.getElementById('copilot-source-select').style.display = '';
+      document.getElementById('copilot-listen-btn').style.display = '';
+      this._resetCopilotListenButton();
+
+      this.setCopilotStatus('Live', true);
+      this.renderCopilotTranscript();
+      this.renderCopilotCues();
+
+      console.log('[Copilot] Session started:', data.session.id);
+      return true;
+    } catch (e) {
+      console.error('[Copilot] Error starting session:', e);
+      this.setCopilotErrorState('Could not reach Technical Copilot service');
+      return false;
+    }
+  }
+
+  async submitCopilotTranscript(textOverride, speakerOverride) {
+    if (!this._copilotSession) return;
+
+    const input = document.getElementById('copilot-transcript-input');
+    const speakerInput = document.getElementById('copilot-speaker-input');
+    const text =
+      textOverride !== undefined
+        ? String(textOverride).trim()
+        : (input ? input.value : '').trim();
+    const speaker =
+      speakerOverride !== undefined
+        ? speakerOverride
+        : (speakerInput ? speakerInput.value.trim() : '') || undefined;
+
+    if (!text) return;
+
+    // Optimistic UI: show the fragment immediately
+    this._copilotFragmentCount += 1;
+    this.renderCopilotTranscriptFragment(text, speaker, true);
+    if (input) input.value = '';
+
+    try {
+      const response = await fetch('/api/copilot/transcript', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+        body: JSON.stringify({
+          sessionId: this._copilotSession.id,
+          text,
+          speaker,
+        }),
+      });
+      const data = await response.json();
+
+      if (!data.success) {
+        console.error('[Copilot] Transcript error:', data.error);
+        if (response.status === 401 || response.status === 403) {
+          this.stopCopilotListening(true);
+        }
+        this.setCopilotErrorState(data.error || 'Error processing transcript');
+        return;
+      }
+
+      if (data.cue) {
+        this._copilotCues.unshift(data.cue);
+        if (this._copilotCues.length > 12) this._copilotCues.pop();
+        this.renderCopilotCues();
+      }
+
+      console.log(
+        '[Copilot] Transcript processed in',
+        data.processingTimeMs,
+        'ms'
+      );
+    } catch (e) {
+      console.error('[Copilot] Error submitting transcript:', e);
+      this.setCopilotErrorState('Could not process transcript');
+    }
+  }
+
+  async endCopilotSession() {
+    if (!this._copilotSession) return;
+
+    this.stopCopilotListening(true);
+
+    try {
+      await fetch(`/api/copilot/session/${this._copilotSession.id}/end`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+        },
+      });
+    } catch (e) {
+      console.error('[Copilot] Error ending session:', e);
+    }
+
+    this._copilotSession = null;
+    this._copilotConnected = false;
+
+    document.getElementById('copilot-start-btn').style.display = '';
+    document.getElementById('copilot-end-btn').style.display = 'none';
+    document.getElementById('copilot-input-area').style.display = 'none';
+    document.getElementById('copilot-source-select').style.display = 'none';
+    document.getElementById('copilot-listen-btn').style.display = 'none';
+    this._resetCopilotListenButton();
+
+    this.setCopilotStatus('Not connected', false);
+    console.log('[Copilot] Session ended');
+  }
+
+  async toggleCopilotListening() {
+    if (this._copilotListening) {
+      this.stopCopilotListening();
+      return;
+    }
+    await this.startCopilotListening();
+  }
+
+  async startCopilotListening() {
+    if (this._copilotListening) return;
+
+    // The pipeline feeds the live session, so make sure one exists.
+    if (!this._copilotSession) {
+      const started = await this.startCopilotSession();
+      if (!started) return;
+    }
+
+    if (!this._whisperSpeech || !this._whisperSpeech.isReady()) {
+      this.setCopilotErrorState('Whisper STT is not ready yet');
+      return;
+    }
+
+    // Avoid capturing from the same microphone the voice control uses.
+    if (this._copilotListenSource === 'microphone' && this._isListening) {
+      this.setCopilotErrorState(
+        'Stop voice control before using the microphone for the Copilot'
+      );
+      return;
+    }
+
+    const pipeline = this._buildCopilotPipeline();
+
+    const ok = await pipeline.start();
+    if (!ok) {
+      pipeline.dispose();
+      return;
+    }
+
+    this._copilotPipeline = pipeline;
+    this._copilotListening = true;
+    this._setCopilotListeningUi(true);
+    this._setCopilotLiveLine('');
+  }
+
+  stopCopilotListening(silent = false) {
+    const pipeline = this._copilotPipeline;
+    this._copilotPipeline = null;
+    this._copilotListening = false;
+
+    if (pipeline) {
+      try {
+        pipeline.stop();
+      } catch (e) {
+        console.warn('[Copilot] Error stopping pipeline:', e);
+      }
+    }
+
+    this._setCopilotListeningUi(false);
+    this._setCopilotLiveLine('');
+
+    if (!silent && this._copilotSession) {
+      this.setCopilotStatus('Live', true);
+    }
+  }
+
+  _buildCopilotPipeline() {
+    return new CopilotListeningPipeline({
+      capture: new AudioCaptureService(),
+      transcriber: new SegmentTranscriber(),
+      source: this._copilotListenSource,
+      onEvent: (event) => this._handleCopilotListeningEvent(event),
+      onError: (err) => this._handleCopilotListeningError(err),
+      onState: (state) => this._handleCopilotListeningState(state),
+    });
+  }
+
+  _handleCopilotListeningEvent(event) {
+    if (!event || !event.text) return;
+
+    const speaker = this._copilotSourceLabel(event.source);
+
+    if (event.isFinal) {
+      this._setCopilotLiveLine('');
+      this.submitCopilotTranscript(event.text, speaker);
+    } else {
+      this._setCopilotLiveLine(event.text);
+    }
+  }
+
+  _handleCopilotListeningError(err) {
+    const wasListening = !!this._copilotPipeline;
+    if (wasListening) {
+      this.stopCopilotListening(true);
+    }
+    console.error('[Copilot] Listening error:', err);
+    const message = this._copilotListeningErrorMessage(err);
+    this.setCopilotErrorState(
+      message ||
+        (wasListening
+          ? 'Listening stopped due to an error'
+          : 'Could not start listening')
+    );
+  }
+
+  _handleCopilotListeningState(state) {
+    console.log('[Copilot] Listening state:', state);
+  }
+
+  _setCopilotListeningUi(listening) {
+    const btn = document.getElementById('copilot-listen-btn');
+    const select = document.getElementById('copilot-source-select');
+    const dotEl = document.getElementById('copilot-status-dot');
+
+    if (listening) {
+      this.setCopilotStatus(
+        `Listening (${this._copilotSourceLabel(this._copilotListenSource)})`,
+        true
+      );
+    }
+    if (btn) {
+      btn.textContent = listening ? 'Stop Listening' : 'Start Listening';
+      btn.classList.toggle('listening', listening);
+    }
+    if (select) select.disabled = listening;
+    if (dotEl) dotEl.classList.toggle('listening', listening);
+  }
+
+  _resetCopilotListenButton() {
+    const btn = document.getElementById('copilot-listen-btn');
+    if (btn) {
+      btn.textContent = 'Start Listening';
+      btn.classList.remove('listening');
+    }
+    const select = document.getElementById('copilot-source-select');
+    if (select) select.disabled = false;
+  }
+
+  _setCopilotLiveLine(text) {
+    const line = document.getElementById('copilot-live-line');
+    const textEl = document.getElementById('copilot-live-text');
+    if (!line || !textEl) return;
+
+    if (text) {
+      textEl.textContent = text;
+      line.classList.remove('hidden');
+    } else {
+      textEl.textContent = '';
+      line.classList.add('hidden');
+    }
+  }
+
+  _copilotSourceLabel(source) {
+    return source === 'microphone' ? 'Microphone' : 'System Audio';
+  }
+
+  _copilotListeningErrorMessage(err) {
+    if (!err) return '';
+    const code = err.code || err.message || '';
+    if (String(code).includes('system-audio-unsupported')) {
+      return 'System audio capture is not supported on this platform try the microphone';
+    }
+    if (String(code).includes('system-audio-unavailable')) {
+      return 'Could not capture system audio enable a loopback device or use the microphone';
+    }
+    if (String(code).includes('NotAllowedError')) {
+      return 'Audio access was denied';
+    }
+    if (String(code).includes('system-audio') || String(code).toLowerCase().includes('display media')) {
+      return 'System audio is unavailable on this machine';
+    }
+    return '';
+  }
+
+  setCopilotStatus(text, connected) {
+    const statusEl = document.getElementById('copilot-status-text');
+    const dotEl = document.getElementById('copilot-status-dot');
+    if (statusEl) statusEl.textContent = text;
+    if (dotEl) {
+      dotEl.classList.remove('online', 'offline', 'listening');
+      dotEl.classList.add(connected ? 'online' : 'offline');
+    }
+  }
+
+  setCopilotErrorState(message) {
+    console.warn('[Copilot] Error state:', message);
+    this.setCopilotStatus('Error', false);
+  }
+
+  renderCopilotTranscript() {
+    const log = document.getElementById('copilot-transcript-log');
+    if (!log) return;
+
+    const existing = log.querySelectorAll('.copilot-fragment');
+    existing.forEach((el) => el.remove());
+
+    const countEl = document.getElementById('copilot-fragment-count');
+    if (countEl) countEl.textContent = `${this._copilotFragmentCount} fragments`;
+  }
+
+  renderCopilotTranscriptFragment(text, speaker, isLive = true) {
+    const log = document.getElementById('copilot-transcript-log');
+    if (!log) return;
+
+    const fragmentEl = document.createElement('div');
+    fragmentEl.className = `copilot-fragment ${isLive ? 'live' : ''}`;
+    fragmentEl.innerHTML = `
+      <div class="copilot-fragment-header">
+        ${speaker ? `<span class="copilot-fragment-speaker">${this.escapeHtml(speaker)}</span>` : ''}
+        <span class="copilot-fragment-time">${new Date().toLocaleTimeString()}</span>
+      </div>
+      <div class="copilot-fragment-text">${this.escapeHtml(text)}</div>
+    `;
+    log.appendChild(fragmentEl);
+
+    // Keep only the last 20 fragments in the DOM
+    const fragments = log.querySelectorAll('.copilot-fragment');
+    if (fragments.length > 20) {
+      fragments[0].remove();
+    }
+
+    log.scrollTop = log.scrollHeight;
+
+    const countEl = document.getElementById('copilot-fragment-count');
+    if (countEl) countEl.textContent = `${this._copilotFragmentCount} fragments`;
+  }
+
+  renderCopilotCues() {
+    const cuesList = document.getElementById('copilot-cues-list');
+    if (!cuesList) return;
+
+    const emptyEl = document.getElementById('copilot-cues-empty');
+    if (emptyEl) emptyEl.style.display = this._copilotCues.length ? 'none' : '';
+
+    const existing = cuesList.querySelectorAll('.copilot-cue-card');
+    existing.forEach((el) => el.remove());
+
+    for (const cue of this._copilotCues) {
+      if (!cue || !cue.concepts || cue.concepts.length === 0) continue;
+
+      const cueEl = document.createElement('div');
+      cueEl.className = 'copilot-cue-card';
+      cueEl.innerHTML = `
+        <div class="copilot-cue-category">${this.escapeHtml(cue.category || 'general')}</div>
+        <div class="copilot-cue-question">${this.escapeHtml(cue.detectedQuestion || '')}</div>
+        <div class="copilot-cue-concepts">
+          ${cue.concepts
+            .map((c) => `<span class="copilot-cue-concept">${this.escapeHtml(c)}</span>`)
+            .join('')}
+        </div>
+        <div class="copilot-cue-confidence">confidence ${Math.round((cue.confidence || 0) * 100)}%</div>
+      `;
+      cuesList.appendChild(cueEl);
+    }
+  }
+
+  escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
   }
 }
 

@@ -345,6 +345,7 @@
             <button id="social-btn" class="nav-btn">Social</button>
             <button id="news-btn" class="nav-btn">News</button>
             <button id="browser-btn" class="nav-btn">Browser</button>
+            <button id="copilot-btn" class="nav-btn copilot-nav-btn" style="display:none">Copilot</button>
             <button id="settings-btn" class="nav-btn">Settings ⚙️</button>
             <!-- Social Dropdown -->
             <div id="social-dropdown" class="nav-dropdown">
@@ -2045,6 +2046,87 @@
             </div>
             <div class="shards-grid" id="shards-grid">
               <!-- Shard cards will be rendered here -->
+            </div>
+          </div>
+        </section>
+
+        <!-- Technical Copilot Section -->
+        <section id="copilot-section" class="content-section">
+          <div class="copilot-container">
+            <div class="copilot-header">
+              <h2>Technical Copilot</h2>
+              <div class="copilot-status" id="copilot-status">
+                <span class="copilot-status-dot offline" id="copilot-status-dot"></span>
+                <span id="copilot-status-text">Not connected</span>
+              </div>
+              <div class="copilot-controls">
+                <select
+                  id="copilot-source-select"
+                  class="copilot-source-select"
+                  style="display:none"
+                  title="Audio source for live transcription"
+                >
+                  <option value="system">System Audio</option>
+                  <option value="microphone">Microphone</option>
+                </select>
+                <button class="secondary-btn" id="copilot-listen-btn" style="display:none">Start Listening</button>
+                <button class="primary-btn" id="copilot-start-btn">Start Session</button>
+                <button class="secondary-btn" id="copilot-end-btn" style="display:none">End Session</button>
+              </div>
+            </div>
+
+            <div class="copilot-main">
+              <!-- Transcript Input Area -->
+              <div class="copilot-transcript-panel" id="copilot-transcript-panel">
+                <div class="copilot-panel-header">
+                  <h3>Live Transcript</h3>
+                  <span class="copilot-fragment-count" id="copilot-fragment-count">0 fragments</span>
+                </div>
+                <div class="copilot-transcript-log" id="copilot-transcript-log">
+                  <div class="copilot-empty-state" id="copilot-empty-state">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M12 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                      <path d="M19 13.5a7 7 0 0 1-14 0"/>
+                      <path d="M5 7.5a3 3 0 0 1 6 0v5"/>
+                      <path d="M13 7.5a3 3 0 0 0-6 0"/>
+                    </svg>
+                    <p>Start a session and paste or type transcript text to get technical cues.</p>
+                  </div>
+                  <div class="copilot-live-line hidden" id="copilot-live-line">
+                    <span class="copilot-live-label">Live</span>
+                    <span class="copilot-live-text" id="copilot-live-text"></span>
+                  </div>
+                </div>
+                <div class="copilot-input-area" id="copilot-input-area" style="display:none">
+                  <textarea
+                    id="copilot-transcript-input"
+                    class="copilot-textarea"
+                    placeholder="Paste or type transcript text here..."
+                    rows="3"
+                  ></textarea>
+                  <div class="copilot-input-controls">
+                    <input
+                      id="copilot-speaker-input"
+                      class="copilot-speaker-input"
+                      type="text"
+                      placeholder="Speaker (optional)"
+                    />
+                    <button class="primary-btn" id="copilot-submit-btn">Submit</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Concept Cues Panel -->
+              <div class="copilot-cues-panel" id="copilot-cues-panel">
+                <div class="copilot-panel-header">
+                  <h3>Concept Cues</h3>
+                </div>
+                <div class="copilot-cues-list" id="copilot-cues-list">
+                  <div class="copilot-empty-state" id="copilot-cues-empty">
+                    <p>Technical cues will appear here as topics are detected.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>

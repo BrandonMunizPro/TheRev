@@ -7029,3 +7029,362 @@ a:hover {
   background: #22c55e;
   color: white;
 }
+
+/* ===== TECHNICAL COPILOT ===== */
+.copilot-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.copilot-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.copilot-header h2 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--text-primary);
+}
+
+.copilot-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.copilot-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.copilot-status-dot.online {
+  background: var(--success-light);
+  box-shadow: 0 0 8px var(--success-light);
+}
+
+.copilot-status-dot.offline {
+  background: var(--text-muted);
+}
+
+.copilot-status-dot.listening {
+  background: var(--danger, #e5484d);
+  box-shadow: 0 0 8px var(--danger, #e5484d);
+  animation: copilot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes copilot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.copilot-controls {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  align-items: center;
+}
+
+.copilot-source-select {
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.copilot-source-select:disabled {
+  opacity: 0.6;
+}
+
+#copilot-listen-btn.listening {
+  background: var(--danger, #e5484d);
+  border-color: var(--danger, #e5484d);
+  color: #fff;
+}
+
+.copilot-main {
+  display: grid;
+  grid-template-columns: 1.1fr 420px;
+  gap: 16px;
+}
+
+.copilot-transcript-panel,
+.copilot-cues-panel {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.copilot-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+}
+
+.copilot-panel-header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.copilot-fragment-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.copilot-transcript-log {
+  height: 320px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.copilot-fragment {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.copilot-fragment.live {
+  animation: copilot-fragment-in 0.2s ease;
+}
+
+@keyframes copilot-fragment-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.copilot-fragment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.copilot-fragment-speaker {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-light);
+}
+
+.copilot-fragment-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.copilot-fragment-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.copilot-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 24px;
+}
+
+.copilot-empty-state svg {
+  color: var(--text-muted);
+}
+
+.copilot-empty-state p {
+  max-width: 320px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.copilot-live-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.copilot-live-line.hidden {
+  display: none;
+}
+
+.copilot-live-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--danger, #e5484d);
+  padding-top: 2px;
+}
+
+.copilot-live-text {
+  color: var(--text-secondary);
+  font-style: italic;
+  word-break: break-word;
+}
+
+.copilot-input-area {
+  border-top: 1px solid var(--border-color);
+  padding: 12px 16px;
+  background: var(--surface-elevated);
+}
+
+.copilot-textarea {
+  width: 100%;
+  resize: vertical;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  font-family: inherit;
+}
+
+.copilot-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.copilot-input-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.copilot-speaker-input {
+  flex: 0 0 200px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 7px 10px;
+}
+
+.copilot-speaker-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.copilot-cues-panel {
+  position: sticky;
+  top: 16px;
+  align-self: start;
+}
+
+.copilot-cues-list {
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.copilot-cue-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-color);
+  border-top: 2px solid var(--primary-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  animation: copilot-fragment-in 0.2s ease;
+}
+
+.copilot-cue-category {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--primary-light);
+  margin-bottom: 4px;
+}
+
+.copilot-cue-question {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.copilot-cue-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.copilot-cue-concept {
+  background: var(--secondary-color);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.copilot-cue-confidence {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.copilot-nav-btn.active {
+  color: var(--primary-color);
+}
+
+@media (max-width: 960px) {
+  .copilot-main {
+    grid-template-columns: 1fr;
+  }
+
+  .copilot-cues-panel {
+    position: static;
+  }
+
+  .copilot-speaker-input {
+    flex: 1;
+  }
+}

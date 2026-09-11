@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('stt-download-progress', (event, data) => callback(data));
   },
 
+  // Technical Copilot audio capture
+  getSystemAudioSupport: () => ipcRenderer.invoke('system-audio:get-support'),
+
   // Browser Automation
   launchBrowserAutomation: (config) =>
     ipcRenderer.invoke('browser-automation:launch', config),

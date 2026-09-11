@@ -6,6 +6,7 @@ const {
   dialog,
   shell,
   session,
+  desktopCapturer,
 } = require('electron');
 app.commandLine.appendSwitch('enable-webview');
 app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
@@ -34,8 +35,40 @@ app.whenReady().then(() => {
     if (details.permission === 'microphone') {
       return true;
     }
+    if (details.permission === 'display-capture') {
+      return true;
+    }
     return false;
   });
+
+  // Provide system audio loopback via getDisplayMedia (Windows native loopback).
+  // The renderer stops the video track immediately and keeps only the audio
+  // loopback. On platforms without loopback support the request fails and the
+  // renderer surfaces a clear error.
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer
+      .getSources({ types: ['screen', 'window'] })
+      .then((sources) => {
+        const screen =
+          sources.find((source) => source.id.startsWith('screen:')) ||
+          sources[0];
+        if (!screen) {
+          callback({ video: undefined, audio: 'loopback' });
+          return;
+        }
+        callback({ video: screen, audio: 'loopback' });
+      })
+      .catch((err) => {
+        console.error('[App] Display media request failed:', err);
+        callback(null);
+      });
+  });
+
+  // Tell the renderer whether native system-audio loopback is viable.
+  ipcMain.handle('system-audio:get-support', () => ({
+    platform: process.platform,
+    loopbackSupported: process.platform === 'win32',
+  }));
 
   // Pre-grant microphone permission for the main window
   session.defaultSession.setDevicePermissionHandler((details) => {

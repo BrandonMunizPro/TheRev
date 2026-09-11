@@ -4028,5 +4028,56 @@ Full architecture doc was designed (see conversation history for V1 architecture
 
 ---
 
-*Last updated: August 2026*
-```
+## Technical Copilot — Phase 1 + Phase 2 (9/11/26)
+
+### What exists now
+- **Phase 1 (complete):** private, capability-gated Technical Copilot backend (REST API, engine, auth).
+- **Phase 2 (complete):** real-time capture of computer system audio in Electron (loopback) → local Whisper STT → throttled/deduped transcripts into the existing copilot transcript pipeline.
+
+### Phase 1 — Backend (complete)
+- REST API in `src/technicalCopilotRoutes.ts`:
+  - `POST /api/copilot/session` — create/listen session
+  - `POST /api/copilot/transcript` — submit transcript/speech event
+  - `GET /api/copilot/session/:id` — session + speech events
+  - `POST /api/copilot/session/:id/end` — end session
+  - `GET /api/copilot/stats` — session stats
+- Engine: `src/ai/technical-copilot/copilotEngine.ts` (+ agent).
+- Access control: `requireCapability('TECHNICAL_COPILOT')` in `src/auth/checkCapability.ts` — 401 on no/invalid token, 403 on missing capability. Admin role maps to the capability. Backend is the security boundary — do not weaken.
+- Config via env (`COPILOT_*`), admin mapping via `CAPABILITY_ROLES`. Frontend panel + styles. 44 tests green.
+
+### Phase 2 — System audio capture (complete)
+- Capture method: Electron `setDisplayMediaRequestHandler` returns `{ video, audio: 'loopback' }`; renderer calls `navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })`; video tracks dropped immediately. `loopback` = system audio, **Windows-only**. macOS/Linux reported unsupported via `system-audio:get-support` IPC.
+- Independent of the app window and of meeting apps — any system audio plays (verified with browser/YouTube; Zoom/Teams/Meet do NOT emit usable audio to loopback).
+- `system` source has highest priority; copilot mic capture is blocked while existing voice control uses the mic (no silent grab). No mic/system mixing, no silent mic fallback.
+- New `src/electron/frontend/copilot/`:
+  - `AudioCaptureService.js` — system/mic capture, VAD phrase segmentation (~450ms silence → phrase end; min phrase 600ms; max phrase 12000ms; energy threshold 0.02), PCM→16kHz WAV, resource cleanup on stop/close.
+  - `SegmentTranscriber.js` — serial FIFO queue calling existing local STT `POST /transcribe` (`stt-server.cjs` on `127.0.0.1:3001`, model `base.en`). Whisper untouched.
+  - `TranscriptThrottle.js` — pure logic: 450ms partial coalescing, immediate final flush, 5s dedupe window, whitespace/case/trailing-punctuation normalization. Partials show only in live line; finals are POSTed.
+  - `CopilotListeningPipeline.js` — orchestration; states `idle/starting/listening/stopped/error`; `dispose()` releases resources.
+- Modified: `src/electron/main.cjs` (desktopCapturer, `setDisplayMediaRequestHandler` with `audio: 'loopback'`, `display-capture` permission grant, `system-audio:get-support` IPC returning `loopbackSupported: process.platform === 'win32'`), `src/electron/preload.cjs` (`getSystemAudioSupport()`), `src/electron/frontend/app.js` (listening toggle, live line, session lifecycle, `beforeunload` cleanup, `submitCopilotTranscript(textOverride, speakerOverride)`, 401/403 stop, status pulse), `index.html`/`styles.css` (Start/Stop Listening button, source select, `#copilot-live-line`), `jest.config.js` (`^.+\.js$` ts-jest transform for ESM frontend modules).
+
+### Verification
+- New `src/tests/copilot/` (TranscriptThrottle, SegmentTranscriber, CopilotListeningPipeline) — 24 tests, all pass.
+- `npx jest --testPathPatterns=src/tests/copilot --testPathIgnorePatterns=integration` → 3 suites / 24 tests green.
+- `npm test` → 335/338 pass; only 3 pre-existing unrelated fails in `src/tests/dao/threads.dao.test.ts`.
+- `npx tsc --noEmit -p tsconfig.json` → exit 0.
+
+### Manual test steps (Phase 2)
+1. Start STT server: `node src/electron/stt-server.cjs` (port 3001).
+2. Start the app; pick "System Audio" in the copilot source select; click the listening start button.
+3. Play audio anywhere on the system (e.g., YouTube in a browser — NOT inside Zoom/Teams/Meet).
+4. Confirm the live line updates, then the final transcript POSTs to the backend with speaker tag "System Audio".
+
+### Open items
+- Tests still mock the native capture path (`AudioCaptureService`) and the `stt-server` process.
+- Whisper STT remains batch-only (no interim results), so each VAD phrase = one final; partial `{isFinal}` modeling exists for future streaming.
+- Latency after phrase end: ~0.5–1.5s inference.
+
+### Run/test commands
+- `npx jest --testPathPatterns=src/tests/copilot --testPathIgnorePatterns=integration`
+- `npm test`
+- `npx tsc --noEmit -p tsconfig.json`
+
+---
+
+*Last updated: September 2026*

@@ -70,6 +70,13 @@ export default {
             isolatedModules: true,
           },
         ],
+        '^.+\\.js$': [
+          'ts-jest',
+          {
+            tsconfig: 'tsconfig.json',
+            isolatedModules: true,
+          },
+        ],
       },
     },
     {
