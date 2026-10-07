@@ -396,3 +396,7 @@ The avatar is the bridge between the complex world and simple understanding. Mee
 ---
 
 _Last updated: September 2026_
+
+## Game launcher foundation
+
+TheRev owns a local game library, profiles, and launch-session tracking. Steam is the first discovery and launch provider (Windows). Game AI integrations remain disabled. See [launcher architecture and usage](docs/GAME_LAUNCHER.md).

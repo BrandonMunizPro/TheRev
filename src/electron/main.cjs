@@ -146,6 +146,32 @@ const fs = require('fs');
 let mainWindow;
 let ollamaProcess = null;
 let browserAutomationProcess = null;
+let gameSessions = null;
+
+function initializeGameLauncher() {
+  const { GameProfileStore } = require('./launcher/GameProfileStore.cjs');
+  const { GameLibraryService } = require('./launcher/GameLibraryService.cjs');
+  const {
+    GameSessionOrchestrator,
+  } = require('./launcher/GameSessionOrchestrator.cjs');
+  const {
+    SteamLaunchProvider,
+  } = require('./launcher/providers/SteamLaunchProvider.cjs');
+  const { registerLauncherIPC } = require('./launcher/registerLauncherIPC.cjs');
+  const library = new GameLibraryService({
+    store: new GameProfileStore(app.getPath('userData')),
+    providers: [new SteamLaunchProvider({ shell })],
+  });
+  gameSessions = new GameSessionOrchestrator({ library });
+  registerLauncherIPC({
+    ipcMain,
+    dialog,
+    getMainWindow: () => mainWindow,
+    frontendPath: path.join(__dirname, 'frontend/index.html'),
+    library,
+    sessions: gameSessions,
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -1996,7 +2022,12 @@ function triggerAvatarReaction(type, message) {
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  initializeGameLauncher();
+  createWindow();
+});
+
+app.on('before-quit', () => gameSessions?.dispose());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

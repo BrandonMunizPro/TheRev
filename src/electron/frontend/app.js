@@ -7,6 +7,7 @@ import {
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
 import { WhisperSpeech } from './WhisperSpeech.js';
+import { GameLibrary } from './launcher/GameLibrary.js';
 import { AudioCaptureService } from './copilot/AudioCaptureService.js';
 import { SegmentTranscriber } from './copilot/SegmentTranscriber.js';
 import { TranscriptThrottle } from './copilot/TranscriptThrottle.js';
@@ -95,6 +96,10 @@ class TheRevApp {
 
     await this.loadAvatarData();
     await this.initAISettings();
+    this._gameLibrary = new GameLibrary({
+      root: document.getElementById('games-section'),
+      api: window.electronAPI,
+    });
     this.setupEventListeners();
     this.setupElectronListeners();
     this.loadInitialContent();
@@ -1406,6 +1411,9 @@ class TheRevApp {
     // Use event delegation - attach to document for dynamically created elements
 
     // Navigation
+    document.getElementById('games-btn')?.addEventListener('click', () => {
+      this.switchSection('games');
+    });
     document.getElementById('threads-btn')?.addEventListener('click', () => {
       console.log('[Nav] Threads button clicked');
       this.switchSection('threads');
@@ -1621,6 +1629,7 @@ class TheRevApp {
     // Release capture resources when the window is torn down.
     window.addEventListener('beforeunload', () => {
       this.stopCopilotListening(true);
+      this._gameLibrary?.dispose();
     });
 
     // Avatar customizer
@@ -2043,6 +2052,9 @@ class TheRevApp {
 
     // Load section-specific data
     switch (section) {
+      case 'games':
+        this._gameLibrary?.open(forceRefresh);
+        break;
       case 'tasks':
         this.loadTasks();
         break;

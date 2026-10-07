@@ -3,6 +3,21 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
+  // TheRev game library and sessions (main-process handlers validate sender)
+  getGames: () => ipcRenderer.invoke('games:get-library'),
+  refreshGames: () => ipcRenderer.invoke('games:refresh'),
+  updateGameProfile: (gameId, patch) =>
+    ipcRenderer.invoke('games:update-profile', gameId, patch),
+  launchGame: (gameId) => ipcRenderer.invoke('games:launch', gameId),
+  endGameSession: (sessionId) => ipcRenderer.invoke('games:end-session', sessionId),
+  chooseSteamFolder: () => ipcRenderer.invoke('games:choose-steam-folder'),
+  resetSteamFolder: () => ipcRenderer.invoke('games:reset-steam-folder'),
+  onGameSessionChanged: (callback) => {
+    const listener = (_event, session) => callback(session);
+    ipcRenderer.on('games:session-changed', listener);
+    return () => ipcRenderer.removeListener('games:session-changed', listener);
+  },
+
   // Browser commands
   executeCommand: (command) =>
     ipcRenderer.invoke('execute-browser-command', command),
