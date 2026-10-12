@@ -1,9 +1,12 @@
 import { Message } from '../entities/Message';
-import { ServerMember } from '../entities/ServerMember';
-import { User } from '../entities/User';
-import { MessagesDao } from '../dao/messages.dao';
+import { ServerRole } from '../entities/ServerMember';
+import {
+  MessagesDao,
+  CursorMessage,
+  MessagePageOptions,
+} from '../dao/messages.dao';
 import { UsersDao } from '../dao/users.dao';
-import { ServerMembersDao } from '../dao/serverMembers.dao';
+import { MessagingAccess } from '../services/MessagingAccess';
 import { ErrorHandler } from '../errors/ErrorHandler';
 
 export type MessageWithSender = {
@@ -20,13 +23,43 @@ export type MessageWithSender = {
   isRead: boolean;
   reactions?: { emoji: string; users: string[] }[];
   createdAt: Date;
+  cursor?: string;
 };
-
+export function messageOutput(m: CursorMessage): MessageWithSender {
+  return {
+    id: m.id,
+    content: m.content,
+    senderId: m.senderId,
+    senderUserName: m.sender?.userName,
+    senderFirstName: m.sender?.firstName,
+    senderLastName: m.sender?.lastName,
+    senderAvatarUrl: m.sender?.avatarUrl,
+    channelId: m.channelId || undefined,
+    serverId: m.serverId || undefined,
+    threadId: m.threadId || undefined,
+    isRead: m.isRead,
+    reactions: m.reactions || [],
+    createdAt: m.createdAt,
+    cursor: m.cursor,
+  };
+}
 export class MessagesModel {
   private readonly messagesDao = new MessagesDao();
   private readonly usersDao = new UsersDao();
-  private readonly membersDao = new ServerMembersDao();
+  private readonly access = new MessagingAccess();
 
+  private content(content: string): string {
+    if (
+      typeof content !== 'string' ||
+      !content.trim() ||
+      content.length > 10000
+    ) {
+      throw ErrorHandler.invalidInput(
+        'Messages must contain 1 to 10000 characters'
+      );
+    }
+    return content;
+  }
   async sendMessage(
     senderId: string,
     content: string,
@@ -37,85 +70,75 @@ export class MessagesModel {
       recipientId?: string;
     }
   ): Promise<Message> {
+    if (!senderId) throw ErrorHandler.notAuthenticated();
+    content = this.content(content);
     const { channelId, serverId, threadId, recipientId } = options;
-
-    if (!senderId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    // If in a server/channel, check membership
-    if (serverId) {
-      const membership = await this.membersDao.findByUserAndServer(
-        senderId,
-        serverId
+    if (threadId)
+      throw ErrorHandler.invalidInput(
+        'Use a discussion channel for threaded messages'
       );
-      if (!membership) {
-        throw ErrorHandler.insufficientPermissions('send message in', 'server');
-      }
+    if (
+      !!channelId === !!recipientId ||
+      (recipientId && serverId) ||
+      (serverId && !channelId)
+    ) {
+      throw ErrorHandler.invalidInput(
+        'Choose exactly one channel or direct-message recipient'
+      );
     }
-
-    const message = await this.messagesDao.create({
+    let destinationServer: string;
+    if (channelId) {
+      const channel = await this.access.channel(senderId, channelId, true);
+      if (serverId && serverId !== channel.serverId)
+        throw ErrorHandler.forbidden('Channel does not belong to this server');
+      destinationServer = channel.serverId;
+    } else {
+      if (recipientId === senderId)
+        throw ErrorHandler.invalidInput('Choose another user');
+      if (!(await this.usersDao.findById(recipientId)))
+        throw ErrorHandler.userNotFound(recipientId);
+    }
+    return this.messagesDao.create({
       senderId,
       content,
-      recipientId: serverId ? null : recipientId || null,
+      recipientId: recipientId || null,
       channelId: channelId || null,
-      serverId: serverId || null,
-      threadId: threadId || null,
+      serverId: destinationServer || null,
+      threadId: null,
       isRead: false,
     });
-
-    return message;
   }
-
   async getChannelMessages(
     channelId: string,
-    options: { limit?: number; before?: string }
+    options: MessagePageOptions,
+    userId: string
   ): Promise<MessageWithSender[]> {
-    const messages = await this.messagesDao.findByChannel(channelId, options);
-
-    return messages.map((m) => ({
-      id: m.id,
-      content: m.content,
-      senderId: m.senderId,
-      senderUserName: m.sender?.userName,
-      senderFirstName: m.sender?.firstName,
-      senderLastName: m.sender?.lastName,
-      senderAvatarUrl: m.sender?.avatarUrl,
-      channelId: m.channelId || undefined,
-      serverId: m.serverId || undefined,
-      threadId: m.threadId || undefined,
-      isRead: m.isRead,
-      reactions: m.reactions || [],
-      createdAt: m.createdAt,
-    }));
+    await this.access.channel(userId, channelId);
+    return (await this.messagesDao.findByChannel(channelId, options)).map(
+      messageOutput
+    );
   }
-
   async getDirectMessages(
     userId: string,
     otherUserId: string,
-    options: { limit?: number; before?: string }
+    options: MessagePageOptions
   ): Promise<MessageWithSender[]> {
-    const messages = await this.messagesDao.findDirectMessages(
-      userId,
-      otherUserId,
-      options
-    );
-
-    return messages.map((m) => ({
-      id: m.id,
-      content: m.content,
-      senderId: m.senderId,
-      senderUserName: m.sender?.userName,
-      senderFirstName: m.sender?.firstName,
-      senderLastName: m.sender?.lastName,
-      senderAvatarUrl: m.sender?.avatarUrl,
-      isRead: m.isRead,
-      reactions: m.reactions || [],
-      createdAt: m.createdAt,
-    }));
+    if (!userId) throw ErrorHandler.notAuthenticated();
+    return (
+      await this.messagesDao.findDirectMessages(userId, otherUserId, options)
+    ).map(messageOutput);
   }
-
+  async getMessage(
+    messageId: string,
+    userId: string
+  ): Promise<MessageWithSender | null> {
+    const message = await this.messagesDao.findById(messageId);
+    if (!message) return null;
+    await this.access.message(userId, message);
+    return messageOutput(message);
+  }
   async getConversations(userId: string): Promise<any[]> {
+    if (!userId) throw ErrorHandler.notAuthenticated();
     const rawConversations = await this.messagesDao.findConversations(userId);
 
     const conversations = [];
@@ -157,79 +180,135 @@ export class MessagesModel {
     );
   }
 
+  private async mutate(
+    messageId: string,
+    userId: string,
+    action: (message: Message) => Promise<'delete' | void>
+  ): Promise<Message> {
+    return this.messagesDao.mutate(messageId, async (message) => {
+      await this.access.message(userId, message);
+      return action(message);
+    });
+  }
+  async editMessage(
+    messageId: string,
+    userId: string,
+    content: string
+  ): Promise<Message> {
+    content = this.content(content);
+    return this.mutate(messageId, userId, async (message) => {
+      if (message.senderId !== userId)
+        throw ErrorHandler.forbidden('Only the sender can edit a message');
+      if (message.channelId)
+        await this.access.channel(userId, message.channelId, true);
+      message.content = content;
+    });
+  }
   async addReaction(
     messageId: string,
     userId: string,
     emoji: string
   ): Promise<Message> {
-    const message = await this.messagesDao.findById(messageId);
-
-    if (!message) {
-      throw ErrorHandler.notFound('Message', 'Message not found');
-    }
-
-    const reactions = message.reactions || [];
-    const existingReaction = reactions.find((r) => r.emoji === emoji);
-    if (existingReaction) {
-      if (!existingReaction.users.includes(userId)) {
-        existingReaction.users.push(userId);
+    if (!emoji?.trim() || emoji.length > 32)
+      throw ErrorHandler.invalidInput('Invalid reaction');
+    return this.mutate(messageId, userId, async (message) => {
+      const reactions = message.reactions || [];
+      const existing = reactions.find((r) => r.emoji === emoji);
+      if (existing) {
+        if (!existing.users.includes(userId)) existing.users.push(userId);
+      } else {
+        if (reactions.length >= 30)
+          throw ErrorHandler.invalidInput('Too many reactions');
+        reactions.push({ emoji, users: [userId] });
       }
-    } else {
-      reactions.push({ emoji, users: [userId] });
-    }
-
-    message.reactions = reactions;
-    return this.messagesDao.save(message);
+      message.reactions = reactions;
+    });
   }
-
   async removeReaction(
     messageId: string,
     userId: string,
     emoji: string
   ): Promise<Message> {
-    const message = await this.messagesDao.findById(messageId);
-
-    if (!message) {
-      throw ErrorHandler.notFound('Message', 'Message not found');
-    }
-
-    const reactions = message.reactions || [];
-    const reactionIndex = reactions.findIndex((r) => r.emoji === emoji);
-
-    if (reactionIndex >= 0) {
-      reactions[reactionIndex].users = reactions[reactionIndex].users.filter(
-        (u) => u !== userId
-      );
-      if (reactions[reactionIndex].users.length === 0) {
-        reactions.splice(reactionIndex, 1);
-      }
-    }
-
-    message.reactions = reactions;
-    return this.messagesDao.save(message);
+    return this.mutate(messageId, userId, async (message) => {
+      message.reactions = (message.reactions || [])
+        .map((r) =>
+          r.emoji === emoji
+            ? { ...r, users: r.users.filter((id) => id !== userId) }
+            : r
+        )
+        .filter((r) => r.users.length);
+    });
   }
-
   async markAsRead(messageId: string, userId: string): Promise<boolean> {
     const message = await this.messagesDao.findById(messageId);
-
     if (!message) return false;
-    if (message.recipientId !== userId) return false;
-
-    message.isRead = true;
-    await this.messagesDao.save(message);
+    await this.access.message(userId, message);
+    if (message.channelId)
+      await this.messagesDao.markChannelRead(
+        userId,
+        message.channelId,
+        messageId
+      );
+    else {
+      if (message.recipientId !== userId)
+        throw ErrorHandler.forbidden(
+          'Only the recipient can mark a DM as read'
+        );
+      await this.messagesDao.markDirectRead(
+        userId,
+        message.senderId,
+        messageId
+      );
+    }
     return true;
   }
-
-  async deleteMessage(messageId: string, userId: string): Promise<boolean> {
-    const message = await this.messagesDao.findById(messageId);
-
-    if (!message) return false;
-
-    if (message.senderId !== userId) {
-      throw ErrorHandler.insufficientPermissions('delete', 'message');
+  async markConversationRead(
+    userId: string,
+    throughId: string,
+    channelId?: string,
+    otherUserId?: string
+  ): Promise<boolean> {
+    if (!!channelId === !!otherUserId)
+      throw ErrorHandler.invalidInput('Choose one conversation');
+    const message = await this.messagesDao.findById(throughId);
+    if (!message) throw ErrorHandler.notFound('Message', throughId);
+    await this.access.message(userId, message);
+    if (channelId) {
+      if (message.channelId !== channelId)
+        throw ErrorHandler.forbidden('Read marker must belong to this channel');
+      await this.messagesDao.markChannelRead(userId, channelId, throughId);
+    } else {
+      if (
+        message.channelId ||
+        !(
+          (message.senderId === userId &&
+            message.recipientId === otherUserId) ||
+          (message.senderId === otherUserId && message.recipientId === userId)
+        )
+      )
+        throw ErrorHandler.forbidden('Read marker must belong to this DM');
+      await this.messagesDao.markDirectRead(userId, otherUserId, throughId);
     }
-
-    await this.messagesDao.remove(message);
+    return true;
+  }
+  async deleteMessage(messageId: string, userId: string): Promise<boolean> {
+    await this.mutate(messageId, userId, async (message) => {
+      if (message.senderId !== userId) {
+        if (!message.channelId)
+          throw ErrorHandler.forbidden('Only the sender can delete a DM');
+        const channel = await this.access.channel(userId, message.channelId);
+        const member = await this.access.member(userId, channel.serverId);
+        if (
+          ![ServerRole.OWNER, ServerRole.ADMIN, ServerRole.MODERATOR].includes(
+            member.role
+          )
+        )
+          throw ErrorHandler.forbidden(
+            'Only the sender or server staff can delete a message'
+          );
+      }
+      return 'delete';
+    });
     return true;
   }
 }

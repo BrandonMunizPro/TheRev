@@ -28,6 +28,8 @@ export class Reaction {
 @Index('idx_message_conversation', ['senderId', 'recipientId'])
 @Index('idx_message_channel', ['channelId'])
 @Index('idx_message_server', ['serverId'])
+@Index('idx_message_channel_history', ['channelId', 'createdAt', 'id'])
+@Index('idx_message_dm_history', ['senderId', 'recipientId', 'createdAt', 'id'])
 export class Message {
   @Field(() => ID)
   @PrimaryGeneratedColumn('uuid')

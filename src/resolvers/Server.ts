@@ -5,6 +5,12 @@ import { Server, ServerType } from '../entities/Server';
 import { Channel, ChannelType } from '../entities/Channel';
 import { ServerMember, ServerRole } from '../entities/ServerMember';
 import { ErrorHandler } from '../errors/ErrorHandler';
+import { GraphQLContext } from '../graphql/context';
+import { messagingActor, MessagingAccess } from '../services/MessagingAccess';
+import { MessagesDao } from '../dao/messages.dao';
+import { Message } from '../entities/Message';
+import { User } from '../entities/User';
+import { publishMessageEvent } from '../services/MessageEventsService';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -133,12 +139,17 @@ export class UserServerMembership {
 
 @Resolver(() => Server)
 export class ServerResolver {
+  private access = new MessagingAccess();
+  private messagesDao = new MessagesDao();
   private serverRepo = AppDataSource.getRepository(Server);
   private channelRepo = AppDataSource.getRepository(Channel);
   private memberRepo = AppDataSource.getRepository(ServerMember);
 
   @Query(() => [ServerWithChannels])
-  async getServers(): Promise<ServerWithChannels[]> {
+  async getServers(@Ctx() ctx: GraphQLContext): Promise<ServerWithChannels[]> {
+    const userId = messagingActor(ctx);
+    const memberships = await this.memberRepo.find({ where: { userId } });
+    const roles = new Map(memberships.map((m) => [m.serverId, m.role]));
     const servers = await this.serverRepo.find({
       relations: ['channels'],
       order: { createdAt: 'DESC' },
@@ -146,14 +157,15 @@ export class ServerResolver {
 
     const results: ServerWithChannels[] = [];
     for (const server of servers) {
+      if (server.type === ServerType.PRIVATE && !roles.has(server.id)) continue;
       const memberCount = await this.memberRepo.count({
         where: { serverId: server.id },
       });
       results.push({
         ...server,
-        channels: server.channels || [],
+        channels: roles.has(server.id) ? server.channels || [] : [],
         memberCount,
-        userRole: null,
+        userRole: roles.get(server.id) || null,
       });
     }
     return results;
@@ -161,9 +173,11 @@ export class ServerResolver {
 
   @Query(() => ServerWithChannels, { nullable: true })
   async getServer(
+    @Ctx() ctx: GraphQLContext,
     @Arg('serverId', () => ID) serverId: string,
     @Arg('userId', () => ID, { nullable: true }) userId?: string
   ): Promise<ServerWithChannels | null> {
+    userId = messagingActor(ctx, userId);
     console.log('[getServer] Fetching server:', serverId);
 
     const server = await this.serverRepo.findOne({
@@ -175,7 +189,7 @@ export class ServerResolver {
       return null;
     }
 
-    console.log('[getServer] Server found:', server.name);
+    await this.access.member(userId, serverId);
 
     const channels = await this.channelRepo.find({
       where: { serverId: server.id },
@@ -188,16 +202,18 @@ export class ServerResolver {
       channels.map((c) => c.name)
     );
 
-    const channelOutputs: ChannelOutput[] = channels.map((channel) => ({
-      id: channel.id,
-      name: channel.name,
-      description: channel.description,
-      type: channel.type,
-      serverId: channel.serverId,
-      parentChannelId: channel.parentChannelId,
-      lastMessage: null,
-      unreadCount: 0,
-    }));
+    const channelOutputs: ChannelOutput[] = await Promise.all(
+      channels.map(async (channel) => ({
+        id: channel.id,
+        name: channel.name,
+        description: channel.description,
+        type: channel.type,
+        serverId: channel.serverId,
+        parentChannelId: channel.parentChannelId,
+        lastMessage: null,
+        unreadCount: await this.messagesDao.channelUnread(userId, channel.id),
+      }))
+    );
 
     const memberCount = await this.memberRepo.count({
       where: { serverId: server.id },
@@ -221,8 +237,10 @@ export class ServerResolver {
 
   @Query(() => [UserServerMembership])
   async getUserServers(
+    @Ctx() ctx: GraphQLContext,
     @Arg('userId', () => ID) userId: string
   ): Promise<UserServerMembership[]> {
+    userId = messagingActor(ctx, userId);
     const memberships = await this.memberRepo.find({
       where: { userId },
       relations: ['server'],
@@ -246,6 +264,7 @@ export class ServerResolver {
           id: c.id,
           name: c.name,
           type: c.type,
+          serverId: c.serverId,
         })),
       });
     }
@@ -255,25 +274,36 @@ export class ServerResolver {
 
   @Query(() => [ChannelOutput])
   async getServerChannels(
+    @Ctx() ctx: GraphQLContext,
     @Arg('serverId', () => ID) serverId: string
   ): Promise<ChannelOutput[]> {
+    const userId = messagingActor(ctx);
+    await this.access.member(userId, serverId);
     const channels = await this.channelRepo.find({
       where: { serverId },
       order: { createdAt: 'ASC' },
     });
 
-    return channels.map((c) => ({
-      ...c,
-      lastMessage: null,
-      unreadCount: 0,
-    }));
+    return Promise.all(
+      channels.map(async (c) => ({
+        ...c,
+        lastMessage: null,
+        unreadCount: await this.messagesDao.channelUnread(userId, c.id),
+      }))
+    );
   }
 
   @Mutation(() => ServerWithChannels)
   async createServer(
+    @Ctx() ctx: GraphQLContext,
     @Arg('data') data: CreateServerInput,
     @Arg('userId', () => ID) userId: string
   ): Promise<ServerWithChannels> {
+    userId = messagingActor(ctx, userId);
+    if (!data.name?.trim() || data.name.length > 100)
+      throw ErrorHandler.invalidInput(
+        'Server names must contain 1 to 100 characters'
+      );
     let iconUrl = data.iconUrl;
 
     // If iconBase64 is provided, save it
@@ -313,42 +343,44 @@ export class ServerResolver {
       }
     }
 
-    const server = await this.serverRepo.save({
-      name: data.name,
-      description: data.description,
-      type: data.type || ServerType.PUBLIC,
-      iconUrl: iconUrl,
-      ownerId: userId,
+    return AppDataSource.transaction(async (manager) => {
+      const server = await manager.getRepository(Server).save({
+        name: data.name.trim(),
+        description: data.description,
+        type: data.type || ServerType.PUBLIC,
+        iconUrl,
+        ownerId: userId,
+      });
+      const generalChannel = await manager.getRepository(Channel).save({
+        name: 'general',
+        description: 'General discussion',
+        type: ChannelType.TEXT,
+        serverId: server.id,
+      });
+      await manager
+        .getRepository(ServerMember)
+        .save({ userId, serverId: server.id, role: ServerRole.OWNER });
+      await publishMessageEvent(manager, {
+        kind: 'membership',
+        serverId: server.id,
+        userIds: [userId],
+      });
+      return {
+        ...server,
+        channels: [generalChannel],
+        memberCount: 1,
+        userRole: ServerRole.OWNER,
+      };
     });
-
-    // Create default "general" text channel
-    const generalChannel = await this.channelRepo.save({
-      name: 'general',
-      description: 'General discussion',
-      type: ChannelType.TEXT,
-      serverId: server.id,
-    });
-
-    // Add creator as owner
-    await this.memberRepo.save({
-      userId,
-      serverId: server.id,
-      role: ServerRole.OWNER,
-    });
-
-    return {
-      ...server,
-      channels: [generalChannel],
-      memberCount: 1,
-      userRole: ServerRole.OWNER,
-    };
   }
 
   @Mutation(() => ChannelOutput)
   async createChannel(
+    @Ctx() ctx: GraphQLContext,
     @Arg('data') data: CreateChannelInput,
     @Arg('userId', () => ID) userId: string
   ): Promise<ChannelOutput> {
+    userId = messagingActor(ctx, userId);
     const server = await this.serverRepo.findOne({
       where: { id: data.serverId },
     });
@@ -357,20 +389,36 @@ export class ServerResolver {
       throw ErrorHandler.notFound('Server', data.serverId);
     }
 
-    const membership = await this.memberRepo.findOne({
-      where: { serverId: data.serverId, userId },
-    });
-
-    if (!membership) {
-      throw ErrorHandler.insufficientPermissions('create channel', 'server');
+    await this.access.manage(userId, data.serverId);
+    if (data.parentChannelId) {
+      const parent = await this.access.channel(userId, data.parentChannelId);
+      if (parent.serverId !== data.serverId)
+        throw ErrorHandler.invalidInput(
+          'Parent channel must belong to this server'
+        );
     }
 
-    const channel = await this.channelRepo.save({
-      name: data.name,
-      description: data.description,
-      type: data.type,
-      serverId: data.serverId,
-      parentChannelId: data.parentChannelId,
+    if (!data.name?.trim() || data.name.length > 100)
+      throw ErrorHandler.invalidInput(
+        'Channel names must contain 1 to 100 characters'
+      );
+    const channel = await AppDataSource.transaction(async (manager) => {
+      const saved = await manager.getRepository(Channel).save({
+        name: data.name.trim(),
+        description: data.description,
+        type: data.type,
+        serverId: data.serverId,
+        parentChannelId: data.parentChannelId,
+      });
+      const members = await manager
+        .getRepository(ServerMember)
+        .find({ where: { serverId: data.serverId } });
+      await publishMessageEvent(manager, {
+        kind: 'membership',
+        serverId: data.serverId,
+        userIds: members.map((m) => m.userId),
+      });
+      return saved;
     });
 
     console.log('[ServerResolver] Channel created:', channel.id, channel.name);
@@ -384,9 +432,11 @@ export class ServerResolver {
 
   @Mutation(() => Boolean)
   async deleteChannel(
+    @Ctx() ctx: GraphQLContext,
     @Arg('channelId', () => ID) channelId: string,
     @Arg('userId', () => ID) userId: string
   ): Promise<boolean> {
+    userId = messagingActor(ctx, userId);
     const channel = await this.channelRepo.findOne({
       where: { id: channelId },
       relations: ['server'],
@@ -400,37 +450,97 @@ export class ServerResolver {
       where: { serverId: channel.serverId, userId },
     });
 
-    if (!membership || membership.role !== ServerRole.OWNER) {
+    if (
+      !membership ||
+      ![ServerRole.OWNER, ServerRole.ADMIN].includes(membership.role)
+    ) {
       throw ErrorHandler.insufficientPermissions('delete channel', 'channel');
     }
 
-    await this.channelRepo.delete(channelId);
+    await AppDataSource.transaction(async (manager) => {
+      await manager.getRepository(Message).delete({ channelId });
+      await manager.getRepository(Channel).delete(channelId);
+      const members = await manager
+        .getRepository(ServerMember)
+        .find({ where: { serverId: channel.serverId } });
+      await publishMessageEvent(manager, {
+        kind: 'membership',
+        serverId: channel.serverId,
+        userIds: members.map((m) => m.userId),
+      });
+    });
     return true;
   }
 
+  private async addMember(
+    serverId: string,
+    targetId: string,
+    actorId: string,
+    invitation: boolean
+  ): Promise<boolean> {
+    return AppDataSource.transaction(async (manager) => {
+      const server = await manager
+        .getRepository(Server)
+        .findOne({
+          where: { id: serverId },
+          lock: { mode: 'pessimistic_write' },
+        });
+      if (!server) throw ErrorHandler.notFound('Server', serverId);
+      if (invitation) await this.access.manage(actorId, serverId);
+      const repo = manager.getRepository(ServerMember);
+      if (!(await repo.findOne({ where: { serverId, userId: targetId } }))) {
+        if (!invitation && server.type === ServerType.PRIVATE)
+          throw ErrorHandler.forbidden('Private servers require an invitation');
+        if (
+          !(await manager
+            .getRepository(User)
+            .findOne({ where: { id: targetId } }))
+        )
+          throw ErrorHandler.userNotFound(targetId);
+        await repo.save({
+          serverId,
+          userId: targetId,
+          role: ServerRole.MEMBER,
+        });
+        await publishMessageEvent(manager, {
+          kind: 'membership',
+          serverId,
+          userIds: [targetId],
+        });
+      }
+      return true;
+    });
+  }
+
   @Mutation(() => Boolean)
-  async joinServer(@Arg('data') data: JoinServerInput): Promise<boolean> {
-    // Check if already a member
-    const existing = await this.memberRepo.findOne({
-      where: { serverId: data.serverId, userId: data.userId },
-    });
+  async joinServer(
+    @Ctx() ctx: GraphQLContext,
+    @Arg('data') data: JoinServerInput
+  ): Promise<boolean> {
+    const actorId = messagingActor(ctx, data.userId);
+    return this.addMember(data.serverId, actorId, actorId, false);
+  }
 
-    if (existing) return true;
-
-    await this.memberRepo.save({
-      userId: data.userId,
-      serverId: data.serverId,
-      role: ServerRole.MEMBER,
-    });
-
-    return true;
+  @Mutation(() => Boolean)
+  async inviteServerMember(
+    @Ctx() ctx: GraphQLContext,
+    @Arg('data') data: JoinServerInput
+  ): Promise<boolean> {
+    return this.addMember(
+      data.serverId,
+      data.userId,
+      messagingActor(ctx),
+      true
+    );
   }
 
   @Mutation(() => Boolean)
   async leaveServer(
+    @Ctx() ctx: GraphQLContext,
     @Arg('serverId', () => ID) serverId: string,
     @Arg('userId', () => ID) userId: string
   ): Promise<boolean> {
+    userId = messagingActor(ctx, userId);
     const membership = await this.memberRepo.findOne({
       where: { serverId, userId },
     });
@@ -444,15 +554,24 @@ export class ServerResolver {
       );
     }
 
-    await this.memberRepo.remove(membership);
+    await AppDataSource.transaction(async (manager) => {
+      await manager.getRepository(ServerMember).remove(membership);
+      await publishMessageEvent(manager, {
+        kind: 'membership',
+        serverId,
+        userIds: [userId],
+      });
+    });
     return true;
   }
 
   @Mutation(() => Boolean)
   async deleteServer(
+    @Ctx() ctx: GraphQLContext,
     @Arg('serverId', () => ID) serverId: string,
     @Arg('userId', () => ID) userId: string
   ): Promise<boolean> {
+    userId = messagingActor(ctx, userId);
     const membership = await this.memberRepo.findOne({
       where: { serverId, userId },
     });
@@ -461,27 +580,46 @@ export class ServerResolver {
       throw ErrorHandler.insufficientPermissions('delete server', 'server');
     }
 
-    // Delete all members first
-    await this.memberRepo.delete({ serverId });
-    // Delete all channels
-    await this.channelRepo.delete({ serverId });
-    // Delete server
-    await this.serverRepo.delete(serverId);
+    await AppDataSource.transaction(async (manager) => {
+      const members = await manager
+        .getRepository(ServerMember)
+        .find({ where: { serverId } });
+      const channels = await manager
+        .getRepository(Channel)
+        .find({ where: { serverId } });
+      for (const channel of channels)
+        await manager.getRepository(Message).delete({ channelId: channel.id });
+      await manager.getRepository(Message).delete({ serverId });
+      await manager.getRepository(ServerMember).delete({ serverId });
+      await manager.getRepository(Channel).delete({ serverId });
+      await manager.getRepository(Server).delete(serverId);
+      await publishMessageEvent(manager, {
+        kind: 'membership',
+        serverId,
+        userIds: members.map((m) => m.userId),
+      });
+    });
 
     return true;
   }
 
   @Query(() => [Server])
   async searchServers(
+    @Ctx() ctx: GraphQLContext,
     @Arg('query') query: string,
     @Arg('limit', { nullable: true }) limit?: number
   ): Promise<Server[]> {
+    const userId = messagingActor(ctx);
     return this.serverRepo
       .createQueryBuilder('server')
-      .where('LOWER(server.name) LIKE LOWER(:query)', { query: `%${query}%` })
-      .orWhere('LOWER(server.description) LIKE LOWER(:query)', {
-        query: `%${query}%`,
-      })
+      .where(
+        '(LOWER(server.name) LIKE LOWER(:query) OR LOWER(server.description) LIKE LOWER(:query))',
+        { query: `%${query}%` }
+      )
+      .andWhere(
+        '(server.type <> :private OR EXISTS (SELECT 1 FROM server_member member WHERE member.server_id = server.id AND member.user_id = :userId))',
+        { private: ServerType.PRIVATE, userId }
+      )
       .take(limit || 20)
       .getMany();
   }

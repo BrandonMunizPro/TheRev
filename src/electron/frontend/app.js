@@ -8,6 +8,9 @@ import {
 } from '@pixiv/three-vrm-animation';
 import { WhisperSpeech } from './WhisperSpeech.js';
 import { GameLibrary } from './launcher/GameLibrary.js';
+import { MessagingController } from './messaging/MessagingController.js';
+import { CallController } from './calls/CallController.js';
+import { textElement, renderMessageList, messageDestination, safeImage } from './messaging/MessagingUI.js';
 import { AudioCaptureService } from './copilot/AudioCaptureService.js';
 import { SegmentTranscriber } from './copilot/SegmentTranscriber.js';
 import { TranscriptThrottle } from './copilot/TranscriptThrottle.js';
@@ -25,6 +28,8 @@ class TheRevApp {
     this.currentServerId = null;
     this.currentChannelId = null;
     this.currentDMUserId = null;
+    this._messaging = new MessagingController(this);
+    this._calls = new CallController(this);
     this.protectedSections = [
       'tasks',
       'analytics',
@@ -90,6 +95,10 @@ class TheRevApp {
     console.log('[TheRevApp] init() started');
     // Check for existing auth session
     this.loadAuthSession();
+    try {
+      const callConfig = await window.electronAPI?.getCallConfig?.();
+      if (callConfig) this._calls.configure(callConfig);
+    } catch (error) { this._calls.error(error); }
 
     // Show startup notification
     this.showStartupNotification();
@@ -101,6 +110,9 @@ class TheRevApp {
       api: window.electronAPI,
     });
     this.setupEventListeners();
+    window.addEventListener('focus', () => this._messaging.markRead().catch(error => this._messaging.error(error)));
+    document.addEventListener('visibilitychange', () => this._messaging.markRead().catch(error => this._messaging.error(error)));
+    window.addEventListener('beforeunload', () => this._messaging.stop());
     this.setupElectronListeners();
     this.loadInitialContent();
     this.setupWebviewListeners();
@@ -119,6 +131,8 @@ class TheRevApp {
 
     // Set initial UI based on auth state
     this.updateAuthUI();
+    if (this.jwtToken) void this._calls.start().catch(error => this._calls.error(error));
+    window.addEventListener('beforeunload', () => this._calls.stop());
   }
 
   handleDeepLinks() {
@@ -207,6 +221,11 @@ class TheRevApp {
   }
 
   saveAuthSession(user, jwt) {
+    this._calls?.stop();
+    this._messaging?.stop();
+    this.currentServerId = this.currentChannelId = this.currentDMUserId = null;
+    this._messaging?.render();
+    for (const id of ['conversations-list', 'channels-list', 'servers-list']) document.getElementById(id)?.replaceChildren();
     console.log('[saveAuthSession] Saving user:', user);
     console.log('[saveAuthSession] profilePicUrl:', user.profilePicUrl);
     this.currentUser = user;
@@ -215,9 +234,15 @@ class TheRevApp {
     // Also store userId separately for ai-browser to access
     localStorage.setItem('therev_userId', user.id);
     this.updateAuthUI();
+    void this._calls.start().catch(error => this._calls.error(error));
   }
 
   clearAuthSession() {
+    this._calls?.stop();
+    this._messaging?.stop();
+    this.currentServerId = this.currentChannelId = this.currentDMUserId = null;
+    this._messaging?.render();
+    for (const id of ['conversations-list', 'channels-list', 'servers-list']) document.getElementById(id)?.replaceChildren();
     this.currentUser = null;
     this.jwtToken = null;
     localStorage.removeItem('therev_auth');
@@ -2026,6 +2051,7 @@ class TheRevApp {
     else console.log('[switchSection] Section not found!');
 
     this.currentSection = section;
+    if (section === 'messages') this._messaging?.markRead().catch(error => this._messaging.error(error));
 
     // Resume avatar for avatar and profile sections, pause for others
     if (
@@ -2488,39 +2514,29 @@ class TheRevApp {
   renderFriendsList(friends) {
     const container = document.getElementById('friends-list');
     if (!container) return;
-
-    if (friends.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state">No friends yet. Find some friends!</div>';
-      return;
+    container.replaceChildren();
+    if (!friends.length) container.append(textElement('div', 'empty-state', 'No friends yet. Find some friends!'));
+    for (const friend of friends) {
+      const row = textElement('div', 'friend-card');
+      const avatar = textElement('div', 'friend-avatar');
+      avatar.append(safeImage(friend.profilePicUrl, '', friend.userName));
+      const info = textElement('div', 'friend-info');
+      info.append(textElement('div', 'friend-name', [friend.firstName, friend.lastName].filter(Boolean).join(' ')), textElement('div', 'friend-username', '@' + friend.userName));
+      const actions = textElement('div', 'friend-actions');
+      for (const [label, action] of [['View', () => this.viewFriendProfile(friend.userId)], ['Audio call', () => this.initiateCall(friend.userId, false)], ['Video call', () => this.initiateCall(friend.userId, true)], ['Unfriend', () => this.unfriend(friend.id)]]) {
+        const button = textElement('button', label === 'Unfriend' ? 'danger-btn small' : 'secondary-btn small', label);
+        button.addEventListener('click', action); actions.append(button);
+      }
+      row.append(avatar, info, actions); container.append(row);
     }
-
-    container.innerHTML = friends
-      .map((friend) => {
-        const profilePic = friend.profilePicUrl
-          ? friend.profilePicUrl.startsWith('http')
-            ? friend.profilePicUrl
-            : `http://localhost:4000${friend.profilePicUrl}`
-          : 'assets/default-avatar.svg';
-
-        return `
-        <div class="friend-card">
-          <div class="friend-avatar">
-            <img src="${profilePic}" alt="${friend.userName}" onerror="this.src='assets/default-avatar.svg'" />
-          </div>
-          <div class="friend-info">
-            <div class="friend-name">${friend.firstName} ${friend.lastName}</div>
-            <div class="friend-username">@${friend.userName}</div>
-          </div>
-          <div class="friend-actions">
-            <button class="secondary-btn small" onclick="theRevApp.viewFriendProfile('${friend.userId}')">View</button>
-            <button class="danger-btn small" onclick="theRevApp.unfriend('${friend.id}')">Unfriend</button>
-          </div>
-        </div>
-      `;
-      })
-      .join('');
   }
+
+  initiateCall(userId, isVideo = false) { return this._calls.initiate(userId, isVideo); }
+  acceptCall() { return this._calls.accept(); }
+  declineCall() { return this._calls.decline(); }
+  endCall() { return this._calls.end(); }
+  toggleMute() { return this._calls.toggleMute(); }
+  toggleVideo() { return this._calls.toggleVideo(); }
 
   renderFriendRequests(requests) {
     const container = document.getElementById('friends-requests');
@@ -3149,6 +3165,7 @@ class TheRevApp {
   // ==================== MESSAGES METHODS (DISCORD-STYLE) ====================
 
   async loadMessages() {
+    this._messaging.start();
     console.log('[Messages] Loading messages...');
     this.loadServers();
     this.loadConversations();
@@ -3199,25 +3216,17 @@ class TheRevApp {
 
   renderServersList(servers) {
     const container = document.getElementById('servers-list');
-    if (servers.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state">No servers yet. Create one!</div>';
-      return;
+    container.replaceChildren();
+    if (!servers.length) container.append(textElement('div', 'empty-state', 'No servers yet. Create one!'));
+    for (const server of servers) {
+      const row = textElement('div', 'server-item'); row.dataset.serverId = server.serverId;
+      const icon = textElement('div', 'server-icon', server.serverName?.charAt(0).toUpperCase());
+      if (server.iconUrl) icon.replaceChildren(safeImage(server.iconUrl, '', 'Server icon'));
+      row.append(icon, textElement('span', 'server-name', server.serverName));
+      row.addEventListener('click', () => this.selectServer(server.serverId));
+      row.addEventListener('contextmenu', event => this.showServerContextMenu(event, server.serverId, server.serverName));
+      container.append(row);
     }
-
-    container.innerHTML = servers
-      .map((server) => {
-        const iconHtml = server.iconUrl
-          ? `<img src="http://localhost:4000${server.iconUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
-          : server.serverName.charAt(0).toUpperCase();
-        return `
-          <div class="server-item" onclick="theRevApp.selectServer('${server.serverId}')" oncontextmenu="theRevApp.showServerContextMenu(event, '${server.serverId}', '${server.serverName}')">
-            <div class="server-icon">${iconHtml}</div>
-            <span class="server-name">${server.serverName}</span>
-          </div>
-        `;
-      })
-      .join('');
   }
 
   showServerContextMenu(event, serverId, serverName) {
@@ -3272,8 +3281,9 @@ class TheRevApp {
       if (result.data?.deleteServer) {
         this.showSpeechBubble('Server deleted!', 3000);
         this.currentServerId = null;
-        this.loadUserServers();
-        this.showMessagesView();
+        this.currentChannelId = this.currentDMUserId = null;
+        this._messaging.select(null);
+        this.loadServers();
       } else if (result.errors) {
         alert('Error: ' + result.errors[0].message);
       }
@@ -3322,37 +3332,36 @@ class TheRevApp {
 
   renderConversationsList(conversations) {
     const container = document.getElementById('conversations-list');
-    if (conversations.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state" style="padding: 12px; font-size: 12px;">No direct messages</div>';
-      return;
+    container.replaceChildren();
+    if (!conversations.length) container.append(textElement('div', 'empty-state', 'No direct messages'));
+    for (const conversation of conversations) {
+      const row = textElement('div', 'conversation-item');
+      row.append(textElement('div', 'conversation-avatar', (conversation.odlFriendFirstName || conversation.odlFriendUserName || '?').charAt(0)));
+      const info = textElement('div', 'conversation-info');
+      info.append(textElement('div', 'conversation-name', [conversation.odlFriendFirstName || conversation.odlFriendUserName, conversation.odlFriendLastName].filter(Boolean).join(' ')), textElement('div', 'conversation-preview', conversation.lastMessage?.substring(0, 30) || 'No messages'));
+      row.append(info);
+      if (conversation.unreadCount > 0) row.append(textElement('span', 'conversation-badge', conversation.unreadCount));
+      row.addEventListener('click', () => this.openDirectMessage(conversation.odlFriendId));
+      container.append(row);
     }
-
-    container.innerHTML = conversations
-      .map(
-        (conv) => `
-        <div class="conversation-item" onclick="theRevApp.openDirectMessage('${conv.odlFriendId}')">
-          <div class="conversation-avatar">${conv.odlFriendFirstName?.charAt(0) || conv.odlFriendUserName?.charAt(0) || '?'}</div>
-          <div class="conversation-info">
-            <div class="conversation-name">${conv.odlFriendFirstName} ${conv.odlFriendLastName || ''}</div>
-            <div class="conversation-preview">${conv.lastMessage?.substring(0, 30) || 'No messages'}...</div>
-          </div>
-          ${conv.unreadCount > 0 ? `<span class="conversation-badge">${conv.unreadCount}</span>` : ''}
-        </div>
-      `
-      )
-      .join('');
   }
 
   async selectServer(serverId) {
     console.log('[Messages] Selecting server:', serverId);
     this.currentServerId = serverId;
+    this.currentChannelId = this.currentDMUserId = null;
+    this._messaging.select(null);
+    document.getElementById('channels-sidebar').style.display = '';
+    document.getElementById('members-sidebar').style.display = '';
+    const header = document.getElementById('channel-header');
+    header.replaceChildren(textElement('span', '', 'Select a channel'));
+    const channelName = textElement('span', '', ''); channelName.id = 'channel-name'; header.append(channelName);
 
     // Update UI
     document
       .querySelectorAll('.server-item')
       .forEach((item) => item.classList.remove('active'));
-    event?.target?.closest('.server-item')?.classList.add('active');
+    document.querySelectorAll('.server-item').forEach(item => item.classList.toggle('active', item.dataset.serverId === serverId));
 
     // Show server view
     document.getElementById('messages-welcome').style.display = 'none';
@@ -3384,6 +3393,7 @@ class TheRevApp {
                   name
                   type
                   description
+                  unreadCount
                 }
                 memberCount
                 userRole
@@ -3401,7 +3411,17 @@ class TheRevApp {
       console.log('[Messages] Server details:', result);
       const server = result.data?.getServer;
 
+      if (this.currentServerId !== serverId) return;
+      if (result.errors) {
+        this._messaging.select(null);
+        this.currentServerId = this.currentChannelId = null;
+        throw new Error(result.errors[0].message);
+      }
       if (server) {
+        if (this.currentChannelId && !server.channels.some(c => c.id === this.currentChannelId)) {
+          this.currentChannelId = null;
+          this._messaging.select(null);
+        }
         document.getElementById('server-name').textContent = server.name;
         console.log('[Messages] Channels:', server.channels);
         this.renderChannelsList(server.channels || []);
@@ -3413,24 +3433,16 @@ class TheRevApp {
 
   renderChannelsList(channels) {
     const container = document.getElementById('channels-list');
-    if (channels.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state" style="padding: 8px; font-size: 12px;">No channels yet</div>';
-      return;
+    container.replaceChildren();
+    for (const channel of channels.filter(c => c.type === 'TEXT' || c.type === 'ANNOUNCEMENT' || c.type === 'THREAD')) {
+      const row = textElement('div', 'channel-item'); row.dataset.channelId = channel.id;
+      row.classList.toggle('active', channel.id === this.currentChannelId);
+      row.append(textElement('span', 'channel-hash', channel.type === 'ANNOUNCEMENT' ? '!' : '#'), textElement('span', '', channel.name));
+      if (channel.unreadCount > 0) row.append(textElement('span', 'conversation-badge', channel.unreadCount));
+      row.addEventListener('click', () => this.selectChannel(channel.id, channel.name));
+      row.addEventListener('contextmenu', event => this.showChannelContextMenu(event, channel.id, channel.name));
+      container.append(row);
     }
-
-    container.innerHTML = channels
-      .filter((c) => c.type === 'TEXT' || c.type === 'ANNOUNCEMENT')
-      .map((channel) => {
-        const icon = channel.type === 'ANNOUNCEMENT' ? '📌' : '#';
-        return `
-          <div class="channel-item" onclick="theRevApp.selectChannel('${channel.id}', '${channel.name}')" oncontextmenu="theRevApp.showChannelContextMenu(event, '${channel.id}', '${channel.name}')">
-            <span class="channel-hash">${icon}</span>
-            <span>${channel.name}</span>
-          </div>
-        `;
-      })
-      .join('');
   }
 
   showChannelContextMenu(event, channelId, channelName) {
@@ -3495,12 +3507,13 @@ class TheRevApp {
   async selectChannel(channelId, channelName) {
     console.log('[Messages] Selecting channel:', channelId, channelName);
     this.currentChannelId = channelId;
+    this.currentDMUserId = null;
 
     // Update UI
     document
       .querySelectorAll('.channel-item')
       .forEach((item) => item.classList.remove('active'));
-    event?.target?.closest('.channel-item')?.classList.add('active');
+    document.querySelectorAll('.channel-item').forEach(item => item.classList.toggle('active', item.dataset.channelId === channelId));
 
     // Update header
     document.getElementById('channel-name').textContent = channelName;
@@ -3508,99 +3521,25 @@ class TheRevApp {
       `Message #${channelName}`;
 
     // Load messages
-    await this.loadChannelMessages(channelId);
+    await this._messaging.select({ type: 'channel', id: channelId, serverId: this.currentServerId });
   }
 
   async loadChannelMessages(channelId) {
-    try {
-      const response = await fetch('http://localhost:4000/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.jwtToken}`,
-        },
-        body: JSON.stringify({
-          query: `
-            query GetChannelMessages($channelId: ID!, $limit: Float) {
-              getChannelMessages(channelId: $channelId, limit: $limit) {
-                id
-                content
-                senderId
-                senderUserName
-                senderFirstName
-                senderLastName
-                senderAvatarUrl
-                isRead
-                reactions {
-                  emoji
-                  users
-                }
-                createdAt
-              }
-            }
-          `,
-          variables: { channelId, limit: 50 },
-        }),
-      });
-
-      const result = await response.json();
-      const messages = result.data?.getChannelMessages || [];
-      this.renderChannelMessages(messages);
-    } catch (error) {
-      console.error('[Messages] Error loading messages:', error);
-    }
+    if (this.currentChannelId !== channelId) return;
+    await this._messaging.refresh();
   }
 
   renderChannelMessages(messages) {
     const container = document.getElementById('channel-messages');
-    console.log(
-      '[Messages] renderChannelMessages called, container:',
-      container,
-      'messages:',
-      messages
-    );
-
-    if (!container) {
-      console.error('[Messages] channel-messages container not found!');
-      return;
-    }
-
-    if (messages.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state">No messages yet. Start the conversation!</div>';
-      return;
-    }
-
-    container.innerHTML = messages
-      .map(
-        (msg) => `
-        <div class="message-item">
-          <div class="message-avatar">${msg.senderFirstName?.charAt(0) || msg.senderUserName?.charAt(0) || '?'}</div>
-          <div class="message-content">
-            <div class="message-header">
-              <span class="message-author">${msg.senderFirstName} ${msg.senderLastName || ''}</span>
-              <span class="message-timestamp">${new Date(msg.createdAt).toLocaleTimeString()}</span>
-            </div>
-            <div class="message-text">${msg.content}</div>
-            ${
-              msg.reactions?.length
-                ? `
-              <div class="message-reactions">
-                ${msg.reactions.map((r) => `<span class="reaction-badge">${r.emoji} ${r.users.length}</span>`).join('')}
-              </div>
-            `
-                : ''
-            }
-          </div>
-        </div>
-      `
-      )
-      .join('');
+    if (container) renderMessageList(container, messages, this.currentUser?.id);
   }
 
   async openDirectMessage(otherUserId) {
     console.log('[Messages] Opening DM with:', otherUserId);
     this.currentDMUserId = otherUserId;
+    this.currentServerId = this.currentChannelId = null;
+    const selection = this._messaging.select({ type: 'dm', id: otherUserId });
+    const selectionVersion = this._messaging.version;
 
     // Show server view without server (for DMs)
     document.getElementById('messages-welcome').style.display = 'none';
@@ -3619,8 +3558,8 @@ class TheRevApp {
         },
         body: JSON.stringify({
           query: `
-            query GetUser($id: ID!) {
-              getUser(id: $id) {
+            query GetUser($data: GetUserInput!) {
+              user(data: $data) {
                 firstName
                 lastName
                 userName
@@ -3629,12 +3568,15 @@ class TheRevApp {
               }
             }
           `,
-          variables: { id: otherUserId },
+          variables: { data: { id: otherUserId } },
         }),
       });
 
       const result = await response.json();
-      const user = result.data?.getUser;
+      if (selectionVersion !== this._messaging.version) return;
+      if (result.errors) throw new Error(result.errors.map(error => error.message).join('; '));
+      const user = result.data?.user;
+      if (!user) throw new Error('Direct message recipient not found');
       if (user) {
         const header = document.getElementById('channel-header');
         const avatarUrl = user.profilePicUrl || user.avatarUrl;
@@ -3644,137 +3586,45 @@ class TheRevApp {
             : `http://localhost:4000${avatarUrl}`
           : '';
 
-        header.innerHTML = avatarImg
-          ? `<img src="${avatarImg}" class="dm-avatar" onerror="this.style.display='none'" />`
-          : `<div class="dm-avatar-placeholder">${user.firstName?.charAt(0) || '?'}</div>`;
-        header.innerHTML += `<span>@${user.userName}</span>`;
+        header.replaceChildren();
+        if (avatarImg) header.append(safeImage(avatarImg, 'dm-avatar', 'Profile'));
+        else header.append(textElement('div', 'dm-avatar-placeholder', user.firstName?.charAt(0) || '?'));
+        header.append(textElement('span', '', '@' + user.userName));
+        for (const [label, video] of [['Audio call', false], ['Video call', true]]) {
+          const button = textElement('button', 'secondary-btn small', label);
+          button.addEventListener('click', () => this.initiateCall(otherUserId, video));
+          header.append(button);
+        }
       }
     } catch (error) {
       console.error('[Messages] Error getting recipient:', error);
-      document.getElementById('channel-name').textContent = 'Direct Message';
+      if (selectionVersion === this._messaging.version) document.getElementById('channel-header').replaceChildren(textElement('span', '', 'Direct Message'));
     }
 
-    await this.loadDirectMessages(otherUserId);
+    await selection;
   }
 
   async loadDirectMessages(otherUserId) {
-    console.log('[Messages] Loading DM with user:', otherUserId);
-    try {
-      const response = await fetch('http://localhost:4000/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.jwtToken}`,
-        },
-        body: JSON.stringify({
-          query: `
-            query GetDirectMessages($userId: ID!, $otherUserId: ID!, $limit: Float) {
-              getDirectMessages(userId: $userId, otherUserId: $otherUserId, limit: $limit) {
-                id
-                content
-                senderId
-                senderUserName
-                senderFirstName
-                senderLastName
-                senderAvatarUrl
-                isRead
-                createdAt
-              }
-            }
-          `,
-          variables: { userId: this.currentUser.id, otherUserId, limit: 50 },
-        }),
-      });
-
-      const result = await response.json();
-      console.log('[Messages] DM response:', result);
-
-      if (result.errors) {
-        console.error(
-          '[Messages] DM errors:',
-          JSON.stringify(result.errors, null, 2)
-        );
-      }
-
-      const messages = result.data?.getDirectMessages || [];
-      console.log('[Messages] DM messages:', messages);
-      this.renderChannelMessages(messages);
-    } catch (error) {
-      console.error('[Messages] Error loading DM:', error);
-    }
+    if (this.currentDMUserId !== otherUserId) return;
+    await this._messaging.refresh();
   }
 
   async sendMessage() {
     const input = document.getElementById('message-input');
     const content = input.value.trim();
-    if (!content || !this.currentUser) return;
-
-    console.log(
-      '[Messages] sendMessage called, currentDMUserId:',
-      this.currentDMUserId
-    );
-
+    if (!content || !this.currentUser || this._sendingMessage) return;
+    this._sendingMessage = true;
     try {
-      const variables = {
-        senderId: this.currentUser.id,
-        data: { content },
-      };
-
-      // Add channel/server or recipient based on context
-      if (this.currentChannelId) {
-        variables.data.channelId = this.currentChannelId;
+      const version = this._messaging.version;
+      const data = { content, ...messageDestination(this) };
+      await this._messaging.request('mutation Send($sender: ID!, $data: SendMessageInput!) { sendMessage(senderId: $sender, data: $data) { id } }', { sender: this.currentUser.id, data });
+      if (version === this._messaging.version) {
+        if (input.value.trim() === content) input.value = '';
+        await this._messaging.refresh();
       }
-      if (this.currentServerId) {
-        variables.data.serverId = this.currentServerId;
-      }
-      if (this.currentDMUserId) {
-        variables.data.recipientId = this.currentDMUserId;
-      }
-
-      console.log('[Messages] Sending with variables:', variables);
-
-      const response = await fetch('http://localhost:4000/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.jwtToken}`,
-        },
-        body: JSON.stringify({
-          query: `
-            mutation SendMessage($senderId: ID!, $data: SendMessageInput!) {
-              sendMessage(senderId: $senderId, data: $data) {
-                id
-                content
-                senderId
-                senderUserName
-                senderFirstName
-                createdAt
-              }
-            }
-          `,
-          variables,
-        }),
-      });
-
-      const result = await response.json();
-      console.log('[Messages] sendMessage result:', result);
-
-      if (result.errors) {
-        console.error('[Messages] sendMessage errors:', result.errors);
-      }
-
-      if (result.data?.sendMessage) {
-        input.value = '';
-        // Reload messages
-        if (this.currentChannelId) {
-          this.loadChannelMessages(this.currentChannelId);
-        } else if (this.currentDMUserId) {
-          this.loadDirectMessages(this.currentDMUserId);
-        }
-      }
-    } catch (error) {
-      console.error('[Messages] Error sending message:', error);
-    }
+      await this.loadConversations();
+    } catch (error) { this._messaging.error(error); }
+    finally { this._sendingMessage = false; }
   }
 
   async createServer() {
@@ -3902,29 +3752,17 @@ class TheRevApp {
         return;
       }
 
-      document.getElementById('invite-search-results').innerHTML = users
-        .map((user) => {
-          const profilePic = user.profilePicUrl
-            ? user.profilePicUrl.startsWith('http')
-              ? user.profilePicUrl
-              : `http://localhost:4000${user.profilePicUrl}`
-            : '';
-          return `
-          <div class="friend-card search-result">
-            <div class="friend-avatar">
-              <img src="${profilePic || 'assets/default-avatar.svg'}" alt="${user.userName}" onerror="this.src='assets/default-avatar.svg'" />
-            </div>
-            <div class="friend-info">
-              <div class="friend-name">${user.firstName} ${user.lastName || ''}</div>
-              <div class="friend-username">@${user.userName}</div>
-            </div>
-            <div class="friend-actions">
-              <button class="primary-btn small" onclick="theRevApp.inviteUserToServer('${user.id}')">Invite</button>
-            </div>
-          </div>
-        `;
-        })
-        .join('');
+      const container = document.getElementById('invite-search-results');
+      container.replaceChildren();
+      for (const user of users) {
+        const row = textElement('div', 'friend-card search-result');
+        row.append(safeImage(user.profilePicUrl, 'friend-avatar', user.userName));
+        const info = textElement('div', 'friend-info');
+        info.append(textElement('div', 'friend-name', [user.firstName, user.lastName].filter(Boolean).join(' ')), textElement('div', 'friend-username', '@' + user.userName));
+        const button = textElement('button', 'primary-btn small', 'Invite');
+        button.addEventListener('click', () => this.inviteUserToServer(user.id));
+        row.append(info, button); container.append(row);
+      }
     } catch (error) {
       console.error('[Messages] Error searching users:', error);
     }
@@ -3940,8 +3778,8 @@ class TheRevApp {
         },
         body: JSON.stringify({
           query: `
-            mutation JoinServer($data: JoinServerInput!) {
-              joinServer(data: $data)
+            mutation InviteServerMember($data: JoinServerInput!) {
+              inviteServerMember(data: $data)
             }
           `,
           variables: { data: { serverId: this.currentServerId, userId } },
@@ -3949,7 +3787,7 @@ class TheRevApp {
       });
 
       const result = await response.json();
-      if (result.data?.joinServer) {
+      if (result.data?.inviteServerMember) {
         this.showSpeechBubble('User invited to server!', 3000);
         this.searchUsersForInvite(
           document.getElementById('invite-search-input').value

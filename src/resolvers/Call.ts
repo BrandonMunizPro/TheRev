@@ -1,230 +1,168 @@
-import { InputType, Field, ID, ObjectType } from 'type-graphql';
-import { Resolver, Query, Mutation, Arg, Ctx } from 'type-graphql';
-import { callsModel } from '../models/calls.model';
+import {
+  InputType,
+  Field,
+  ID,
+  Int,
+  ObjectType,
+  Resolver,
+  Query,
+  Mutation,
+  Arg,
+  Ctx,
+} from 'type-graphql';
+import { callsModel, callView } from '../models/calls.model';
 import { Call, CallStatus, CallInvitation } from '../entities/Call';
-import { ErrorHandler } from '../errors/ErrorHandler';
-import { getUserFromRequest } from '../auth/getUserFromRequest';
+import { GraphQLContext } from '../graphql/context';
+import { callActor } from '../utils/callPolicy';
 
 @InputType()
 export class InitiateCallInput {
-  @Field(() => ID)
-  calleeId!: string;
-
-  @Field()
-  isVideo!: boolean;
+  @Field(() => ID) calleeId!: string;
+  @Field({ defaultValue: false }) isVideo!: boolean;
+  @Field(() => ID, { nullable: true }) connectionId?: string;
 }
-
 @InputType()
 export class CallSdpInput {
-  @Field(() => ID)
-  callId!: string;
-
-  @Field()
-  sdp!: string;
-
-  @Field()
-  isOffer!: boolean;
+  @Field(() => ID) callId!: string;
+  @Field() sdp!: string;
+  @Field() isOffer!: boolean;
 }
-
 @InputType()
 export class IceCandidatesInput {
-  @Field(() => ID)
-  callId!: string;
-
-  @Field()
-  candidates!: string;
+  @Field(() => ID) callId!: string;
+  @Field() candidates!: string;
 }
-
 @ObjectType()
 export class CallOutput {
-  @Field(() => ID)
-  id!: string;
-
-  @Field(() => ID)
-  callerId!: string;
-
-  @Field(() => ID)
-  calleeId!: string;
-
-  @Field(() => CallStatus)
-  status!: CallStatus;
-
-  @Field()
-  isVideo!: boolean;
-
-  @Field({ nullable: true })
-  offerSdp?: string;
-
-  @Field({ nullable: true })
-  answerSdp?: string;
+  @Field(() => ID) id!: string;
+  @Field(() => ID) callerId!: string;
+  @Field(() => ID) calleeId!: string;
+  @Field(() => CallStatus) status!: CallStatus;
+  @Field() isVideo!: boolean;
+  @Field(() => Int) version!: number;
+  @Field() callerName!: string;
+  @Field() calleeName!: string;
+  @Field({ nullable: true }) ringExpiresAt?: Date;
+  @Field({ nullable: true }) startedAt?: Date;
+  @Field({ nullable: true }) endedAt?: Date;
+  @Field() callerMuted!: boolean;
+  @Field() calleeMuted!: boolean;
+  @Field() callerVideoEnabled!: boolean;
+  @Field() calleeVideoEnabled!: boolean;
+  @Field(() => ID, { nullable: true }) callerConnectionId?: string;
+  @Field(() => ID, { nullable: true }) calleeConnectionId?: string;
+  @Field({ nullable: true }) offerSdp?: string;
+  @Field({ nullable: true }) answerSdp?: string;
 }
-
+function output(call: Call): CallOutput {
+  return {
+    ...callView(call),
+    offerSdp: call.offerSdp,
+    answerSdp: call.answerSdp,
+  };
+}
 @Resolver(() => Call)
 export class CallResolver {
   @Query(() => CallOutput, { nullable: true })
-  async getActiveCall(@Ctx() ctx: any): Promise<CallOutput | null> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    const call = await callsModel.getActiveCall(user.userId);
-    if (!call) return null;
-
-    return {
-      id: call.id,
-      callerId: call.callerId,
-      calleeId: call.calleeId,
-      status: call.status,
-      isVideo: call.isVideo,
-      offerSdp: call.offerSdp,
-      answerSdp: call.answerSdp,
-    };
+  async getActiveCall(@Ctx() ctx: GraphQLContext): Promise<CallOutput | null> {
+    const call = await callsModel.getActiveCall(callActor(ctx));
+    return call ? output(call) : null;
   }
-
+  @Query(() => CallOutput)
+  async callById(
+    @Arg('callId', () => ID) callId: string,
+    @Ctx() ctx: GraphQLContext
+  ): Promise<CallOutput> {
+    return output(await callsModel.getCall(callId, callActor(ctx)));
+  }
   @Query(() => CallInvitation, { nullable: true })
   async getPendingCallInvitation(
-    @Ctx() ctx: any
+    @Ctx() ctx: GraphQLContext
   ): Promise<CallInvitation | null> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    return callsModel.getPendingCallInvitation(user.userId);
+    return callsModel.getPendingCallInvitation(callActor(ctx));
   }
-
   @Mutation(() => CallOutput)
   async initiateCall(
     @Arg('data') data: InitiateCallInput,
-    @Ctx() ctx: any
+    @Ctx() ctx: GraphQLContext
   ): Promise<CallOutput> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    const call = await callsModel.initiateCall(
-      user.userId,
-      data.calleeId,
-      data.isVideo
+    return output(
+      await callsModel.initiateCall(
+        callActor(ctx),
+        data.calleeId,
+        data.isVideo,
+        data.connectionId
+      )
     );
-
-    return {
-      id: call.id,
-      callerId: call.callerId,
-      calleeId: call.calleeId,
-      status: call.status,
-      isVideo: call.isVideo,
-    };
   }
-
   @Mutation(() => CallOutput)
   async acceptCall(
     @Arg('callId', () => ID) callId: string,
-    @Ctx() ctx: any
+    @Ctx() ctx: GraphQLContext,
+    @Arg('connectionId', () => ID, { nullable: true }) connectionId?: string
   ): Promise<CallOutput> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    const call = await callsModel.acceptCall(callId, user.userId);
-
-    return {
-      id: call.id,
-      callerId: call.callerId,
-      calleeId: call.calleeId,
-      status: call.status,
-      isVideo: call.isVideo,
-      offerSdp: call.offerSdp,
-      answerSdp: call.answerSdp,
-    };
+    return output(
+      await callsModel.acceptCall(callId, callActor(ctx), connectionId)
+    );
   }
-
   @Mutation(() => Boolean)
   async declineCall(
-    @Arg('callId', () => ID) callId: string,
-    @Ctx() ctx: any
+    @Arg('callId', () => ID) id: string,
+    @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    await callsModel.declineCall(callId, user.userId);
+    await callsModel.declineCall(id, callActor(ctx));
     return true;
   }
-
   @Mutation(() => Boolean)
   async cancelCall(
-    @Arg('callId', () => ID) callId: string,
-    @Ctx() ctx: any
+    @Arg('callId', () => ID) id: string,
+    @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    await callsModel.cancelCall(callId, user.userId);
+    await callsModel.cancelCall(id, callActor(ctx));
     return true;
   }
-
   @Mutation(() => Boolean)
   async endCall(
-    @Arg('callId', () => ID) callId: string,
-    @Ctx() ctx: any
+    @Arg('callId', () => ID) id: string,
+    @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    await callsModel.endCall(callId, user.userId);
+    await callsModel.endCall(id, callActor(ctx));
     return true;
   }
-
+  @Mutation(() => CallOutput)
+  async updateCallControls(
+    @Arg('callId', () => ID) id: string,
+    @Ctx() ctx: GraphQLContext,
+    @Arg('muted', () => Boolean, { nullable: true }) muted?: boolean,
+    @Arg('videoEnabled', () => Boolean, { nullable: true })
+    videoEnabled?: boolean
+  ): Promise<CallOutput> {
+    return output(
+      await callsModel.updateControls(id, callActor(ctx), muted, videoEnabled)
+    );
+  }
   @Mutation(() => CallOutput)
   async updateCallSdp(
     @Arg('data') data: CallSdpInput,
-    @Ctx() ctx: any
+    @Ctx() ctx: GraphQLContext
   ): Promise<CallOutput> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
-    const call = await callsModel.updateSdp(
-      data.callId,
-      user.userId,
-      data.sdp,
-      data.isOffer
+    return output(
+      await callsModel.updateSdp(
+        data.callId,
+        callActor(ctx),
+        data.sdp,
+        data.isOffer
+      )
     );
-
-    return {
-      id: call.id,
-      callerId: call.callerId,
-      calleeId: call.calleeId,
-      status: call.status,
-      isVideo: call.isVideo,
-      offerSdp: call.offerSdp,
-      answerSdp: call.answerSdp,
-    };
   }
-
   @Mutation(() => Boolean)
   async updateIceCandidates(
     @Arg('data') data: IceCandidatesInput,
-    @Ctx() ctx: any
+    @Ctx() ctx: GraphQLContext
   ): Promise<boolean> {
-    const user: any = getUserFromRequest(ctx);
-    if (!user || !user.userId) {
-      throw ErrorHandler.notAuthenticated();
-    }
-
     await callsModel.updateIceCandidates(
       data.callId,
-      user.userId,
+      callActor(ctx),
       data.candidates
     );
     return true;

@@ -17,6 +17,8 @@ export enum CallStatus {
   ENDED = 'ENDED',
   DECLINED = 'DECLINED',
   CANCELLED = 'CANCELLED',
+  TIMED_OUT = 'TIMED_OUT',
+  DISCONNECTED = 'DISCONNECTED',
 }
 
 registerEnumType(CallStatus, {
@@ -57,6 +59,23 @@ export class Call {
   @Field()
   @Column({ default: false, name: 'is_video' })
   isVideo!: boolean;
+
+  @Column('timestamptz', { nullable: true, name: 'ring_expires_at' })
+  ringExpiresAt?: Date;
+
+  @Column('uuid', { nullable: true, name: 'caller_connection_id' })
+  callerConnectionId?: string;
+
+  @Column('uuid', { nullable: true, name: 'callee_connection_id' })
+  calleeConnectionId?: string;
+
+  @Column({ default: 1 }) version!: number;
+  @Column({ default: false, name: 'caller_muted' }) callerMuted!: boolean;
+  @Column({ default: false, name: 'callee_muted' }) calleeMuted!: boolean;
+  @Column({ default: false, name: 'caller_video_enabled' })
+  callerVideoEnabled!: boolean;
+  @Column({ default: false, name: 'callee_video_enabled' })
+  calleeVideoEnabled!: boolean;
 
   @Field({ nullable: true })
   @Column({ nullable: true, name: 'offer_sdp' })

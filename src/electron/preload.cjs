@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
+  getCallConfig: () => ipcRenderer.invoke('calls:get-config'),
   // TheRev game library and sessions (main-process handlers validate sender)
   getGames: () => ipcRenderer.invoke('games:get-library'),
   refreshGames: () => ipcRenderer.invoke('games:refresh'),

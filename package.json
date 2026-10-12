@@ -43,7 +43,13 @@
     "worker:start": "npm run worker",
     "dev": "npm run docker:up && npm run electron:full",
     "dev:wait": "node scripts/wait-for-db.js && npm run electron:full",
-    "convert:animation": "node src/electron/convert-animation.js"
+    "convert:animation": "node src/electron/convert-animation.js",
+    "test:messaging": "node --test src/tests/messaging/security.test.cjs src/tests/messaging/frontend.test.cjs",
+    "test:messaging:db": "cross-env RUN_MESSAGING_DB_TESTS=1 node --test src/tests/messaging/database.test.cjs",
+    "db:messaging:prepare": "node scripts/prepare-messaging-db.cjs",
+    "test:calls": "node --test src/tests/calls/policy.test.cjs src/tests/calls/frontend.test.cjs",
+    "test:calls:db": "cross-env RUN_CALL_DB_TESTS=1 node --test src/tests/calls/database.test.cjs",
+    "db:calls:prepare": "node scripts/prepare-calls-db.cjs"
   },
   "keywords": [],
   "author": "",
@@ -76,7 +82,8 @@
     "three": "^0.180.0",
     "type-graphql": "^2.0.0-rc.2",
     "typeorm": "^0.3.19",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

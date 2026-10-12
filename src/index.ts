@@ -18,9 +18,11 @@ import { FriendResolver } from './resolvers/Friend';
 import { NotificationResolver } from './resolvers/Notification';
 import { ServerResolver } from './resolvers/Server';
 import { MessageResolver } from './resolvers/Message';
-// import { CallResolver } from './resolvers/Call';
+import { CallResolver } from './resolvers/Call';
 import { GraphQLContext } from './graphql/context';
 import { callSignalingService } from './services/CallSignalingService';
+import { messageEventsService } from './services/MessageEventsService';
+import cors from 'cors';
 import { AIIntentClassifier } from './ai/AIIntentClassifier';
 import {
   AIIntentType,
@@ -315,7 +317,7 @@ async function startServer() {
         NotificationResolver,
         ServerResolver,
         MessageResolver,
-        // CallResolver,
+        CallResolver,
       ],
       validate: false,
     });
@@ -330,6 +332,15 @@ async function startServer() {
 
     app.use(express.json({ limit: '50mb' }));
     app.use('/graphql', yoga as any);
+    app.use('/api/messages/events', cors({
+      origin: (origin, callback) => {
+        const allowed = (process.env.MESSAGE_ALLOWED_ORIGINS || 'null,http://localhost:4000').split(',').map(value => value.trim());
+        callback(null, !origin || allowed.includes(origin));
+      },
+      allowedHeaders: ['Authorization', 'Content-Type'],
+    }));
+    app.get('/api/messages/events', messageEventsService.connect);
+    await messageEventsService.start().catch(error => console.error('[Messages] Live updates reconnecting:', error.message));
 
     // Serve uploaded files
     const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -1340,8 +1351,9 @@ async function startServer() {
       }
 
       // Start call signaling service
-      callSignalingService.start(4002);
-      console.log(`📞 Call signaling ready on ws://localhost:4002`);
+      void callSignalingService.start().then(port => {
+        console.log(`[Calls] Authenticated signaling ready on port ${port}`);
+      }).catch(error => console.error('[Calls] Signaling startup failed:', error.message));
     });
   } catch (error) {
     console.error('DB init error:', error);

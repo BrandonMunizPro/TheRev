@@ -23,7 +23,6 @@ app.commandLine.appendSwitch('enable-speech-dispatcher');
 
 // Allow insecure origins for Web Speech API (Electron uses file://)
 app.commandLine.appendSwitch('allow-insecure-localhost');
-app.commandLine.appendSwitch('ignore-certificate-errors');
 
 // Set up permission handler for microphone
 app.whenReady().then(() => {
@@ -337,6 +336,11 @@ function createBrowserWindow(url = 'https://www.google.com') {
 }
 
 // IPC handlers for sandbox browser commands
+ipcMain.handle('calls:get-config', () => ({
+  apiUrl: process.env.CALL_API_URL || 'http://localhost:4000/graphql',
+  signalingUrl: process.env.CALL_SIGNALING_URL || 'ws://localhost:4002',
+}));
+
 ipcMain.handle('execute-browser-command', async (event, command) => {
   // Handle special commands
   if (command.startsWith('open-url:')) {

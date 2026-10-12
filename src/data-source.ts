@@ -13,7 +13,11 @@ import { Server } from './entities/Server';
 import { Channel } from './entities/Channel';
 import { ServerMember } from './entities/ServerMember';
 import { Message } from './entities/Message';
+import { ChannelReadState } from './entities/ChannelReadState';
+import { Notification } from './entities/Notification';
 import { Call } from './entities/Call';
+import { CallConnection } from './entities/CallConnection';
+import { CallSignal } from './entities/CallSignal';
 import {
   MigrationState,
   UserStorageLocation,
@@ -57,7 +61,11 @@ export const AppDataSource = new DataSource({
     Channel,
     ServerMember,
     Message,
+    ChannelReadState,
+    Notification,
     Call,
+    CallConnection,
+    CallSignal,
     UserMemory,
   ],
   migrations: isTest ? undefined : ['./src/migrations/*.ts'],

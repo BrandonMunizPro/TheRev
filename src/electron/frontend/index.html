@@ -792,7 +792,7 @@
                   </button>
                 </div>
                 <div class="vote-total">
-                  <span id="vote-total">0</span> perspectives
+                  <span id="vote-total">0</span> votes
                 </div>
               </div>
               <div class="perspective-tabs" id="perspective-tabs">
@@ -1018,10 +1018,10 @@
               class="modal-footer"
               style="justify-content: center; gap: 15px"
             >
-              <button class="btn btn-danger" onclick="theRevApp.declineCall()">
+              <button id="call-decline-btn" class="btn btn-danger" onclick="theRevApp.declineCall()">
                 Decline
               </button>
-              <button class="btn btn-success" onclick="theRevApp.acceptCall()">
+              <button id="call-accept-btn" class="btn btn-success" onclick="theRevApp.acceptCall()">
                 Accept
               </button>
             </div>
@@ -1033,11 +1033,12 @@
           <div class="modal-content call-modal">
             <div class="modal-header">
               <h3 id="active-call-title">Call</h3>
-              <span id="call-status" class="call-status-badge">Connected</span>
+              <span id="call-status" class="call-status-badge">Ringing</span>
             </div>
             <div class="modal-body">
               <div class="call-container">
-                <div class="call-video-grid">
+                <p id="call-media-notice">Audio and video are not connected yet.</p>
+                <div class="call-video-grid" style="display: none">
                   <div class="video-remote" id="remote-video-container">
                     <video id="remote-video" autoplay playsinline></video>
                     <div class="video-placeholder" id="remote-placeholder">
@@ -1060,7 +1061,7 @@
                 onclick="theRevApp.toggleMute()"
               >
                 <span class="icon-mic">🎤</span>
-                <span>Mute</span>
+                <span id="call-mute-label">Mute</span>
               </button>
               <button
                 class="call-btn"
@@ -1068,14 +1069,15 @@
                 onclick="theRevApp.toggleVideo()"
               >
                 <span class="icon-video">📹</span>
-                <span>Video</span>
+                <span id="call-video-label">Enable video</span>
               </button>
               <button
                 class="call-btn call-btn-danger"
+                id="call-end-btn"
                 onclick="theRevApp.endCall()"
               >
                 <span class="icon-end">📞</span>
-                <span>End</span>
+                <span id="call-end-label">End</span>
               </button>
             </div>
           </div>
