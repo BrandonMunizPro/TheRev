@@ -24,6 +24,7 @@
     "test:coverage:check": "jest --testPathPatterns=tests --testPathIgnorePatterns=integration --coverage --passWithNoTests",
     "test:ci": "jest --testPathPatterns=tests --testPathIgnorePatterns=integration --ci --coverage --watchAll=false",
     "test:unit": "jest --testPathPatterns=tests --testPathIgnorePatterns=integration",
+    "test:content-analytics": "node --test src/tests/frontend/content-analytics.test.cjs",
     "test:integration:docker": "NODE_OPTIONS='--experimental-vm-modules' NODE_ENV=test INTEGRATION_TESTS=true jest --testPathPatterns=integration --verbose --detectOpenHandles --forceExit --passWithNoTests",
     "docker:build": "docker build -t therev-app .",
     "docker:build:test": "docker build -f Dockerfile.test -t therev-test .",

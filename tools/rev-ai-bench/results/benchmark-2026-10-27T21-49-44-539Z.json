@@ -1,0 +1,104 @@
+{
+  "config": {
+    "models": [
+      "qwen2.5:3b"
+    ],
+    "ollamaBaseUrl": "http://localhost:11434",
+    "numTrials": 1,
+    "warmup": true,
+    "outputDir": "./results"
+  },
+  "results": [
+    {
+      "model": "qwen2.5:3b",
+      "testCaseId": "gen-1",
+      "trial": 1,
+      "response": "To determine the total number of managers in the company, we need to follow these steps:\n\n1. **Calculate the total number of people in the company:**\n   - There are 3 departments.\n   - Each department has 4 teams.\n   - Each team has 5 people.\n\n   Therefore, the total number of people in the company is:\n   \\[\n   3 \\text{ departments} \\times 4 \\text{ teams per department} \\times 5 \\text{ people per team} = 3 \\times 4 \\times 5 = 60 \\text{ people}\n   \\]\n\n2. **Calculate the number of managers:**\n   - We know that 20% of the people are managers.\n\n   To find 20% of the total number of people, we use the formula:\n   \\[\n   \\text{Number of managers} = 20\\% \\times 60\n   \\]\n   Converting 20% to a decimal:\n   \\[\n   20\\% = \\frac{20}{100} = 0.20\n   \\]\n   Then,\n   \\[\n   \\text{Number of managers} = 0.20 \\times 60 = 12\n   \\]\n\nTherefore, the total number of managers in the company is:\n\\[\n\\boxed{12}\n\\]",
+      "latency": {
+        "total": 11936
+      },
+      "tokensPerSecond": 73.57843461129565,
+      "tokensUsed": 294,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:49:39.902Z"
+    },
+    {
+      "model": "qwen2.5:3b",
+      "testCaseId": "gen-2",
+      "trial": 1,
+      "response": "red\ngreen\nblue",
+      "latency": {
+        "total": 115
+      },
+      "tokensPerSecond": 97.0716712506067,
+      "tokensUsed": 6,
+      "valid": true,
+      "score": 50,
+      "errors": [],
+      "timestamp": "2026-10-27T21:49:40.025Z"
+    },
+    {
+      "model": "qwen2.5:3b",
+      "testCaseId": "browser-1",
+      "trial": 1,
+      "response": "```json\n{\n  \"action\": \"navigate\",\n  \"url\": \"https://news.google.com/search?q=AI+recent&hl=en&gl=US&ceid=US:en\"\n}\n```\n\nThis JSON represents a browser action plan to navigate to Google News and search for recent news about AI. Adjust the URL if you prefer another news source or different language settings.",
+      "latency": {
+        "total": 1104
+      },
+      "tokensPerSecond": 76.18017372888619,
+      "tokensUsed": 80,
+      "valid": true,
+      "score": 60,
+      "errors": [],
+      "timestamp": "2026-10-27T21:49:41.131Z"
+    },
+    {
+      "model": "qwen2.5:3b",
+      "testCaseId": "browser-2",
+      "trial": 1,
+      "response": "Certainly! Below is a JSON example that describes an action to click the login button using a reasonable CSS selector. In this example, let's assume the login button has a class name of `login-button`.\n\n```json\n{\n  \"action\": \"click\",\n  \"selector\": \".login-button\"\n}\n```\n\nYou can modify the `selector` property to match the actual class or id of the login button in your page's HTML. If the button doesn't have a class, you can use its `id` instead. Here's an example with an `id`:\n\n```json\n{\n  \"action\": \"click\",\n  \"selector\": \"#login-button\"\n}\n```\n\nPlease replace `\"#login-button\"` with the actual `id` of the button you're targeting.",
+      "latency": {
+        "total": 2203
+      },
+      "tokensPerSecond": 73.82355890841421,
+      "tokensUsed": 159,
+      "valid": false,
+      "score": 20,
+      "errors": [],
+      "timestamp": "2026-10-27T21:49:43.334Z"
+    },
+    {
+      "model": "qwen2.5:3b",
+      "testCaseId": "game-1",
+      "trial": 1,
+      "response": "{\"type\": \"dialogue\", \"text\": \"Hello, traveler. What brings you to this part of the realm?\", \"tone\": \"friendly\"}",
+      "latency": {
+        "total": 1204
+      },
+      "tokensPerSecond": 29.821119876242353,
+      "tokensUsed": 32,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:49:44.538Z"
+    }
+  ],
+  "summary": {
+    "models": {
+      "qwen2.5:3b": {
+        "model": "qwen2.5:3b",
+        "totalTests": 5,
+        "passed": 4,
+        "avgScore": 54,
+        "avgLatency": 3312.4,
+        "avgTokensPerSec": 70.094991675089
+      }
+    }
+  },
+  "metadata": {
+    "timestamp": "2026-10-27T21:49:44.539Z",
+    "hardware": "RTX 3060 Laptop / 16GB RAM (Windows)"
+  }
+}

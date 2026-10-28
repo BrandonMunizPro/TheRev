@@ -3989,24 +3989,7 @@ class TheRevApp {
   }
 
   async updateProfileStats() {
-    try {
-      const response = await fetch('http://localhost:4000/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.jwtToken,
-        },
-        body: JSON.stringify({
-          query: 'query GetStats { myParticipatedThreads { id } }',
-        }),
-      });
-
-      const result = await response.json();
-      const threads = result.data?.myParticipatedThreads || [];
-      document.getElementById('stat-threads').textContent = threads.length;
-    } catch (error) {
-      console.error('Error updating profile stats:', error);
-    }
+    await this.loadProfileStats();
   }
 
   async loadUserThreads() {
@@ -4514,98 +4497,25 @@ class TheRevApp {
     }
 
     try {
-      const userId = this.currentUser.id;
-      const userName = (this.currentUser.userName || '').toLowerCase();
-
-      // Get threads user authored (for thread count)
-      const threadsResponse = await fetch('http://localhost:4000/graphql', {
+      const response = await fetch('http://localhost:4000/graphql', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.jwtToken}`,
+          Authorization: 'Bearer ' + this.jwtToken,
         },
         body: JSON.stringify({
-          query: `
-            query GetStats($userId: String!) {
-              listThreadsByUser(data: { authorId: $userId }) {
-                id
-              }
-            }
-          `,
-          variables: { userId },
+          query: 'query GetStats($userId: ID!) { getUserStats(userId: $userId) { threads posts replies } }',
+          variables: { userId: this.currentUser.id },
         }),
       });
-
-      const threadsResult = await threadsResponse.json();
-      let threadList = threadsResult.data?.listThreadsByUser || [];
-
-      // Remove duplicates and count
-      const seenThreads = new Set();
-      threadList = threadList.filter((t) => {
-        if (seenThreads.has(t.id)) return false;
-        seenThreads.add(t.id);
-        return true;
-      });
-      const threadCount = threadList.length;
-
-      // Get user's posts count from participated threads
-      const postsResponse = await fetch('http://localhost:4000/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.jwtToken}`,
-        },
-        body: JSON.stringify({
-          query: `
-            query {
-              myParticipatedThreads {
-                id
-                posts {
-                  id
-                  author {
-                    userName
-                  }
-                }
-              }
-            }
-          `,
-        }),
-      });
-
-      const postsResult = await postsResponse.json();
-      const threads = postsResult.data?.myParticipatedThreads || [];
-
-      // Count user's posts across all threads
-      const userPostsMap = new Map(); // Map of threadId -> postCount
-      for (const thread of threads) {
-        for (const post of thread.posts || []) {
-          if ((post.author?.userName || '').toLowerCase() === userName) {
-            const count = userPostsMap.get(thread.id) || 0;
-            userPostsMap.set(thread.id, count + 1);
-          }
-        }
+      const result = await response.json();
+      if (result.errors) throw new Error(result.errors.map((error) => error.message).join('; '));
+      const stats = result.data?.getUserStats;
+      if (!stats) return;
+      for (const key of ['threads', 'posts', 'replies']) {
+        const element = document.getElementById('stat-' + key);
+        if (element) element.textContent = stats[key];
       }
-
-      // Count posts where user participated (not just authored)
-      let replyCount = 0;
-      for (const [threadId, count] of userPostsMap) {
-        replyCount += count;
-      }
-      // Subtract thread count (each thread includes the user's initial post)
-      replyCount = Math.max(0, replyCount - threadCount);
-
-      console.log(
-        '[ProfileStats] threadCount:',
-        threadCount,
-        'replyCount:',
-        replyCount
-      );
-
-      // Update stats
-      const threadsEl = document.getElementById('stat-threads');
-      const postsEl = document.getElementById('stat-posts');
-      if (threadsEl) threadsEl.textContent = threadCount;
-      if (postsEl) postsEl.textContent = replyCount;
     } catch (error) {
       console.error('Error loading profile stats:', error);
     }
@@ -8814,25 +8724,24 @@ class TheRevApp {
         headers['Authorization'] = `Bearer ${this.jwtToken}`;
       }
 
-      // Use voteCounts from thread if available (server already combined votes + posts)
-      const serverVoteCounts = this._currentThread?.voteCounts;
-
-      if (serverVoteCounts) {
-        document.getElementById('vote-count-pro').textContent =
-          serverVoteCounts.PRO;
-        document.getElementById('vote-count-against').textContent =
-          serverVoteCounts.AGAINST;
-        document.getElementById('vote-count-neutral').textContent =
-          serverVoteCounts.NEUTRAL;
-        document.getElementById('vote-total').textContent =
-          serverVoteCounts.total;
-        document.getElementById('count-pro').textContent = serverVoteCounts.PRO;
-        document.getElementById('count-against').textContent =
-          serverVoteCounts.AGAINST;
-        document.getElementById('count-neutral').textContent =
-          serverVoteCounts.NEUTRAL;
-        document.getElementById('count-all').textContent =
-          serverVoteCounts.total;
+      const response = await fetch('http://localhost:4000/graphql', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: 'query GetVoteCounts($threadId: String!) { threadVoteCounts(threadId: $threadId) { PRO AGAINST NEUTRAL total } }',
+          variables: { threadId },
+        }),
+      });
+      const result = await response.json();
+      if (result.errors) throw new Error(result.errors.map((error) => error.message).join('; '));
+      if (this._currentThread?.id !== threadId) return;
+      const counts = result.data?.threadVoteCounts;
+      if (counts) {
+        this._currentThread.voteCounts = counts;
+        for (const perspective of ['PRO', 'AGAINST', 'NEUTRAL']) {
+          document.getElementById('vote-count-' + perspective.toLowerCase()).textContent = counts[perspective];
+        }
+        document.getElementById('vote-total').textContent = counts.total;
       }
 
       // Only fetch user's current vote
@@ -8854,8 +8763,9 @@ class TheRevApp {
         });
 
         const voteResult = await voteResponse.json();
-        if (voteResult.data?.myThreadVote) {
-          this._currentVote = voteResult.data.myThreadVote;
+        if (this._currentThread?.id !== threadId) return;
+        if (!voteResult.errors) {
+          this._currentVote = voteResult.data?.myThreadVote || null;
           this._updateVoteUI();
         }
       }
@@ -8908,7 +8818,7 @@ class TheRevApp {
         const { vote, removed } = result.data.castThreadVote;
         this._currentVote = removed ? null : vote;
         this._updateVoteUI();
-        this.loadThreadVotes(threadId);
+        await this.loadThreadVotes(threadId);
       }
     } catch (error) {
       console.error('Error casting vote:', error);

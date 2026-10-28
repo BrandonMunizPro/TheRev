@@ -1,0 +1,338 @@
+{
+  "config": {
+    "models": [
+      "mistral:latest",
+      "llama3.2:3b"
+    ],
+    "ollamaBaseUrl": "http://localhost:11434",
+    "numTrials": 2,
+    "warmup": true,
+    "outputDir": "./results"
+  },
+  "results": [
+    {
+      "model": "mistral:latest",
+      "testCaseId": "gen-1",
+      "trial": 1,
+      "response": " First, let's find out the total number of people in all departments:\n\nTotal people = Number of departments * People per department\nTotal people = 3 * 4 * 5 = 60 people\n\nNext, we find out the total number of non-manager employees:\n\nTotal non-managers = Total people - Managers\n\nSince 20% of the people are managers, we can find the number of managers by multiplying the total number of people by 20%:\n\nManagers = Total people * Percentage of managers\nManagers = 60 * 0.20 = 12 people\n\nNow, we subtract the number of managers from the total number of people to find the total number of non-manager employees:\n\nTotal non-managers = Total people - Managers\nTotal non-managers = 60 - 12 = 48 people\n\nFinally, since there are 4 teams in each department, and each team has 5 people (including 1 manager and 4 non-managers), we can find the number of non-manager employees per team:\n\nNon-managers per team = People per team - 1 manager\nNon-managers per team = 5 - 1 = 4 people\n\nSince there are 4 teams in each department, the total number of non-manager employees in one department is:\n\nTotal non-managers per department = Non-managers per team * Teams per department\nTotal non-managers per department = 4 * 4 = 16 people\n\nSince there are 3 departments, the total number of non-manager employees in all departments is:\n\nTotal non-managers in all departments = Total non-managers per department * Number of departments\nTotal non-managers in all departments = 16 * 3 = 48 people\n\nSince we know there are 48 non-manager employees in total, and there are 12 managers, the total number of people (employees) in the company is:\n\nTotal people = Total non-managers + Managers\nTotal people = 48 + 12 = 60 people\n\nHence, there are 12 managers in total.",
+      "latency": {
+        "total": 25795
+      },
+      "tokensPerSecond": 26.378078385823933,
+      "tokensUsed": 494,
+      "valid": false,
+      "score": 20,
+      "errors": [],
+      "timestamp": "2026-10-27T21:17:44.514Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "gen-1",
+      "trial": 2,
+      "response": " Let's break it down:\n\n1. First, let's find out how many people there are in total. Since each department has 4 teams and each team has 5 people, the total number of people in one department would be:\n   People per department = Teams per department * People per team\n   = 4 * 5\n   = 20 people\n\n2. Now, since there are 3 departments, the total number of people in all 3 departments would be:\n   Total people = People per department * Number of departments\n   = 20 * 3\n   = 60 people\n\n3. Next, we know that 20% of the people are managers. So, we calculate the number of managers by finding 20% of the total number of people:\n   Managers = Total people * Percentage of managers\n   = 60 * 0.20\n   = 12\n\nSo, there are 12 managers in total.",
+      "latency": {
+        "total": 8367
+      },
+      "tokensPerSecond": 26.560995757243123,
+      "tokensUsed": 220,
+      "valid": false,
+      "score": 20,
+      "errors": [],
+      "timestamp": "2026-10-27T21:17:52.888Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "gen-2",
+      "trial": 1,
+      "response": " Red\n\nBlue\n\nYellow",
+      "latency": {
+        "total": 461
+      },
+      "tokensPerSecond": 30.335408499981465,
+      "tokensUsed": 9,
+      "valid": true,
+      "score": 50,
+      "errors": [],
+      "timestamp": "2026-10-27T21:17:53.349Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "gen-2",
+      "trial": 2,
+      "response": " Red\n\nBlue\n\nYellow",
+      "latency": {
+        "total": 350
+      },
+      "tokensPerSecond": 29.845301852066786,
+      "tokensUsed": 9,
+      "valid": true,
+      "score": 50,
+      "errors": [],
+      "timestamp": "2026-10-27T21:17:53.699Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "browser-1",
+      "trial": 1,
+      "response": " {\n \"actions\": [\n   {\n     \"name\": \"Navigate to AI news\",\n     \"action\": \"navigate\",\n     \"arguments\": {\n       \"url\": \"https://www.google.com/search?q=recent+ai+news\"\n     }\n   }\n ]\n}",
+      "latency": {
+        "total": 2754
+      },
+      "tokensPerSecond": 27.909984099061838,
+      "tokensUsed": 72,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:17:56.455Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "browser-1",
+      "trial": 2,
+      "response": " {\n \"actions\": [\n    {\n      \"name\": \"Navigate to AI News\",\n      \"action\": \"navigate\",\n      \"arguments\": {\n        \"url\": \"https://www.google.com/search?q=recent+ai+news\"\n      }\n    }\n  ]\n}",
+      "latency": {
+        "total": 2696
+      },
+      "tokensPerSecond": 27.668944490411953,
+      "tokensUsed": 73,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:17:59.151Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "browser-2",
+      "trial": 1,
+      "response": " Here is the JSON structure you requested:\n\n```json\n{\n  \"action\": \"click\",\n  \"selector\": \".login-button\"\n}\n```\n\nIn this example, I assumed that the login button has a CSS class named \"login-button\". Please replace it with the appropriate CSS selector that matches your web page structure.\n\nTo find the correct CSS selector, you can use browser developer tools like Google Chrome's DevTools or Firefox's Developer Edition. They allow you to inspect elements, navigate through the DOM, and identify the correct selector to target the login button.",
+      "latency": {
+        "total": 4983
+      },
+      "tokensPerSecond": 26.977721175290647,
+      "tokensUsed": 130,
+      "valid": false,
+      "score": 40,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:04.135Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "browser-2",
+      "trial": 2,
+      "response": " Here's an example of a JSON object with the action \"click\" and a CSS selector for a login button:\n\n```json\n{\n  \"action\": \"click\",\n  \"selector\": \".login-button\"\n}\n```\n\nIn this example, it's assumed that the login button has a CSS class of \"login-button\". If the login button doesn't have a specific class, you may need to use a different CSS selector to accurately target the button.\n\nFor example, if the login button has an id of \"login-btn\", the JSON object would be:\n\n```json\n{\n  \"action\": \"click\",\n  \"selector\": \"#login-btn\"\n}\n```\n\nYou can adjust the selector according to the structure of your HTML.",
+      "latency": {
+        "total": 6452
+      },
+      "tokensPerSecond": 27.395141573395343,
+      "tokensUsed": 175,
+      "valid": false,
+      "score": 20,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:10.587Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "game-1",
+      "trial": 1,
+      "response": " {\"type\": \"dialogue\", \"text\": \"Greetings, traveler! May the gods guide your journey through these lands. Pray tell, how may I assist you on this fine day?\", \"tone\": \"friendly\"}",
+      "latency": {
+        "total": 2026
+      },
+      "tokensPerSecond": 26.420902950210866,
+      "tokensUsed": 50,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:12.613Z"
+    },
+    {
+      "model": "mistral:latest",
+      "testCaseId": "game-1",
+      "trial": 2,
+      "response": " {\"type\": \"dialogue\", \"text\": \"Greetings, Traveler! May the blessings of the gods be upon you on your journey through this realm. Pray tell, how may I assist you today?\", \"tone\": \"friendly\"}",
+      "latency": {
+        "total": 2026
+      },
+      "tokensPerSecond": 27.4979045578286,
+      "tokensUsed": 54,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:14.640Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "gen-1",
+      "trial": 1,
+      "response": "To find the total number of managers, we need to calculate the total number of people in the company and then find 20% of that number.\n\nStep 1: Calculate the total number of people in the company.\n\nEach department has 4 teams, and each team has 5 people. So, the total number of people in each department is 4 x 5 = 20.\n\nSince there are 3 departments, the total number of people in the company is 3 x 20 = 60.\n\nStep 2: Calculate 20% of the total number of people.\n\n20% of 60 is calculated by multiplying 60 by 0.20 (since 20% is equal to 0.20).\n\n60 x 0.20 = 12\n\nTherefore, there are 12 managers in the company.",
+      "latency": {
+        "total": 6281
+      },
+      "tokensPerSecond": 94.30309458378498,
+      "tokensUsed": 170,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:20.921Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "gen-1",
+      "trial": 2,
+      "response": "To find the total number of managers, we need to calculate the total number of people in the company and then find 20% of that number.\n\nStep 1: Find the total number of people in each department:\n\nEach department has 4 teams.\nEach team has 5 people.\n\nTotal number of people in each department = Number of teams per department x Number of people per team\n= 4 x 5\n= 20\n\nStep 2: Find the total number of people in the company:\n\nThere are 3 departments in the company.\n\nTotal number of people in the company = Number of departments x Total number of people in each department\n= 3 x 20\n= 60\n\nStep 3: Find 20% of the total number of people:\n\n20% of the total number of people = (20/100) x Total number of people\n= 0.20 x 60\n= 12\n\nTherefore, there are 12 managers in total.",
+      "latency": {
+        "total": 2167
+      },
+      "tokensPerSecond": 94.84369571137466,
+      "tokensUsed": 202,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:23.088Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "gen-2",
+      "trial": 1,
+      "response": "Blue\nRed\nGreen",
+      "latency": {
+        "total": 97
+      },
+      "tokensPerSecond": 113.70312115067559,
+      "tokensUsed": 6,
+      "valid": true,
+      "score": 50,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:23.185Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "gen-2",
+      "trial": 2,
+      "response": "Red\nBlue\nYellow",
+      "latency": {
+        "total": 68
+      },
+      "tokensPerSecond": 125.57818288369367,
+      "tokensUsed": 6,
+      "valid": true,
+      "score": 50,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:23.254Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "browser-1",
+      "trial": 1,
+      "response": "Here's a browser action plan in JSON format to navigate to recent news about AI:\n\n```json\n{\n  \"name\": \"AI News\",\n  \"action\": \"navigate\",\n  \"url\": \"https://www.theverge.com/ai\"\n}\n```\n\nHowever, this might not be the most recent source. Here are a few more options:\n\n```json\n{\n  \"name\": \"AI News\",\n  \"action\": \"navigate\",\n  \"url\": \"https://news.yahoo.com/ai-news\"\n}\n\n{\n  \"name\": \"AI News\",\n  \"action\": \"navigate\",\n  \"url\": \"https://www.bbc.com/news/technology-48579576\"\n}\n\n{\n  \"name\": \"AI News\",\n  \"action\": \"navigate\",\n  \"url\": \"https://www.cnet.com/ai/\"\n}\n```\n\nIf you want to find the most recent source, you can use a search engine like Google:\n\n```json\n{\n  \"name\": \"Recent AI News\",\n  \"action\": \"navigate\",\n  \"url\": \"https://www.google.com/search?q=recent+ai+news\"\n}\n```\n\nYou can add or remove options as per your preference.",
+      "latency": {
+        "total": 2628
+      },
+      "tokensPerSecond": 95.85670967978835,
+      "tokensUsed": 248,
+      "valid": false,
+      "score": 40,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:25.883Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "browser-1",
+      "trial": 2,
+      "response": "Here's a browser action plan as JSON to fetch recent news about AI:\n\n```json\n{\n  \"name\": \"AI News\",\n  \"icon\": \"ai-icon.png\",\n  \"description\": \"Stay updated with the latest news about Artificial Intelligence\",\n  \"searchUrl\": \"https://news.google.com/topics/ai?gl=US&ceid=US:en\",\n  \"action\": {\n    \"type\": \"navigate\",\n    \"url\": \"https://news.google.com/topics/ai?gl=US&ceid=US:en\"\n  }\n}\n```\n\nIn this JSON object, we have:\n\n- `name`: The name of the browser action.\n- `icon`: The path to the icon for the browser action.\n- `description`: A short description of the browser action.\n- `searchUrl`: The URL where the browser action will navigate to when clicked.\n- `action`: An object containing the type of action, which is `navigate`, and the URL to navigate to.\n\nYou can adjust the `searchUrl` to point to different sources of news.",
+      "latency": {
+        "total": 2344
+      },
+      "tokensPerSecond": 96.17309076920277,
+      "tokensUsed": 222,
+      "valid": true,
+      "score": 60,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:28.227Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "browser-2",
+      "trial": 1,
+      "response": "Here's a JSON object with the action \"click\" and a CSS selector for the login button:\n\n```json\n{\n  \"action\": \"click\",\n  \"selector\": \".btn-primary\"\n}\n```\n\nThis JSON object is in a format that's easily consumable by tools like Selenium, Cypress, or Playwright, which can execute actions on a web page based on the provided JSON data.",
+      "latency": {
+        "total": 899
+      },
+      "tokensPerSecond": 95.78181611783292,
+      "tokensUsed": 81,
+      "valid": false,
+      "score": 40,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:29.127Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "browser-2",
+      "trial": 2,
+      "response": "Here is a JSON object that represents a click action on the login button:\n\n```json\n{\n  \"action\": \"click\",\n  \"selector\": \".login-button\"\n}\n```\n\nIn this example, the `.login-button` CSS selector is used to target the login button element. You can adjust the CSS selector to match the actual class name or other attributes of the login button element on your webpage.",
+      "latency": {
+        "total": 892
+      },
+      "tokensPerSecond": 95.1842569882076,
+      "tokensUsed": 82,
+      "valid": false,
+      "score": 40,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:30.019Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "game-1",
+      "trial": 1,
+      "response": "{\"type\": \"dialogue\", \"text\": \"Greetings, traveler. What brings you to our humble village?\", \"tone\": \"friendly\"}",
+      "latency": {
+        "total": 363
+      },
+      "tokensPerSecond": 97.76190414119426,
+      "tokensUsed": 30,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:30.382Z"
+    },
+    {
+      "model": "llama3.2:3b",
+      "testCaseId": "game-1",
+      "trial": 2,
+      "response": "{\"type\": \"dialogue\", \"text\": \"Greetings, traveler. What brings you to our humble village?\", \"tone\": \"friendly\"}",
+      "latency": {
+        "total": 332
+      },
+      "tokensPerSecond": 95.77534934058673,
+      "tokensUsed": 30,
+      "valid": true,
+      "score": 70,
+      "errors": [],
+      "timestamp": "2026-10-27T21:18:30.714Z"
+    }
+  ],
+  "summary": {
+    "models": {
+      "mistral:latest": {
+        "model": "mistral:latest",
+        "totalTests": 10,
+        "passed": 6,
+        "avgScore": 48,
+        "avgLatency": 5591,
+        "avgTokensPerSec": 27.69903833413145
+      },
+      "llama3.2:3b": {
+        "model": "llama3.2:3b",
+        "totalTests": 10,
+        "passed": 7,
+        "avgScore": 56,
+        "avgLatency": 1607.1,
+        "avgTokensPerSec": 100.49612213663416
+      }
+    }
+  },
+  "metadata": {
+    "timestamp": "2026-10-27T21:18:30.714Z",
+    "hardware": "RTX 3060 Laptop / 16GB RAM (Windows)"
+  }
+}

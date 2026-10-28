@@ -197,15 +197,14 @@ export class UserResolver {
 
     const posts = await postRepo
       .createQueryBuilder('post')
-      .leftJoin('post.thread', 'thread')
       .where('post.authorId = :userId', { userId })
-      .andWhere('post.parent IS NULL')
+      .andWhere('post.parentId IS NULL')
       .getCount();
 
     const replies = await postRepo
       .createQueryBuilder('post')
       .where('post.authorId = :userId', { userId })
-      .andWhere('post.parent IS NOT NULL')
+      .andWhere('post.parentId IS NOT NULL')
       .getCount();
 
     return { threads, posts, replies };
